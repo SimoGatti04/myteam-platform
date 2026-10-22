@@ -1,85 +1,92 @@
 # Architettura — MAPI GROUP Match Manager
 
-**Stato:** CURRENT descrive il codice verificato in A0; PROPOSED descrive confini per l'evoluzione incrementale. Non è avvenuta una modularizzazione del codice in A0.
+**Stato:** CURRENT descrive il codice dopo C2; PROPOSED descrive confini per evoluzione incrementale. C2 ha estratto solo il motore temporale: il resto dell'applicazione rimane prevalentemente in `ContentView.swift`.
 
 ## Contesto e decisione
 
-L'app è oggi una singola applicazione iOS SwiftUI, locale e a un solo processo, mantenuta in un unico progetto Xcode. L'uso attuale è la gestione della rosa, calendario, partita live e storico di una squadra di calcio a 5. Non sono presenti backend, sincronizzazione, autenticazione o dipendenze esterne rilevate. La futura piattaforma MAPI GROUP e l'eventuale PWA sono possibilità, non requisiti implementativi attuali.
+L'app è un'applicazione iOS SwiftUI locale, a singolo processo, per la gestione di rosa, calendario, partita live ed eventi/storico di una squadra di calcio a 5. Non sono implementati backend, autenticazione, sincronizzazione o branding dinamico. La possibile piattaforma multi-squadra e l'eventuale PWA restano direzioni di prodotto, non decisioni architetturali da implementare ora.
 
-La direzione scelta è un **monolite modulare interno al target Xcode**. I confini sono introdotti quando una porzione viene effettivamente testata o modificata; nessun package per classe, nessun servizio indipendente e nessuna astrazione cross-platform anticipata. Rationale: [ADR-0001](decisions/ADR-0001-modular-monolith.md).
+La direzione corrente resta un **monolite modulare interno allo stesso target Xcode**: si estraggono confini coesivi quando danno testabilità o ownership concreta; nessun package per classe, servizio indipendente o layer di passaggio. Vedi [ADR-0001](decisions/ADR-0001-modular-monolith.md).
 
 ## CURRENT — componenti effettivi
 
-| Responsabilità | Implementazione attuale | Osservazione |
+| Responsabilità | Implementazione | Autorità e limiti |
 |---|---|---|
-| Entry point e composizione | `app/APP/MyApp.swift`, `ContentView` | Una root SwiftUI e uno stato centrale. |
-| UI e navigazione | `app/APP/ContentView.swift` | Welcome, Home, rosa, calendario, setup formazione, live e storico; `AppScreen` controlla le schermate. |
-| Modelli | `ContentView.swift`: `RosterPlayer`, `ScheduledMatch`, `MatchPlayer`, `GoalEvent`, `PlayerMatchSummary`, `MatchRecord` | Modelli Codable condivisi direttamente tra UI, logica e storage. |
-| Stato della partita | `@State` dentro la view root | Clock, timeout, formazione, giocatrici, eventi e associazione al calendario sono memoria di processo. |
-| Cronometri | `Timer.publish(every: 1)` + `handleTimerTick()` | I secondi vengono aggiunti per callback; non è un modello basato sul tempo effettivamente trascorso. |
-| Partecipazione e cambi | Funzioni private in `ContentView` | Limite di cinque in campo nei percorsi ordinari; cambio e suggerimento non applicano il ruolo di portiere. |
-| Suggerimento rotazione | `swapSuggestion`, `fairnessScore` | Regola corrente `timePlayed / max(playWeight, 0.25)`, soglia 120 secondi; esclude dall'uscita suggerita chi ha Superpower. |
-| Gol e statistiche | `GoalEvent` e funzioni su `matchEvents` | Il punteggio live è derivato dagli eventi; l'undo live rimuove l'ultimo gol. |
-| Storico | `MatchRecord` e viste di dettaglio/modifica | Snapshot di partecipanti e gol; non contiene la sequenza delle sostituzioni. |
-| Persistenza | JSON in `UserDefaults.standard` | Rosa, calendario e storico; chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1`. Nessuna sessione live persistita. |
-| Import calendario | `ScheduleCSVImporter` in `ContentView.swift` | Parser statico; accetta delimitatore rilevato da intestazione, quote e campi escaped; non gestisce newline dentro campi quotati. |
-| Design system | `MapiTheme` e asset in `Assets.xcassets` | UI/tema/asset sono fuori dallo scope A0 e invariati. |
+| Entry point e composizione | `MyApp.swift`, `ContentView` | La root view orchestra stato UI e flussi applicativi. |
+| UI e navigazione | `ContentView.swift` | Schermate e componenti SwiftUI esistenti; nessun cambio intenzionale di layout, palette o asset in C2. |
+| Modelli rosa/calendario/storico | `ContentView.swift`: `RosterPlayer`, `ScheduledMatch`, `MatchPlayer`, `GoalEvent`, `MatchRecord` e collegati | Codable e compatibilità con i payload correnti restano invariati. |
+| Motore temporale | `MatchTiming.swift` | Logica deterministica in-process, senza SwiftUI o persistenza; `ContinuousClock` in produzione, clock iniettivo nei test. Possiede fase, attività, tempi di gara, contabilità dei partecipanti e transizioni timeout/intervallo. |
+| Coordinamento partita | `ContentView.swift` | `@State` conserva il motore e gli eventi; il timer periodico è solo un trigger di sincronizzazione/refresh UI. Il ritorno a `.active` sincronizza il motore. |
+| Contabilità individuale | Registro partecipanti di `MatchTiming` | Il motore è autorevole per i nanosecondi; `MatchPlayer.timePlayed` e `inField` sono proiezioni mantenute per le viste e le logiche esistenti. Cambi e ingressi sincronizzano il motore al confine dell'azione. |
+| Partecipazione/rotazione | Funzioni private in `ContentView` | Regole attuali di cambio e suggerimento non sono state riprogettate in C2; ruolo portiere resta un tema separato. |
+| Import calendario | `ScheduleCSVImporter` in `ContentView.swift` | Parser statico caratterizzato in C1; non gestisce newline nei campi quotati. |
+| Gol e statistiche | `GoalEvent` e funzioni su `matchEvents` | Punteggio live derivato dagli eventi; undo dell'ultimo gol. Lo storico non registra la timeline completa dei cambi. |
+| Persistenza | JSON in `UserDefaults.standard` | Rosa, calendario e storico sulle chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1`; sessione live non persistita. |
+| Design system e asset | `MapiTheme`, componenti SwiftUI e `Assets.xcassets` | Nessun asset o stile visivo è stato modificato intenzionalmente in C2. |
+
+## Contratto temporale CURRENT
+
+### Clock e segmenti
+
+`MatchTiming` misura ciascun segmento attivo come differenza tra un riferimento monotono e la lettura corrente. Non aggiunge un secondo per callback. `Timer.publish(every: 1)` rimane un meccanismo di refresh; se i tick mancano, la successiva sincronizzazione calcola il tempo realmente trascorso. La sorgente di produzione è `ContinuousClock`; i test forniscono un clock controllabile.
+
+Gli stati sono `stopped`, `playing`, `halftimeCountdown` e `timeout`, associati alle fasi `firstHalf`, `halftime`, `secondHalf` e `finished`. La sincronizzazione attribuisce il tempo al solo segmento corrente, poi chiude la fase al suo limite senza trasferire automaticamente il residuo a un nuovo periodo.
+
+- Primo e secondo tempo: 20 minuti ciascuno.
+- Intervallo: countdown di 5 minuti avviato esplicitamente; al termine il secondo tempo resta in pausa.
+- Time-out: countdown separato di 60 secondi; non incrementa tempo di gara né tempo individuale.
+- Pausa: azzera il riferimento attivo; la ripresa crea un nuovo riferimento e non include il tempo di pausa.
+- Termine primo tempo: limita il minutaggio a 20 minuti, entra nell'intervallo e si ferma.
+- Termine secondo tempo: limita il minutaggio a 20 minuti, marca la partita finita e si ferma.
+
+Un timeout richiesto durante il gioco conserva l'autorizzazione a riprendere. La sua durata è misurata dal clock monotono; alla scadenza esatta il gioco riprende e il motore consuma anche l'eventuale tempo successivo fino all'istante di sincronizzazione, limitandolo al termine del periodo. Perciò una callback ritardata o un ritorno dal background non perde il residuo post-timeout. Se il timeout era iniziato mentre il gioco era in pausa, la scadenza non avvia il gioco. Intervallo e secondo tempo non partono implicitamente attraversando un confine temporale.
+
+### Formazione e partecipanti
+
+La regola applicativa `FutsalMatchRules.timing.requiredStartingPlayers` è la singola fonte del numero richiesto, attualmente cinque. Per il primo avvio il motore richiede distinta/presenze confermate, formazione confermata e cinque partecipanti effettivamente in campo. Un Play prematuro riporta al flusso di preparazione esistente. Confermare la distinta o la formazione non avvia il cronometro: il primo Play deve essere esplicito. La ripresa dopo una pausa non rivaluta il numero iniziale e può avvenire con meno di cinque giocatori in campo.
+
+All'avvio i titolari hanno contabilità pari a zero, così come le riserve. I titolari accumulano dal primo Play; ogni ingresso in campo inizia ad accumulare dal confine dell'azione, ogni uscita conserva il totale, e pause/intervallo/timeout non producono accrediti. La conferma tardiva della formazione non assegna tempo retroattivo.
+
+### Snapshot per C3
+
+`MatchTimingSnapshot` è il contratto Codable minimo preparatorio alla persistenza: versione schema, configurazione, fase/attività, flag di avvio/conferma, tempi accumulati per periodo/intervallo/timeout, owner e intenzione timeout, contatori timeout e partecipanti con ID, nanosecondi accumulati e stato in campo. `capturedAt` è un checkpoint wall-clock fornito dal chiamante, utilizzabile in seguito da un adapter per interpretare l'intervallo successivo alla cattura.
+
+L'anchor monotono di `ContinuousClock` non viene serializzato né ricostruito. C2 **non** salva lo snapshot e **non** ripristina una partita dopo cold start o terminazione del processo. C3 dovrà decidere e testare la politica di recupero, validare versioni/dati parziali e mantenere separati adapter e motore. Le chiavi V1 per rosa/calendario/storico restano intatte.
 
 ## PROPOSED — confini interni candidati
 
-Nomi e cartelle sono indicativi; si introducono solo quando estrarre il codice offre testabilità o proprietà più chiare. Tutto rimane inizialmente nello stesso target `APP`.
+Nomi indicativi; estrarre solo quando test o ownership lo giustificano. Tutto resta inizialmente nel target `APP`.
 
 ```text
 app/APP/
 ├── App/                         # entry point e composizione SwiftUI
-├── Domain/
-│   ├── Players/                 # identità e modelli della rosa
-│   ├── Schedule/                # partita programmata e associazione
-│   └── Matches/                 # sessione, snapshot, gol e statistiche
+├── Domain/                      # modelli, invarianti e funzioni indipendenti da UI
 ├── Features/
-│   ├── Roster/                  # flusso UI e casi d'uso rosa
-│   ├── Calendar/                # flusso UI del calendario
-│   ├── LiveMatch/               # schermata e coordinamento partita
-│   └── History/                 # storico e correzione dei record
-├── MatchTiming/                 # modello deterministico del tempo e transizioni
-├── Rotation/                    # regole MAPI/calcio a 5 per partecipazione e suggerimenti
-├── Import/                      # parser CSV e traduzione in Schedule
-├── Persistence/                 # adapter locale e gestione errori/recupero
-└── DesignSystem/                # MapiTheme, componenti visivi e asset
+│   ├── Roster/
+│   ├── Calendar/
+│   ├── LiveMatch/                # coordinamento SwiftUI della sessione
+│   └── History/
+├── MatchTiming.swift             # estratto e testato in C2
+├── Rotation/                     # regole futsal/MAPI, se estratte con test
+├── Import/                       # importer CSV, quando estratto
+├── Persistence/                  # adapter locale soltanto in C3
+└── DesignSystem/                 # MapiTheme, componenti e asset
 ```
 
-La struttura non prescrive un file per entità: modelli e comportamento che cambiano insieme possono restare co-locati. `APPTests` esercita contratti pubblici/interni selezionati; il codice privato della view non è direttamente unit-testabile finché non viene separato.
+Dipendenza desiderata: `SwiftUI/features → logica applicativa e dominio`. `MatchTiming` riceve configurazione e sorgente temporale dall'esterno e non dipende dalla UI o dalla persistenza. Le regole specifiche futsal (cinque giocatori, periodi, timeout) sono configurazione applicativa; non si crea ancora un motore cross-platform o un algoritmo di rotazione generico.
 
-### Responsabilità e dipendenze desiderate
+## Riuso ed evoluzione
 
-- **Domain**: tipi e invarianti che non richiedono SwiftUI, UserDefaults o filesystem. L'identità storica conserva nome e ID anche se una tesserata viene poi rimossa dalla rosa.
-- **MatchTiming**: accumula tempo giocato e modella pausa/ripresa/timeout/intervallo/fine con input temporale controllabile. Il clock non deve inferire il tempo da quanti callback UI sono arrivati. La scelta della semantica in background e dopo riapertura precede la migrazione.
-- **Futsal/Rotation**: i cinque posti, i due periodi, timeout e ruolo portiere sono regole applicative del calcio a 5; i pesi Handicap e Superpower restano regole MAPI finché non emerga un secondo consumatore con semantica realmente comune.
-- **Import**: parser deterministico indipendente dalla selezione del file; il confine del formato CSV va coperto con fixture.
-- **Persistence**: possiede letture/scritture e segnala errori in modo esplicito; il formato JSON e le chiavi legacy restano compatibili durante la migrazione.
-- **Features/UI**: orchestra azioni e presenta lo stato; non è proprietaria di algoritmi deterministici o codifica persistente.
-- **DesignSystem**: solo presentazione SwiftUI e asset. Nessun cambio visivo è parte del piano di consolidamento tecnico.
+1. **Componente interno (corrente):** `MatchTiming`, parser e regole restano nel repository e nello stesso target.
+2. **Package/libreria:** rivalutare solo con un secondo consumer reale, API stabile e lifecycle di rilascio indipendente.
+3. **Servizio indipendente:** non giustificato senza deployment, scaling, ownership o trust boundary autonomi.
 
-Direzione preferita: `SwiftUI/Features → funzioni/casi d'uso → Domain`; `Persistence` e sorgente file entrano da confini espliciti solo quando servono testabilità, sostituibilità o semantica di errore. Evitare catene di servizi/protocolli che inoltrano soltanto parametri.
+Modelli/contratti e regole deterministiche sono concettualmente trasferibili a una PWA; il codice Swift non è direttamente riusabile come codice web. Viste, navigazione, lifecycle e adapter locali sono specifici iOS/SwiftUI e sostituibili tramite confini leggeri. Backend, fonte autorevole condivisa, cache locale e branding dinamico restano futuri e non sono formalizzati in C2.
 
-### Livelli di riuso
+## Dati e persistenza
 
-1. **Componente interno** (scelta attuale): importer, clock e funzioni di dominio pure restano nel repository e nel target app.
-2. **Package/libreria**: rivalutare solo quando un componente è indipendente da MAPI/SwiftUI, ha API stabile e un secondo consumer reale o un ciclo di rilascio autonomo.
-3. **Servizio indipendente**: non giustificato oggi; rivalutare solo per deployment, scaling, ownership, sicurezza o isolamento dei guasti indipendenti.
-
-### Dati e persistenza
-
-Fonte di verità attuale: i tre payload Codable in `UserDefaults.standard`. Le mutazioni della rosa/calendario/storico invocano salvataggi espliciti; il timer e lo stato live non sono salvati. Errori `encode`/`decode` sono soppressi con `try?` e non diventano diagnosi visibili.
-
-A0 mantiene il contratto locale. Il prossimo passo di persistenza deve prima rendere visibili decode/write failure e definire recupero, quindi aggiungere un modello di sessione live versionato e testato. Per una singola app locale, JSON Codable in file con scrittura atomica/backup è l'alternativa iniziale meno onerosa da valutare; UserDefaults può restare per preferenze piccole, non è necessario trasformare ora i dati in database. SQLite/SwiftData diventano candidati solo se query, volume, relazioni, transazioni o migrazioni dimostrano un bisogno concreto. Non migrare né cancellare le chiavi V1 senza fixture legacy, verifica di round-trip e strategia di rollback. Vedi [ADR-0002](decisions/ADR-0002-preserve-json-contract.md).
-
-### Evoluzione verso una possibile PWA
-
-- **Trasferibile come concetto/contratto**: modelli di dominio, regole pure, formati JSON, invarianti, casi di test e comportamento dell'importer. Il codice Swift non è direttamente eseguibile in una PWA e non si assume una traduzione automatica.
-- **Specifico iOS/SwiftUI**: viste, navigazione, binding, lifecycle, input file, accessibilità e adapter `UserDefaults`/filesystem.
-- **Sostituibile tramite confini leggeri**: storage locale, sorgente del tempo, importazione file e UI. Gli adapter verranno introdotti quando un consumer alternativo è reale; nessun backend/API è pianificato in A0.
+Fonte di verità corrente: tre payload Codable in `UserDefaults.standard`. I payload live sono memoria del processo; gli errori JSON esistenti usano `try?` e non sono stati modificati in C2. Nessuna chiave V1, migrazione o tecnologia di persistenza è stata cambiata. ADR-0002 resta attivo. C3 dovrà prima definire errori, backup/recupero e semantica cold-start; JSON atomico è il primo candidato da valutare, senza escludere alternative motivate da requisiti reali.
 
 ## Trigger di riesame
 
-Rivedere questi confini se: (a) la PWA diventa un prodotto approvato con requisiti condivisi; (b) un secondo consumer riutilizza davvero una regola; (c) l'app deve supportare più utenti o sincronizzazione; (d) volume/query o perdita dati rendono inadeguata la persistenza locale; (e) l'estrazione di un componente migliora test significativi senza generare pass-through layers.
+Rivedere i confini se: la PWA/backend diventano un prodotto approvato; emerge un secondo consumer; servono più account/squadre; la sessione live deve recuperarsi dopo cold start; o i dati/operazioni dimostrano che la persistenza corrente non è adeguata.

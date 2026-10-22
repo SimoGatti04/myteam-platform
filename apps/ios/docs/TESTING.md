@@ -53,7 +53,7 @@ Copertura dei contratti Codable:
 - `ScheduledMatch`: formato corrente con tutti i campi; campi opzionali assenti; round-trip.
 - `MatchPlayer`: default legacy; ID, minuti, `inField`, `playWeight`, `superpower`, portiere; round-trip.
 - `MatchRecord` e `PlayerMatchSummary`: record legacy con `rosterPlayerID: null` e campi storici opzionali assenti; record corrente con partecipanti, score, goal/assist e snapshot calendario; round-trip.
-- `GoalEvent`: enum squadra e campi marcatrice/assist mancanti; round-trip.
+- `GoalEvent`: enum squadra e campi marcatore/assist mancanti; round-trip.
 
 Copertura CSV caratterizzata:
 
@@ -114,6 +114,49 @@ xcodebuild -quiet -project app/APP.xcodeproj \
 
 Per ripeterlo, scegliere un device/runtime presente in `xcrun simctl list devices available`; se CoreSimulator è negato dal sandbox agente, serve esecuzione autorizzata in una sessione che possa accedere al servizio. Una build generica o `build-for-testing` da sola non attribuisce PASS a XCTest.
 
-## Strategia successiva — C2
+## Esito C2 — 22 ottobre 2026
 
-Prima di cambiare il clock definire la semantica desiderata per background, blocco schermo e terminazione; poi isolare un modello minimo con tempo iniettivo e test deterministici di start/pause/resume, timeout, intervallo, transizione dei tempi, fine gara e contabilità individuale. Conservare UI e durate correnti. La suite C1 rende disponibili i test su iOS Simulator, ma non sostituisce prove manuali di lock/background né la decisione sulla ripresa post-terminazione. Le fixture restano sintetiche e prive di dati personali.
+La suite `APP` + `APPTests` è stata eseguita realmente su iPhone 18 Pro Simulator, iOS 27.0 (24A434), con Xcode 27.0 (27A266a). Il comando finale ha compilato app e test ed eseguito XCTest: **37 PASS, 0 FAIL, 0 SKIPPED** (16 test C1 + 21 test C2; result bundle `Passed`). `xcresulttool get build-results` ha riportato `status=succeeded`, 0 errori, 0 warning e 0 analyzer warning; il riepilogo test non segnala runtime warning.
+
+Comando finale:
+
+```sh
+xcodebuild -quiet -project app/APP.xcodeproj \
+  -scheme APP \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,id=94F3DA93-9BEA-4674-AAE8-CE127F97EBF7' \
+  -derivedDataPath /private/tmp/AURINFORMATC-C2-DerivedData \
+  -resultBundlePath /private/tmp/AURINFORMATC-C2-final4.xcresult \
+  -parallel-testing-enabled NO \
+  CODE_SIGNING_ALLOWED=NO test
+```
+
+`xcresulttool get test-results summary` ha confermato 37 test totali, tutti passati. Un run preliminare C2 ha eseguito 36 PASS e 1 FAIL nell'aspettativa del test di sostituzioni: il test aveva calcolato minuti incompatibili con gli intervalli in campo effettivi; ricalcolate le aspettative sul comportamento del motore reale, il run finale è passato. Quel run ha inoltre atteso 600 secondi la raccolta diagnostica del simulatore dopo il fallimento; il run finale verde è terminato in circa 25 secondi.
+
+I 21 test in `app/APPTests/MatchTimingTests.swift` esercitano **l'implementazione reale** `MatchTiming` con clock controllabile, e coprono:
+
+- distinta e formazione iniziale, blocco del primo avvio e richiesta di Play esplicita;
+- zero iniziale per titolari/riserve, assenza di accredito retroattivo, ingresso/uscita e rientri;
+- pause/riprese, sincronizzazioni ripetute, clock arretrato e callback mancanti/ritardate;
+- intervallo, timeout da running e paused, ripresa autorizzata alla scadenza e residuo post-timeout;
+- attraversamento del limite di un periodo, fine secondo tempo, assenza di avvio implicito del periodo successivo e limite dei tempi individuali;
+- serializzazione Codable del contratto snapshot, senza anchor monotono di processo.
+
+È stato anche eseguito `swiftc -typecheck -module-cache-path /private/tmp/AURINFORMATC-C2-SwiftModuleCache app/APP/MatchTiming.swift`: **PASS**. La suite finale `xcodebuild test` ha compilato il target app e il target test, quindi la compilazione non è dedotta dal solo typecheck.
+
+| Verifica | Stato | Risultato / limite |
+|---|---|---|
+| Suite C1+C2 su simulatore | PASS | 37 XCTest; 0 fallimenti e 0 skipped; iPhone 18 Pro iOS 27.0. |
+| Build app e compilazione test | PASS | Incluse nel run `xcodebuild test` finale; result `Passed`. |
+| Typecheck isolato `MatchTiming.swift` | PASS | `swiftc -typecheck` completato con exit code 0. |
+| Prova OS manuale in background/ritorno foreground | NOT RUN | Non è stata aperta/interagita la UI del Simulator: il target Simulator non era esposto nell'inventario dell'interfaccia di controllo disponibile. I test con clock finto dimostrano il calcolo del tempo ma non la consegna reale degli eventi lifecycle all'app. |
+| Prova OS manuale con schermo bloccato | NOT RUN | Stesso limite di accesso alla UI; copertura deterministica del salto temporale presente, non equivale a una prova di lock iOS. |
+| Recupero dopo terminazione/cold start | NOT RUN — C3 | La sessione live resta in memoria e non è serializzata. Lo snapshot C2 è un contratto non collegato a storage; non viene dichiarata alcuna capacità di recovery. |
+| Dati reali del dispositivo/UserDefaults | UNAVAILABLE | Non consultati né modificati; i test di C1 usano fixture sintetiche. |
+| Ispezione visiva completa dell'app | NOT RUN | Nessun test UI end-to-end; non si dichiara una validazione visiva runtime. |
+
+La documentazione Apple descrive [`ContinuousClock`](https://developer.apple.com/documentation/swift/continuousclock) come clock che continua ad avanzare durante il sonno del sistema e specifica che i suoi istanti sono confrontabili solo localmente durante l’esecuzione del programma; [`ScenePhase.active`](https://developer.apple.com/documentation/swiftui/scenephase/active) identifica una scena in primo piano e interattiva. Ciò sostiene la scelta del clock e la sincronizzazione lifecycle, ma non sostituisce la prova manuale d’integrazione non eseguita.
+
+## Passaggio a C3
+
+Il successivo intervento è la persistenza locale e il recupero della sessione live, senza sostituire le chiavi UserDefaults V1 né introdurre backend o sincronizzazione. Prima di implementare storage definire policy cold-start per segmento attivo, timeout, intervallo, corruzione/versione e ripristino. Aggiungere test di snapshot/restore e guasto su copia sintetica; C2 non dimostra recupero dopo terminazione. Pianificare inoltre una prova UI manuale di background/ritorno e lock quando sarà disponibile un Simulator interattivo o un dispositivo di test. Le fixture restano sintetiche e prive di dati personali.

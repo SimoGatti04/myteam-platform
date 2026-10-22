@@ -19,7 +19,7 @@ xcodebuild -project app/APP.xcodeproj \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-Il target `APPTests` contiene characterization test per i modelli Codable e il parser CSV. Per compilare app e test senza eseguirli:
+Il target `APPTests` contiene characterization test per i modelli Codable e il parser CSV, oltre ai test deterministici del motore temporale. Per compilare app e test senza eseguirli:
 
 ```sh
 xcodebuild -project app/APP.xcodeproj \
@@ -51,14 +51,14 @@ AURINFORMATC/
     └── docs/                        # architettura, audit, stato, piano e test
 ```
 
-`ContentView.swift` è un monolite di 10.737 righe. La separazione in componenti è un piano incrementale, non una riorganizzazione già avvenuta. Vedi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+`ContentView.swift` resta il monolite principale (la UI e molte logiche non temporali vi risiedono); C2 ha estratto soltanto `MatchTiming.swift`. Ulteriori separazioni saranno incrementali e basate su test. Vedi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Tecnologia e dati
 
 - Xcode 27.0; toolchain Swift 6.4.0; modalità linguaggio Swift 5; deployment target iOS 27.0 (baseline 22 ottobre 2026).
 - Un target app iOS, un target XCTest introdotto in A0; nessuna dipendenza SPM/CocoaPods/Carthage rilevata.
 - Rosa, calendario e storico sono codificati JSON nei tre valori `UserDefaults.standard` con chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`.
-- Lo stato della partita live non è attualmente persistito integralmente.
+- La sessione live non è ancora persistita né recuperabile dopo cold start; `MatchTimingSnapshot` è solo un contratto preparatorio per C3.
 - Nessun backend o sincronizzazione cloud.
 
 La descrizione completa di comportamenti implementati e requisiti pianificati è in [`docs/FEATURES.md`](docs/FEATURES.md); lo stato delle verifiche è in [`docs/STATUS.md`](docs/STATUS.md).
