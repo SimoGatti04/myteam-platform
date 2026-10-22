@@ -1,8 +1,9 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
 **Aggiornato:** 22 ottobre 2026
-**Checkpoint:** A0 — presa in carico, baseline, audit statico e fondamenta locali
-**Esito A0:** COMPLETE come audit e impostazione di base; l'app non è dichiarata stabilizzata né completamente validata.
+**Checkpoint:** C1 — characterization test e affidabilità della baseline
+**Esito C1:** COMPLETE per la baseline di test prevista; l'app non è dichiarata stabilizzata né completamente validata.
+**Esito A0:** COMPLETE come audit e impostazione di base; i limiti di verifica A0 sono riportati nella sezione storica e in `TESTING.md`.
 
 ## Baseline tecnica
 
@@ -21,6 +22,16 @@
 - Aggiornati gli entry point agenti, README, workflow, stato e registro feature; aggiunti audit, architettura, piano, testing e due ADR.
 - Creato target XCTest e scheme condiviso, senza modifiche al file sorgente funzionale o agli asset.
 - Registrate le chiavi UserDefaults effettive, i limiti del timer e dello stato live, i confini della logica di sostituzione/eventi e le funzionalità solo pianificate.
+
+## C1 completato — 22 ottobre 2026
+
+- La suite XCTest è stata ampliata da 5 a 16 casi e **eseguita realmente** su iPhone 18 Pro Simulator, iOS 27.0 (24A434), Xcode 27.0 (27A266a): **16 PASS, 0 FAIL, 0 SKIPPED**.
+- Il run `xcodebuild test` ha compilato target `APP` e `APPTests`, poi eseguito i test. Il result bundle ha confermato `result=Passed`, 16 test e nessun runtime warning riportato dal test runner.
+- Fixture sintetiche e anonime in `APPTests/Fixtures/DomainCharacterizationFixtures.swift`: forme legacy documentate e valori correnti inventati, non esportati dal dispositivo. I payload UserDefaults reali restano non disponibili.
+- Coperti round-trip/default/identità per `RosterPlayer`, `ScheduledMatch`, `MatchPlayer`, `MatchRecord`, `PlayerMatchSummary` tramite il record e `GoalEvent`; CSV comma/semicolon, BOM, alias, quote escaped, campi con delimitatore, CRLF/CR, RIPOSA, date e righe anomale.
+- Nessun sorgente produttivo, chiave `Futsal*V1`, asset, palette, UI o comportamento applicativo è stato modificato. Le chiavi e la persistenza reale non sono esercitate come integrazione.
+- Per avviare XCTest è stato necessario eseguire Xcode/CoreSimulator fuori dal sandbox: nel sandbox la connessione XPC/CoreSimulator e il log utente risultavano negati; in sessione autorizzata Xcode ha elencato runtime iOS 26.5/27.0 e il simulatore iOS 27.0 ha eseguito la suite. Nessun runtime/toolchain o setting globale è stato installato/rimosso/modificato.
+- I primi run hanno evidenziato due errori nelle aspettative dei test, non nel codice app: confronto case-sensitive con `Riga` e interpretazione di input whitespace-only come file vuoto. Le asserzioni sono state corrette per riflettere il messaggio e il comportamento reali; run finale verde.
 
 ## Verifiche A0
 
@@ -58,6 +69,6 @@ Dettagli, evidenze e priorità in `BASELINE_AUDIT.md`.
 
 ## Prossimo checkpoint
 
-**C1 — Esecuzione e ampliamento dei characterization test.** Eseguire i cinque test con un simulatore disponibile; aggiungere fixture versionate e anonime per i payload effettivi documentabili e i casi CSV del calendario. Non procedere alla modifica del timer finché la suite corrente non è eseguibile e la baseline del codice è revisionata.
+**C2 — Affidabilità dei cronometri.** Prima di cambiare comportamento, definire con il prodotto se il tempo di gara continua o si ferma in background/lock/terminazione e quando iniziano i minuti individuali. Estrarre il minimo modello di clock deterministico con sorgente temporale controllabile, mantenere UI e durata visibile invariate, quindi coprire start/pause/resume, timeout, intervallo, passaggio tra tempi, fine gara e coerenza con il minutaggio. La suite iOS è ora eseguibile; restano indispensabili prove manuali su simulatore/dispositivo per lock/background e una decisione esplicita sulla ripresa dopo terminazione. Nessun test C1 valida questi comportamenti del timer.
 
-Sequenza e criteri di completamento in `MIGRATION_PLAN.md`.
+Sequenza, dipendenze e criteri in `MIGRATION_PLAN.md`.
