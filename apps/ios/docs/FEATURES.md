@@ -1,131 +1,71 @@
-# Registro delle Funzionalità — MAPI GROUP
+# Registro funzionale — MAPI GROUP Match Manager
 
-Questo documento fornisce la mappa completa delle funzionalità dell'app MAPI GROUP, distinguendo chiaramente tra:
-1. **Funzionalità Attuali**: già presenti nel codice sorgente e funzionanti.
-2. **Funzionalità Progettate**: concordate tra la sviluppatrice e ChatGPT, da implementare nei prossimi passaggi.
+Questo registro separa ciò che il codice attuale implementa da ciò che è soltanto richiesto o progettato. “Implementato nel codice” non significa che ogni percorso sia stato collaudato su simulatore o dispositivo: consultare `STATUS.md` e `TESTING.md`.
 
----
+## 1. Implementato nel codice attuale
 
-## 1. Funzionalità Attuali (Già presenti nel codice)
+### Welcome e Home
+- Welcome con sfondo e logo esistenti e singolo pulsante **ENTRA** che porta alla Home.
+- Home con stato/cronometro partita, partita associata o prossima, anteprima formazione e accessi a Rosa, Calendario, Storico e preparazione.
 
-Il codice sorgente dell'app risiede principalmente in `ContentView.swift` ed è strutturato come segue:
+### Rosa
+- Elenco tesserate attive e non attive; aggiunta, modifica, attivazione/disattivazione ed eliminazione.
+- Validazione di nome vuoto e duplicati case-insensitive.
+- Ruolo booleano Portiere nel modello, toggle nell'editor e indicatore nella lista.
+- `RosterPlayer` decodifica i vecchi payload privi di `active` o `isGoalkeeper` usando i default `true` e `false`.
 
-### Schermata di Benvenuto (WelcomeView)
-- Sfondo grafico con le ochette (`WelcomeBackground`).
-- Logo dell'app (`WelcomeLogo`).
-- Pulsante singolo `"ENTRA"` con animazione di transizione verso la schermata Home.
+### Calendario e CSV
+- Visualizzazione, inserimento, modifica ed eliminazione delle gare; associazione manuale alla partita corrente.
+- Import CSV con delimitatore virgola o punto e virgola, BOM, alias di intestazione, virgolette e virgolette doppie escape; supporto a “RIPOSA”, parsing di date/giorni e righe con errori.
+- Import in append o sostituzione; l'identificativo di una gara sostituita è mantenuto quando il confronto la riconosce come stessa partita.
+- Associazione automatica della gara non ancora giocata più vicina entro una finestra di sei ore, quando si avvia il timer e non è già stata associata una gara.
 
-### Schermata Home
-- Header con brand MAPI GROUP e icone decorative.
-- Sezione stato partita (se una partita è stata avviata in memoria).
-- Sezione abbinamento calendario (prossima partita in programma).
-- Sezione anteprima formazione.
-- Pulsanti di navigazione: *Rosa*, *Calendario*, *Storico*, *Nuova Partita*.
+### Preparazione e partita live
+- Selezione delle presenti tra tesserate attive e selezione obbligatoria di esattamente cinque titolari, purché siano presenti almeno cinque tesserate attive.
+- Cronometro progressivo con due periodi da 20 minuti, intervallo da 5 minuti, pausa/ripresa e fine automatica dopo il secondo periodo. L'intervallo e il secondo tempo richiedono un'azione esplicita; il secondo tempo parte in pausa.
+- Un time-out da 60 secondi per squadra per tempo; se il timer era attivo prima del timeout, alla scadenza riprende automaticamente.
+- Carte con stato in campo/panchina, secondi giocati, peso Handicap 100/75/50/25% e Superpower.
+- Cambio manuale campo-panchina; inserimento diretto se in campo ci sono meno di cinque giocatrici; possibilità di lasciare temporaneamente il campo con una giocatrice in meno.
+- Suggerimento di cambio quando ci sono esattamente cinque giocatrici in campo e il divario supera 120 secondi, usando `timePlayed / max(playWeight, 0.25)`; una Superpower protegge solo dall'uscita suggerita.
+- Gol propri con marcatrice e assist facoltativo, gol avversari, punteggio live derivato dagli eventi e annullamento dell'ultimo evento.
 
-### Gestione della Rosa (Roster)
-- Elenco delle giocatrici registrate.
-- Possibilità di aggiungere una nuova giocatrice, modificarne il nome, attivarla/disattivarla ed eliminarla.
-- **Supporto Ruolo Portiere (Novità implementata)**:
-  - Il modello `RosterPlayer` include l'indicatore `isGoalkeeper`.
-  - Nella schermata di modifica della giocatrice è presente l'interruttore "Portiere".
-  - Nella lista della Rosa compare un piccolo indicatore `"Portiere"` accanto a chi ha il ruolo attivo.
-  - La modifica del nome o dello stato attivo preserva sempre il ruolo.
-  - Retrocompatibilità totale con i dati preesistenti salvati in `UserDefaults` (tutte le giocatrici già salvate rimangono e partono come giocatrici di movimento).
+### Storico
+- A fine partita viene creato uno snapshot con data, durata, partecipanti, secondi giocati, gol, assist, punteggio, eventi gol e associazione al calendario quando presente.
+- Elenco, dettaglio, modifica ed eliminazione dei record.
+- Modifica storica di dati, eventi gol, punteggi e statistiche; possibilità di ricalcolare score e statistiche dagli eventi oppure mantenerli indipendenti.
+- I record conservano nome e identificativo opzionale della tesserata; la cancellazione dalla rosa non cancella i relativi snapshot storici.
 
-### Gestione Calendario e Import CSV
-- Visualizzazione del calendario gare della stagione.
-- Importazione automatica da file CSV (come `calendario_mapi_2026_2027.csv`).
-- Possibilità di aggiungere e modificare partite in calendario (data, orario, avversario, casa/trasferta, luogo).
-- Selezione di una partita dal calendario per associarla alla partita live.
+### Persistenza attuale
+- JSON in `UserDefaults.standard` per rosa, calendario e storico, rispettivamente con chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`.
+- Nessuna persistenza completa della partita live in corso; la chiusura/terminazione dell'app non dispone di un ripristino verificato di cronometri, formazione, eventi e timeout.
 
-### Preparazione Partita Attuale
-- Schermata di selezione presenze (chi c'è stasera tra le giocatrici attive della rosa).
-- Schermata di selezione titolari (attualmente richiede la selezione obbligatoria dei 5 giocatori iniziali).
-- Il modello in partita `MatchPlayer` eredita già il ruolo di portiere (`isGoalkeeper`) dalla rosa.
+## 2. Requisiti progettati, non ancora implementati
 
-### Schermata Partita Live Attuale
-- **Avversario**: sezione in alto con dicitura "MAPI GROUP vs [Avversario]".
-- **Punteggio**: visualizzazione dei gol segnati da noi e dagli avversari con pulsanti dedicati.
-- **Cronometro**: cronometro a tempo progressivo con divisione in tempi/periodi, controlli di avvio, pausa e time-out.
-- **Lista Giocatori**: visualizzazione verticale a schede/card per ciascun giocatore, con indicazione di stato (*IN CAMPO* / *PANCHINA*), tempo giocato e controlli:
-  - `H` (Handicap / Peso partita: 100%, 75%, 50%, 25%).
-  - `S` (Superpotere: protegge la giocatrice dai cambi suggeriti).
-  - Tasto sostituzione.
-- **Cambi consigliati**: scheda che calcola e propone la coppia giocatrice in uscita / giocatrice in entrata tramite punteggio di equità (`fairnessScore = timePlayed / playWeight`).
-- **Registrazione Gol ed Eventi**: salvataggio del marcatore e dell'eventuale assistman.
+I seguenti requisiti validi sono conservati dalla documentazione precedente; non devono essere presentati come funzionalità disponibili.
 
-### Storico Partite
-- Elenco delle partite disputate con data, avversario e punteggio finale.
-- Dettaglio partita: minutaggio giocato da ciascuna giocatrice, marcatori, assist e sequenza gol.
-- Possibilità di modificare o eliminare eventi a posteriori.
+### Welcome e accesso
+- Tre azioni dirette **PARTITA**, **ROSA**, **STORICO**, mantenendo logo/sfondo e stile concordati.
 
-### Persistenza Dati
-- Salvataggio locale in `UserDefaults` tramite codifica e decodifica JSON di:
-  - Rosa giocatrici (`mapi_roster_v1`).
-  - Calendario partite (`mapi_schedule_v1`).
-  - Storico partite (`mapi_history_v1`).
-- *Nota importante*: attualmente `UserDefaults` salva esclusivamente Rosa, Calendario e Storico. Lo stato della partita in corso risiede solo nella memoria di runtime dell'app (non esiste un salvataggio persistente completo della partita live).
+### Preparazione
+- Inserimento rapido dell'avversario o selezione da calendario.
+- Titolari facoltativi: se non selezionati, tutte le presenti iniziano in panchina e vengono inserite manualmente.
+- Entrare nel campo non deve avviare il timer; il timer parte solo con pressione esplicita di Play.
 
----
+### Interfaccia campo
+- Mezzo campo verticale con asset/visualizzazione 2–2–1 (portiere e quattro giocatrici di movimento), avatar, nome e minutaggio.
+- Panchina compatta sotto il campo; controlli H, S e CAMBIA contestuali; punteggio e cronometro compatti, gol registrabili con modali discrete e suggerimenti non ingombranti.
 
-## 2. Funzionalità Progettate (Da realizzare nei prossimi passi)
+### Regole di ruolo e timer visivo
+- Il portiere può essere sostituito soltanto da un altro portiere ed è escluso dai suggerimenti delle giocatrici di movimento.
+- Colore del timer in base alla media: verde almeno 2 minuti sotto, giallo entro la fascia ±2 minuti, rosso almeno 2 minuti sopra. Le giocatrici di movimento sono confrontate tra loro e i portieri tra loro; la media include la distinta completa, anche chi è in panchina.
+- Il minutaggio totale di ciascuna giocatrice non si azzera durante i cambi.
 
-Le modifiche seguenti sono state concordate con ChatGPT e rappresentano il piano di evoluzione dell'app.
+## 3. Caso limite osservato, da confermare
 
-### A. Schermata Iniziale
-- **Grafica invariata**: Mantenimento integrale del logo, dello sfondo con le ochette calciatrici e dello stile estetico `MapiTheme`.
-- **Nuova pulsantiera**: Sostituzione del singolo pulsante `ENTRA` con tre pulsanti diretti:
-  1. **`PARTITA`**: per accedere rapidamente alla preparazione o continuazione della gara.
-  2. **`ROSA`**: per accedere direttamente alla gestione delle giocatrici.
-  3. **`STORICO`**: per consultare l'archivio delle partite giocate.
+- Il comando del cronometro è raggiungibile prima della conferma della distinta. Nell'implementazione, se la partita viene avviata da Home/presenze/titolari e la formazione viene confermata dopo, ai cinque titolari selezionati è assegnato il tempo già trascorso; le altre presenti partono da zero. Evidenza statica in `BASELINE_AUDIT.md`; non è stato verificato su simulatore/dispositivo e non è confermato come comportamento voluto. Non correggere implicitamente: chiarire la regola di prodotto e caratterizzarla prima di intervenire.
 
-### B. Preparazione della Partita
-- **Selezione Avversario**: Possibilità di digitare liberamente l'avversario o selezionarlo rapidamente dalle partite in calendario.
-- **Distinta di Gara**: Selezione delle giocatrici effettivamente presenti per la partita.
-- **Titolari Facoltativi**:
-  - La selezione dei 5 titolari diventa **facoltativa** (non più obbligatoria).
-  - Se i titolari non vengono selezionati, tutte le giocatrici iniziano in panchina e vengono inserite manualmente sul campo all'inizio o durante la partita.
-- **Nessun avvio automatico del tempo**: L'ingresso nella schermata del campo non avvia automaticamente il cronometro; il tempo parte solo con una pressione esplicita del tasto Play.
+## 4. Regole di interpretazione
 
-### C. Nuovo Campo (Interfaccia Live)
-- **Mezzo Campo Verticale**:
-  - Rappresentazione grafica di mezzo campo da calcetto in orientamento verticale.
-  - Disposizione **2–2–1**:
-    - **2 coppie di giocatrici di movimento e 1 portiere** (5 persone complessivamente in campo).
-    - **Non esistono altri ruoli** oltre a Portiere e Giocatrice di movimento.
-- **Sagome Giocatrici**:
-  - Ogni giocatrice sul campo è rappresentata da una sagoma grafica (avatar stilizzato), accompagnata da nome e timer del minutaggio totale.
-- **Interazione al Tap**:
-  - Toccando una giocatrice in campo compaiono i controlli contestuali:
-    - **`H`** (Handicap / Peso rotazione).
-    - **`S`** (Superpotere).
-    - **`CAMBIA`** (Avvia la sostituzione con una giocatrice in panchina).
-- **Panchina Compatta**:
-  - Le giocatrici di riserva sono raggruppate in una fascia orizzontale compatta posizionata subito sotto il campo, senza schede ingombranti.
-- **Header e Controlli Compatti in Alto**:
-  - Punteggio (Noi vs Avversario) e cronometro di gioco compatti nella parte superiore dello schermo, per dare massimo spazio visivo al campo.
-  - Nome dell'avversario piccolo e discreto, senza una sezione dedicata ingombrante.
-- **Registrazione Gol**:
-  - Due pulsanti compatti per registrare i gol (Noi / Avversario), con scelta del marcatore e dell'eventuale assist.
-- **Cambi Consigliati Discreti**:
-  - Suggerimenti di cambio mostrati senza schede ingombranti.
-
-### D. Regole di Gioco per i Portieri (Da implementare sul campo)
-- *Nota*: La selezione del portiere nella Rosa è già stata realizzata. Restano da implementare le seguenti regole in partita:
-  - Il portiere può essere sostituito **soltanto da un altro portiere**.
-  - I portieri non partecipano ai cambi consigliati delle giocatrici di movimento.
-  - Nessuna introduzione di altri ruoli.
-
-### E. Timer dei Giocatori con Soglie di Colore
-- **Tempo Continuo e Progressivo**:
-  - Il tempo totale giocato si accumula durante tutta la partita.
-  - Non si azzera mai durante le sostituzioni.
-- **Visualizzazione Grafica**:
-  - Il tempo compare all'interno di un rettangolo con angoli molto arrotondati.
-- **Colori Basati sulla Media della Distinta**:
-  - 🟢 **Verde**: Almeno **2 minuti sotto la media** (giocatrice che ha giocato meno).
-  - 🟡 **Giallo**: **Vicino alla media** (minutaggio equilibrato).
-  - 🔴 **Rosso**: Almeno **2 minuti sopra la media** (giocatrice che ha giocato di più).
-  - La media comprende **tutte le giocatrici di movimento presenti nella distinta**, incluse quelle sedute in panchina.
-  - I portieri vengono confrontati **separatamente** tra loro.
-  - Il colore del timer fornisce un supporto visivo immediato e **non sostituisce** il sistema di cambi consigliati.
+- Il modello possiede già un attributo Portiere, ma il vincolo ruolo-portiere non è applicato né ai cambi manuali né all'algoritmo dei suggerimenti.
+- La documentazione precedente riportava chiavi `mapi_roster_v1`, `mapi_schedule_v1` e `mapi_history_v1`: non sono le chiavi lette/scritte dall'implementazione corrente.
+- L'eventuale nuova schermata campo e la scelta dei titolari facoltativi cambiano la UI e il flusso prodotto; richiedono un'attività esplicita distinta dall'audit A0.

@@ -1,66 +1,64 @@
-# MAPI GROUP — iOS App
+# MAPI GROUP Match Manager — iOS
 
-**MAPI GROUP** è un'applicazione iOS sviluppata in **SwiftUI** per la gestione delle partite e della squadra di calcio a 5 (futsal) amatoriale, caratterizzata dalla simpatica mascotte delle ochette calciatrici.
+App iOS locale per la gestione della squadra di calcio a 5 MAPI GROUP: rosa, calendario, partita live, eventi e storico. La UI è realizzata in SwiftUI. La presa in carico A0 ha consolidato la baseline e la documentazione senza modificare il comportamento o la grafica dell'app.
 
-L'app nasce per aiutare la squadra e l'allenatore a:
-- Gestire la rosa delle giocatrici.
-- Consultare il calendario stagionale delle partite.
-- Monitorare la partita in tempo reale (tempo giocato, punteggio, gol e assist).
-- Gestire i cambi in modo equo e visivo sul campo da gioco.
+## Aprire e compilare
 
----
+1. Aprire `app/APP.xcodeproj` con Xcode.
+2. Selezionare lo scheme condiviso `APP` e un simulatore iOS installato.
+3. Avviare con **Product → Run** (⌘R).
 
-## Come aprire ed eseguire l'app con Xcode
+Build da terminale (firma disabilitata, destinazione generica simulatore):
 
-Per avviare l'app in locale sul tuo Mac non serve alcun terminale o strumento complesso. Segui questi semplici passi:
-
-1. **Apri il progetto in Xcode**:
-   - Vai nella cartella `app/`.
-   - Fai doppio clic sul file **`APP.xcodeproj`** (oppure aprilo da Xcode tramite *File → Open*).
-
-2. **Scegli il dispositivo o simulatore**:
-   - Nella barra in alto di Xcode, accanto al nome del target `APP`, clicca sul selettore del dispositivo.
-   - Scegli un simulatore iPhone recente (ad esempio *iPhone 15*, *iPhone 16* o il tuo iPhone collegato via cavo).
-
-3. **Avvia l'app**:
-   - Premi il pulsante **Play** (▶) in alto a sinistra, oppure premi la scorciatoia da tastiera:
-     ```
-     Cmd + R
-     ```
-   - Xcode compilerà il progetto e aprirà automaticamente il simulatore con la schermata iniziale di MAPI GROUP.
-
----
-
-## Tecnologie e Struttura
-
-- **Piattaforma**: iOS (iPhone)
-- **Linguaggio**: Swift
-- **Interfaccia grafica**: SwiftUI
-- **Persistenza**: Locale e semplice tramite `UserDefaults` (senza database esterni o SwiftData)
-- **Stile e Grafica**: Palette colori personalizzata (`MapiTheme`), angoli morbidi e asset grafici a tema (oche calciatrici).
-
-### Struttura delle cartelle principali
-
-```
-app/
-├── APP/                                # Codice sorgente e asset
-│   ├── MyApp.swift                     # Entry point dell'applicazione
-│   ├── ContentView.swift               # Viste e logica dell'app
-│   └── Assets.xcassets/                # Icone, loghi, sfondi e colori
-├── APP.xcodeproj/                      # File di progetto Xcode
-├── calendario_mapi_2026_2027.csv       # File CSV con le partite di campionato
-├── grafica/                            # Immagini originali, bozzetti e sfondi
-├── AGENTS.md                           # Istruzioni essenziali per gli agenti AI
-├── README.md                           # Questo documento di presentazione
-└── docs/                               # Documentazione operativa
-    ├── WORKFLOW.md                     # Guida al metodo di lavoro (ChatGPT → Codex → Xcode)
-    ├── FEATURES.md                     # Funzionalità attuali e modifiche progettate
-    └── STATUS.md                       # Stato di avanzamento e prossimi passi
+```sh
+xcodebuild -project app/APP.xcodeproj \
+  -scheme APP \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /private/tmp/AURINFORMATC-DerivedData \
+  CODE_SIGNING_ALLOWED=NO build
 ```
 
----
+Il target `APPTests` contiene characterization test per i modelli Codable e il parser CSV. Per compilare app e test senza eseguirli:
 
-## Metodo di Sviluppo
+```sh
+xcodebuild -project app/APP.xcodeproj \
+  -scheme APP \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /private/tmp/AURINFORMATC-DerivedData \
+  CODE_SIGNING_ALLOWED=NO build-for-testing
+```
 
-Il progetto segue un flusso di lavoro locale e accessibile per sviluppatrici alle prime armi, dettagliato in [`docs/WORKFLOW.md`](docs/WORKFLOW.md).  
-ChatGPT si occupa della progettazione e della scrittura dei prompt, Codex applica le modifiche ai file su richiesta, e Xcode permette di testare immediatamente il risultato.
+Per eseguire i test serve un runtime/dispositivo simulatore iOS disponibile. Procedura e stato verificato: [`docs/TESTING.md`](docs/TESTING.md).
+
+## Struttura attuale
+
+```text
+AURINFORMATC/
+├── AGENTS.md
+├── .gitignore
+├── backups/                         # locale, esclusa da Git; preservata
+└── app/
+    ├── APP.xcodeproj/               # scheme APP condiviso, target APP e APPTests
+    ├── APP/
+    │   ├── MyApp.swift              # entry point SwiftUI
+    │   ├── ContentView.swift        # UI, modelli, logica, import e persistenza attuali
+    │   └── Assets.xcassets/
+    ├── APPTests/                    # test XCTest
+    ├── calendario_mapi_2026_2027.csv
+    ├── grafica/                     # sorgenti e varianti grafiche
+    └── docs/                        # architettura, audit, stato, piano e test
+```
+
+`ContentView.swift` è un monolite di 10.737 righe. La separazione in componenti è un piano incrementale, non una riorganizzazione già avvenuta. Vedi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Tecnologia e dati
+
+- Xcode 27.0; toolchain Swift 6.4.0; modalità linguaggio Swift 5; deployment target iOS 27.0 (baseline 22 ottobre 2026).
+- Un target app iOS, un target XCTest introdotto in A0; nessuna dipendenza SPM/CocoaPods/Carthage rilevata.
+- Rosa, calendario e storico sono codificati JSON nei tre valori `UserDefaults.standard` con chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`.
+- Lo stato della partita live non è attualmente persistito integralmente.
+- Nessun backend o sincronizzazione cloud.
+
+La descrizione completa di comportamenti implementati e requisiti pianificati è in [`docs/FEATURES.md`](docs/FEATURES.md); lo stato delle verifiche è in [`docs/STATUS.md`](docs/STATUS.md).

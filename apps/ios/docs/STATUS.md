@@ -1,81 +1,63 @@
-# Stato del Progetto — MAPI GROUP
+# Stato del progetto — MAPI GROUP Match Manager
 
-Questo documento tiene traccia dello stato di avanzamento del progetto MAPI GROUP, delle attività completate e della roadmap dei prossimi interventi.
+**Aggiornato:** 22 ottobre 2026
+**Checkpoint:** A0 — presa in carico, baseline, audit statico e fondamenta locali
+**Esito A0:** COMPLETE come audit e impostazione di base; l'app non è dichiarata stabilizzata né completamente validata.
 
----
+## Baseline tecnica
 
-## 1. Situazione Attuale
+- Root Git locale: `AURINFORMATC/`; branch `main`; commit iniziale di recupero `4dd2b3b` (`chore: establish local AURINFORMATC baseline`); nessun remote.
+- App SwiftUI: `app/APP.xcodeproj`, scheme condiviso `APP`, target `APP`; test target `APPTests` creato in A0.
+- Xcode 27.0 (27A266a), toolchain Swift 6.4.0.34.1; `SWIFT_VERSION = 5.0`; deployment target iOS 27.0.
+- Un singolo file `ContentView.swift` di 10.737 righe contiene attualmente UI, modelli, logica di partita, importer e persistenza.
+- Nessuna dipendenza esterna SPM/CocoaPods/Carthage rilevata.
+- Persistenza locale UserDefaults + JSON: `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1`; la partita live completa non è salvata.
+- CSV calendario stagione 2026/2027 tracciato in `app/`; un backup locale datato 9 ottobre 2026 è conservato in `backups/`, escluso da Git e diverso dal sorgente della baseline.
 
-- **Codice dell'App**:
-  - Il codice Swift risiede in `APP/ContentView.swift` ed è pienamente funzionante e compilabile con Xcode (`APP.xcodeproj`).
-  - **Supporto Portiere aggiunto con successo**:
-    - `RosterPlayer` e `MatchPlayer` includono la proprietà `isGoalkeeper`.
-    - Gestita la retrocompatibilità totale con i vecchi dati JSON: le giocatrici già salvate in `UserDefaults` rimangono e partono come giocatrici di movimento.
-    - Nella schermata di modifica della giocatrice è presente il toggle "Portiere".
-    - Nella lista della Rosa compare il badge pillola `"Portiere"` accanto a chi ha l'opzione attiva.
-    - Modificare nome o stato attivo preserva sempre il ruolo.
-  - **Persistenza**:
-    - `UserDefaults` (in formato JSON) salva: **Rosa** (`mapi_roster_v1`), **Calendario** (`mapi_schedule_v1`) e **Storico** (`mapi_history_v1`).
-    - Lo stato della partita live in corso risiede solo nella memoria volatile di runtime (non vi è un salvataggio persistente completo della partita in corso).
-- **Ambiente Operativo**:
-  - Flusso di lavoro locale a tre componenti: Xcode + ChatGPT + Codex.
-  - Nessun controllo Git attivo sul progetto, per mantenere il processo lineare e privo di complessità per la sviluppatrice.
-- **Sicurezza del Codice**:
-  - Copia di sicurezza di `ContentView.swift` salvata in `AURINFORMATC/backups/`.
+## A0 completato
 
----
+- Ispezionati struttura, repository e configurazione Xcode; inizializzata Git locale senza remote.
+- Commit baseline esatto del sorgente e degli asset attuali; introdotto `.gitignore` per stato utente Xcode, artefatti, backup, runtime e credenziali.
+- Aggiornati gli entry point agenti, README, workflow, stato e registro feature; aggiunti audit, architettura, piano, testing e due ADR.
+- Creato target XCTest e scheme condiviso, senza modifiche al file sorgente funzionale o agli asset.
+- Registrate le chiavi UserDefaults effettive, i limiti del timer e dello stato live, i confini della logica di sostituzione/eventi e le funzionalità solo pianificate.
 
-## 2. Attività Completate
+## Verifiche A0
 
-| Attività | Descrizione | Data |
-| :--- | :--- | :--- |
-| **Progettazione Architetturale** | Definizione delle nuove funzionalità con ChatGPT: Welcome a 3 tasti, Mezzo campo 2-2-1, Gestione portieri, Timer a colori con soglie di media, Distinta e titolari facoltativi. | Ottobre 2026 |
-| **Creazione Documentazione Iniziale** | Creazione di `AGENTS.md`, `README.md`, `docs/WORKFLOW.md`, `docs/FEATURES.md`, `docs/STATUS.md` in `app/`. | Ottobre 2026 |
-| **Puntatore AGENTS.md principale** | Creazione di `AGENTS.md` nella radice di `AURINFORMATC` come rimando sintetico a `app/AGENTS.md`. | Ottobre 2026 |
-| **Backup Preventivo del Codice** | Salvataggio di una copia di sicurezza di `ContentView.swift` nella cartella `AURINFORMATC/backups/`. | Ottobre 2026 |
-| **Ruolo Portiere nella Rosa e Modello** | Aggiunta proprietà `isGoalkeeper` in `RosterPlayer` e `MatchPlayer`, decodifica retrocompatibile in `UserDefaults`, toggle nell'editor giocatrice, indicatore `"Portiere"` nella lista della rosa, conservazione del ruolo durante le modifiche di nome/stato. | Ottobre 2026 |
+| Verifica | Stato | Evidenza / limite |
+|---|---|---|
+| Enumerazione target e scheme | PASS | `xcodebuild -project app/APP.xcodeproj -scheme APP -list`; target `APP`, `APPTests`; scheme condiviso `APP`. |
+| Build app e compilazione target test | PASS | `xcodebuild ... -destination 'generic/platform=iOS Simulator' ... CODE_SIGNING_ALLOWED=NO build-for-testing`; risultato `TEST BUILD SUCCEEDED`. |
+| Esecuzione dei cinque XCTest | NOT RUN / UNAVAILABLE | CoreSimulatorService non disponibile e nessun runtime simulatore rilevato dal contesto; test compilati, non eseguiti. |
+| Avvio e verifica visiva/funzionale | NOT RUN | L'app non è stata lanciata in simulatore o dispositivo. |
+| Payload reali UserDefaults del dispositivo | UNAVAILABLE | Dati runtime non accessibili da questa workspace; la retrocompatibilità è testata solo con payload sintetici per i modelli. |
+| Integrità del sorgente e asset | PASS | Hash del file `ContentView.swift` e controllo del diff; nessuna modifica funzionale/grafica intenzionale. |
+| Dati sensibili/runtime nel baseline tracciato | PASS con nota | Nessun `.env`, database o provisioning profile tracciato. `DEVELOPMENT_TEAM` è un identificativo di signing nel progetto, non un segreto. Le credenziali e i profili locali sono ignorati. |
 
----
+La prima build non elevata non è riuscita perché il plugin della macro SwiftUI `State` ha restituito una risposta malformata; il retry autorizzato in ambiente elevato ha compilato app e test senza modifiche al sorgente. Questa prima prova è un **FAIL del tentativo nel contesto sandbox**, non un errore Swift confermato. La build riuscita ha comunque emesso il warning AppIntents non bloccante riportato in `TESTING.md`.
 
-## 3. Prossimi Interventi (Roadmap a Piccoli Passi)
+Per l'elenco completo di comandi e stati: `TESTING.md`.
 
-Per mantenere il lavoro sicuro e facilmente testabile su Xcode, le modifiche concordate verranno realizzate una alla volta attraverso prompt mirati:
+## Problemi e rischi principali
 
-### Passo 1 — Nuova Schermata Iniziale
-- Sostituire il pulsante singolo `ENTRA` con i tre pulsanti: `PARTITA`, `ROSA` e `STORICO`.
-- Preservare inalterati lo sfondo con le oche (`WelcomeBackground`), il logo (`WelcomeLogo`) e lo stile grafico.
-- Collegare i tre pulsanti alle relative schermate di destinazione.
+1. Il cronometro conta callback di `Timer.publish` invece di tempo trascorso: ritardi e sospensione/background possono causare deriva e sottoconteggio; rischio architetturale, non riprodotto a runtime.
+2. La partita live, i suoi timer, la formazione e gli eventi non sono persistiti come sessione recuperabile.
+3. Gli errori di encoding/decoding JSON sono ignorati con `try?`; un payload illeggibile appare come stato vuoto e un successivo salvataggio può sostituire i dati precedenti.
+4. I vincoli di ruolo portiere non sono applicati a titolari, cambi o suggerimenti.
+5. I suggerimenti e la sostituzione manuale sono incorporati in `ContentView`; il suggerimento può includere portieri.
+6. Lo storico salva snapshot e gol ma non la sequenza di cambi/partecipazione; non è ricostruibile lo stato temporale completo.
+7. La documentazione precedente riportava chiavi UserDefaults inesatte e workflow/no-Git non più applicabili; ora è stata corretta.
+8. Il timer può essere avviato prima della formazione; alla conferma successiva i titolari ricevono il tempo globale già trascorso mentre le riserve partono da zero. Il caso è verificato staticamente, ma non è stato provato a runtime né confermato come regola voluta; vedi `FEATURES.md` e `BASELINE_AUDIT.md`.
 
-### Passo 2 — Revisione Preparazione Partita
-- Permettere l'inserimento/selezione dell'avversario in modo rapido.
-- Selezionare le giocatrici presenti nella distinta di gara.
-- Rendere **facoltativa** la selezione dei 5 titolari: se non vengono scelti, tutte le giocatrici partono in panchina.
-- Assicurarsi che l'ingresso nella partita non avvii automaticamente il cronometro.
+Dettagli, evidenze e priorità in `BASELINE_AUDIT.md`.
 
-### Passo 3 — Nuovo Campo da Gioco Verticale (2–2–1)
-- Creare la vista del mezzo campo verticale con disposizione 2–2–1:
-  - 2 coppie di giocatrici di movimento e 1 portiere (5 persone complessivamente in campo).
-  - Nessun altro ruolo oltre a Portiere e Giocatrice di movimento.
-- Mostrare per ciascuna giocatrice: sagoma grafica, nome e tempo totale giocato.
-- Gestire il tap sulla giocatrice per mostrare i comandi rapidi `H` (Handicap), `S` (Superpotere) e `CAMBIA`.
-- Aggiungere la panchina orizzontale compatta posizionata sotto il campo.
-- Riposizionare punteggio e cronometro compatti in alto; rendere discreto il nome dell'avversario.
-- Integrare i due pulsanti per la registrazione dei gol (Noi / Avversario).
+## Decisioni attive
 
-### Passo 4 — Logica del Timer con Soglie di Colore
-- Garantire che il tempo giocato si accumuli continuativamente per tutta la partita senza mai azzerarsi nelle sostituzioni.
-- Visualizzare il tempo nel rettangolo con angoli molto arrotondati (a pillola).
-- Calcolare la media dei minuti giocati da tutte le giocatrici di movimento in distinta (in campo e in panchina).
-- Applicare i colori:
-  - 🟢 **Verde**: almeno 2 minuti sotto la media.
-  - 🟡 **Giallo**: vicino alla media (entro +/- 2 minuti).
-  - 🔴 **Rosso**: almeno 2 minuti sopra la media.
-- Gestire il confronto e la media separati per i portieri.
+- App iOS singola a monolite modulare; nessun package o servizio prematuro: `decisions/ADR-0001-modular-monolith.md`.
+- Mantenere chiavi e payload JSON esistenti finché compatibilità, migrazione e recupero non sono provati: `decisions/ADR-0002-preserve-json-contract.md`.
 
-### Passo 5 — Vincoli di Sostituzione per i Portieri
-- Regola di sostituzione sul campo: il portiere può essere sostituito **soltanto da un altro portiere**.
-- Escludere i portieri dai cambi consigliati delle giocatrici di movimento.
-- Mostrare i cambi consigliati in modo discreto e non invasivo sopra il campo.
+## Prossimo checkpoint
 
-### Passo 6 — Collaudo e Rifiniture
-- Test completo del flusso di gara nel simulatore Xcode: avvio, gestione titolari manuali, sostituzioni sul campo, registrazione gol, fine partita e salvataggio nello storico.
+**C1 — Esecuzione e ampliamento dei characterization test.** Eseguire i cinque test con un simulatore disponibile; aggiungere fixture versionate e anonime per i payload effettivi documentabili e i casi CSV del calendario. Non procedere alla modifica del timer finché la suite corrente non è eseguibile e la baseline del codice è revisionata.
+
+Sequenza e criteri di completamento in `MIGRATION_PLAN.md`.
