@@ -791,15 +791,6 @@ struct MatchRecord:
 }
 
 
-enum MatchPhase {
-
-    case firstHalf
-    case halftime
-    case secondHalf
-    case finished
-}
-
-
 struct SwapSuggestion {
 
     let outPlayerID:
@@ -1446,20 +1437,20 @@ enum ScheduleCSVImporter {
 struct ContentView:
     View {
 
-    private let halfDuration =
-        20 * 60
+    @Environment(\.scenePhase)
+    private var scenePhase
 
-    private let halftimeDuration =
-        5 * 60
+    private var halfDuration: Int {
+        FutsalMatchRules.timing.periodDurationSeconds
+    }
 
-    private let timeoutDuration =
-        60
+    private var timeoutsPerTeamPerHalf: Int {
+        FutsalMatchRules.timing.timeoutsPerTeamPerHalf
+    }
 
-    private let timeoutsPerTeamPerHalf =
-        1
-
-    private let maxPlayersOnField =
-        5
+    private var maxPlayersOnField: Int {
+        FutsalMatchRules.timing.requiredStartingPlayers
+    }
 
     private let swapThreshold =
         2 * 60
@@ -1511,31 +1502,62 @@ struct ContentView:
     @State private var selectedStarterIDs:
         Set<UUID> = []
 
-    @State private var lineupConfirmed =
-        false
-
+    @State private var timing =
+        MatchTiming()
 
     @State private var hasActiveMatch =
         false
 
-    @State private var matchClockHasStarted =
+    @State private var hasSavedCurrentMatch =
         false
 
-    @State private var phase:
-        MatchPhase =
-            .firstHalf
+    private var lineupConfirmed: Bool {
+        timing.lineupConfirmed
+    }
 
-    @State private var firstHalfElapsed =
-        0
+    private var matchClockHasStarted: Bool {
+        timing.hasStarted
+    }
 
-    @State private var secondHalfElapsed =
-        0
+    private var phase: MatchPhase {
+        timing.phase
+    }
 
-    @State private var halftimeRemaining =
-        5 * 60
+    private var firstHalfElapsed: Int {
+        timing.firstHalfElapsedSeconds
+    }
 
-    @State private var isRunning =
-        false
+    private var secondHalfElapsed: Int {
+        timing.secondHalfElapsedSeconds
+    }
+
+    private var halftimeRemaining: Int {
+        timing.halftimeRemainingSeconds
+    }
+
+    private var isRunning: Bool {
+        timing.isRunning
+    }
+
+    private var inTimeout: Bool {
+        timing.isInTimeout
+    }
+
+    private var timeoutRemaining: Int {
+        timing.timeoutRemainingSeconds
+    }
+
+    private var timeoutOwner: String {
+        timing.timeoutOwner?.rawValue ?? ""
+    }
+
+    private var ourTimeoutsUsed: Int {
+        timing.ourTimeoutsUsed
+    }
+
+    private var opponentTimeoutsUsed: Int {
+        timing.opponentTimeoutsUsed
+    }
 
 
     @State private var matchEvents:
@@ -1543,30 +1565,6 @@ struct ContentView:
 
     @State private var pendingAssist:
         PendingAssist?
-
-
-    // MARK: Timeout state
-
-    @State private var inTimeout =
-        false
-
-    @State private var timeoutRemaining =
-        0
-
-    @State private var timeoutOwner =
-        ""
-
-    @State private var ourTimeoutsUsed =
-        0
-
-    @State private var opponentTimeoutsUsed =
-        0
-
-    // FIX:
-    // ricorda se il cronometro era in movimento
-    // prima di entrare nel timeout.
-    @State private var resumeAfterTimeout =
-        false
 
 
     @State private var players:
@@ -1799,6 +1797,14 @@ struct ContentView:
 
             handleTimerTick()
         }
+        .onChange(
+            of: scenePhase
+        ) { _, newPhase in
+
+            if newPhase == .active {
+                handleTimerTick()
+            }
+        }
     }
 
 
@@ -1969,9 +1975,6 @@ struct ContentView:
 
                 clockStarted:
                     matchClockHasStarted,
-
-                elapsedMatchTime:
-                    totalMatchTime,
 
                 onTimer:
                     toggleMainTimer,
@@ -2588,7 +2591,7 @@ struct ContentView:
 
                 Text(
                     matchClockHasStarted
-                    ? "Il timer sta continuando. Imposta i presenti e i 5 titolari quando puoi."
+                    ? "Completa la formazione iniziale per avviare il cronometro."
                     : "Seleziona i presenti e poi scegli i 5 titolari."
                 )
                 .font(
@@ -3195,7 +3198,7 @@ struct ContentView:
 
                     startTimeout(
                         owner:
-                            "NOI"
+                            .ours
                     )
                 }
                 .buttonStyle(
@@ -3216,7 +3219,7 @@ struct ContentView:
 
                     startTimeout(
                         owner:
-                            "AVVERSARI"
+                            .opponent
                     )
                 }
                 .buttonStyle(
@@ -3937,7 +3940,7 @@ struct ContentView:
             return "PAUSA"
         }
 
-        if matchClockHasStarted {
+        if timing.resumeAfterTimeout || matchClockHasStarted {
 
             return "RIPRENDI"
         }
@@ -3948,36 +3951,26 @@ struct ContentView:
 
     private func toggleMainTimer() {
 
-        guard
-            phase !=
-                .finished
-        else {
+        let result = timing.toggleMainClock()
+        syncPlayerTimesFromTiming()
 
+        if timing.phase == .finished {
+            finishMatch()
             return
         }
 
-        if !hasActiveMatch {
+        switch result {
+        case .requiresConfirmedStartingLineup:
+            // Reuse the existing preparation flow; entering it never starts the clock.
+            screen = .presence
 
-            resetMatchProgress()
-
-            hasActiveMatch =
-                true
-        }
-
-        if !matchClockHasStarted {
-
+        case .started:
+            hasActiveMatch = true
             associateNearestScheduledMatchIfNeeded()
 
-            matchClockHasStarted =
-                true
-
-            isRunning =
-                true
-
-            return
+        case .paused, .resumed, .halftimeStarted, .halftimePaused, .unavailable:
+            break
         }
-
-        isRunning.toggle()
     }
 
 
@@ -3990,124 +3983,32 @@ struct ContentView:
             return
         }
 
-        // Durante il timeout scorre SOLO il minuto del timeout.
-        // La partita rimane congelata.
-        if inTimeout {
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
 
-            if timeoutRemaining > 1 {
-
-                timeoutRemaining -=
-                    1
-
-            } else {
-
-                timeoutRemaining =
-                    0
-
-                // Allo scadere riprende automaticamente
-                // il cronometro se prima stava andando.
-                endTimeout()
-            }
-
-            return
-        }
-
-        if phase ==
-            .halftime {
-
-            guard
-                isRunning
-            else {
-
-                return
-            }
-
-            if halftimeRemaining >
-                1 {
-
-                halftimeRemaining -=
-                    1
-
-            } else {
-
-                halftimeRemaining =
-                    0
-
-                startSecondHalf()
-            }
-
-            return
-        }
-
-        guard
-            isRunning
-        else {
-
-            return
-        }
-
-        switch phase {
-
-        case .firstHalf:
-
-            firstHalfElapsed +=
-                1
-
-            incrementPlayerTimes()
-
-            if firstHalfElapsed >=
-                halfDuration {
-
-                firstHalfElapsed =
-                    halfDuration
-
-                isRunning =
-                    false
-
-                phase =
-                    .halftime
-
-                halftimeRemaining =
-                    halftimeDuration
-            }
-
-
-        case .secondHalf:
-
-            secondHalfElapsed +=
-                1
-
-            incrementPlayerTimes()
-
-            if secondHalfElapsed >=
-                halfDuration {
-
-                secondHalfElapsed =
-                    halfDuration
-
-                finishMatch()
-            }
-
-
-        case .halftime,
-             .finished:
-
-            break
+        if timing.phase == .finished {
+            finishMatch()
         }
     }
 
 
-    private func incrementPlayerTimes() {
+    private func synchronizeMatchTiming() {
 
-        for index in
-            players.indices
-        where
-            players[index]
-                .inField {
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        if timing.phase == .finished {
+            finishMatch()
+        }
+    }
 
-            players[index]
-                .timePlayed +=
-                1
+
+    private func syncPlayerTimesFromTiming() {
+
+        let participantTimes = timing.participantSecondsPlayed
+        for index in players.indices {
+            if let seconds = participantTimes[players[index].id] {
+                players[index].timePlayed = seconds
+            }
         }
     }
 
@@ -4142,6 +4043,9 @@ struct ContentView:
             selectedStarterIDs =
                 selectedPresentIDs
         }
+
+        let presentIDs = selectedPresentPlayers.map(\.id)
+        _ = timing.confirmAttendance(presentPlayerIDs: presentIDs)
     }
 
 
@@ -4174,28 +4078,22 @@ struct ContentView:
             return
         }
 
-        if !hasActiveMatch {
-
-            resetMatchProgress()
-
-            hasActiveMatch =
-                true
+        let selectedPlayers = roster.filter {
+            $0.active && selectedPresentIDs.contains($0.id)
+        }
+        let selectedPlayerIDs = selectedPlayers.map(\.id)
+        guard
+            selectedPlayers.count == selectedPresentIDs.count,
+            Set(selectedPlayerIDs).count == selectedPlayerIDs.count,
+            timing.confirmAttendance(presentPlayerIDs: selectedPlayerIDs),
+            timing.confirmStartingLineup(fieldPlayerIDs: selectedStarterIDs)
+        else {
+            return
         }
 
+        hasActiveMatch = true
+        hasSavedCurrentMatch = false
         associateNearestScheduledMatchIfNeeded()
-
-        let elapsed =
-            totalMatchTime
-
-        let selectedPlayers =
-            roster.filter {
-
-                $0.active &&
-                selectedPresentIDs
-                    .contains(
-                        $0.id
-                    )
-            }
 
         players =
             selectedPlayers.map {
@@ -4207,28 +4105,14 @@ struct ContentView:
                             rosterPlayer.id
                         )
 
-                var player =
-                    MatchPlayer(
-                        rosterPlayer:
-                            rosterPlayer,
+                return MatchPlayer(
+                    rosterPlayer:
+                        rosterPlayer,
 
-                        inField:
-                            isStarter
-                    )
-
-                if
-                    matchClockHasStarted,
-                    isStarter {
-
-                    player.timePlayed =
-                        elapsed
-                }
-
-                return player
+                    inField:
+                        isStarter
+                )
             }
-
-        lineupConfirmed =
-            true
 
         screen =
             .live
@@ -4240,6 +4124,11 @@ struct ContentView:
     private func handleBenchPlayerEntry(
         _ id: UUID
     ) {
+
+        synchronizeMatchTiming()
+        guard phase != .finished else {
+            return
+        }
 
         guard let index =
             players.firstIndex(
@@ -4264,6 +4153,8 @@ struct ContentView:
         if fieldPlayersCount <
             maxPlayersOnField {
 
+            _ = timing.setParticipantInField(id, inField: true)
+            syncPlayerTimesFromTiming()
             players[index]
                 .inField =
                 true
@@ -4283,6 +4174,11 @@ struct ContentView:
         outID: UUID,
         inID: UUID
     ) {
+
+        synchronizeMatchTiming()
+        guard phase != .finished else {
+            return
+        }
 
         guard
             outID !=
@@ -4332,6 +4228,11 @@ struct ContentView:
             return
         }
 
+        guard timing.substitute(outgoingID: outID, incomingID: inID) else {
+            return
+        }
+        syncPlayerTimesFromTiming()
+
         players[outIndex]
             .inField =
             false
@@ -4346,6 +4247,11 @@ struct ContentView:
         _ id: UUID
     ) {
 
+        synchronizeMatchTiming()
+        guard phase != .finished else {
+            return
+        }
+
         guard let index =
             players.firstIndex(
                 where: {
@@ -4358,6 +4264,8 @@ struct ContentView:
             return
         }
 
+        _ = timing.setParticipantInField(id, inField: false)
+        syncPlayerTimesFromTiming()
         players[index]
             .inField =
             false
@@ -4395,6 +4303,11 @@ struct ContentView:
         for playerID:
             UUID
     ) {
+
+        synchronizeMatchTiming()
+        guard phase != .finished else {
+            return
+        }
 
         guard
             canRecordMatchEvent
@@ -4487,6 +4400,11 @@ struct ContentView:
 
 
     private func addOpponentGoal() {
+
+        synchronizeMatchTiming()
+        guard phase != .finished else {
+            return
+        }
 
         guard
             canRecordMatchEvent
@@ -4812,135 +4730,34 @@ struct ContentView:
 
 
     private func startTimeout(
-        owner:
-            String
+        owner: MatchTimeoutOwner
     ) {
 
-        guard
-            canUseTimeout
-        else {
-
+        synchronizeMatchTiming()
+        guard canUseTimeout else {
             return
         }
 
-        if owner ==
-            "NOI" {
-
-            guard
-                ourTimeoutsUsed <
-                    timeoutsPerTeamPerHalf
-            else {
-
-                return
-            }
-
-            ourTimeoutsUsed +=
-                1
-
-        } else {
-
-            guard
-                opponentTimeoutsUsed <
-                    timeoutsPerTeamPerHalf
-            else {
-
-                return
-            }
-
-            opponentTimeoutsUsed +=
-                1
-        }
-
-
-        // FIX:
-        // ricordiamo se la partita stava andando
-        // prima di fermarla per il timeout.
-        resumeAfterTimeout =
-            isRunning
-
-
-        // Il cronometro partita si ferma.
-        isRunning =
-            false
-
-
-        // Parte il cronometro del timeout.
-        inTimeout =
-            true
-
-        timeoutOwner =
-            owner
-
-        timeoutRemaining =
-            timeoutDuration
+        _ = timing.startTimeout(for: owner)
+        synchronizeMatchTiming()
     }
 
 
     private func endTimeout() {
 
-        // Memorizziamo il valore prima
-        // di ripulire lo stato.
-        let shouldResume =
-            resumeAfterTimeout
-
-
-        inTimeout =
-            false
-
-        timeoutRemaining =
-            0
-
-        timeoutOwner =
-            ""
-
-        resumeAfterTimeout =
-            false
-
-
-        // FIX:
-        // se il cronometro stava andando
-        // prima del timeout, riparte automaticamente.
-        if
-            shouldResume &&
-            matchClockHasStarted &&
-            (
-                phase ==
-                    .firstHalf ||
-                phase ==
-                    .secondHalf
-            )
-        {
-
-            isRunning =
-                true
-
-        } else {
-
-            isRunning =
-                false
-        }
+        timing.endTimeout()
+        synchronizeMatchTiming()
     }
 
 
     private func startSecondHalf() {
 
-        phase =
-            .secondHalf
-
-        isRunning =
-            false
-
-        halftimeRemaining =
-            halftimeDuration
-
-        ourTimeoutsUsed =
-            0
-
-        opponentTimeoutsUsed =
-            0
-
-        resumeAfterTimeout =
-            false
+        synchronizeMatchTiming()
+        guard phase == .halftime else {
+            return
+        }
+        timing.startSecondHalfManually()
+        synchronizeMatchTiming()
     }
 
 
@@ -4948,30 +4765,15 @@ struct ContentView:
 
     private func finishMatch() {
 
-        guard
-            phase !=
-                .finished
-        else {
-
+        guard hasActiveMatch, !hasSavedCurrentMatch else {
             return
         }
 
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        timing.finish()
+        hasSavedCurrentMatch = true
         associateNearestScheduledMatchIfNeeded()
-
-        isRunning =
-            false
-
-        inTimeout =
-            false
-
-        resumeAfterTimeout =
-            false
-
-        timeoutRemaining =
-            0
-
-        timeoutOwner =
-            ""
 
         pendingAssist =
             nil
@@ -4981,9 +4783,6 @@ struct ContentView:
 
         incomingSubstitution =
             nil
-
-        phase =
-            .finished
 
         let summaries =
             players.map {
@@ -5065,12 +4864,7 @@ struct ContentView:
         hasActiveMatch =
             false
 
-        matchClockHasStarted =
-            false
-
-        lineupConfirmed =
-            false
-
+        hasSavedCurrentMatch = false
         players.removeAll()
 
         selectedPresentIDs
@@ -5088,54 +4882,17 @@ struct ContentView:
 
     private func resetMatchProgress() {
 
-        firstHalfElapsed =
-            0
-
-        secondHalfElapsed =
-            0
-
-        halftimeRemaining =
-            halftimeDuration
-
-        phase =
-            .firstHalf
-
-        isRunning =
-            false
-
-
-        // Reset timeout
-
-        inTimeout =
-            false
-
-        resumeAfterTimeout =
-            false
-
-        timeoutRemaining =
-            0
-
-        timeoutOwner =
-            ""
-
-        ourTimeoutsUsed =
-            0
-
-        opponentTimeoutsUsed =
-            0
-
+        timing.reset()
+        hasSavedCurrentMatch = false
 
         // Reset eventi
-
         matchEvents
             .removeAll()
 
         pendingAssist =
             nil
 
-
         // Reset cambi
-
         outgoingSubstitution =
             nil
 
@@ -5407,8 +5164,7 @@ struct ContentView:
     private var totalMatchTime:
         Int {
 
-        firstHalfElapsed +
-        secondHalfElapsed
+        timing.totalMatchElapsedSeconds
     }
 
 
@@ -8253,9 +8009,6 @@ struct LineupSelectionView:
     let clockStarted:
         Bool
 
-    let elapsedMatchTime:
-        Int
-
     let onTimer:
         () -> Void
 
@@ -8325,7 +8078,7 @@ struct LineupSelectionView:
                 if clockStarted {
 
                     Text(
-                        "I titolari riceveranno \(formatTime(elapsedMatchTime)) di tempo già giocato."
+                        "I minuti di gioco si conteggiano dal primo avvio esplicito."
                     )
                     .font(
                         .footnote
