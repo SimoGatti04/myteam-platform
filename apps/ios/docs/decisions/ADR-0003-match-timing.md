@@ -1,12 +1,12 @@
 # ADR-0003 — Tempo partita basato su riferimenti monotoni
 
 - **Stato:** ACCETTATO — 22 ottobre 2026
-- **Ambito:** motore temporale in-process e avvio della formazione in C2
+- **Ambito:** motore temporale in-process e avvio della formazione (C2); snapshot/restore temporalmente coerenti (C3, dettagli in ADR-0005)
 - **Dipendenze:** C1; dettagli implementativi correnti in `../ARCHITECTURE.md`
 
 ## Contesto
 
-Il timer precedente aggiungeva un secondo per callback `Timer.publish`, quindi callback omessi o ritardati potevano sottostimare il tempo. Anche i minuti individuali erano aggiornati per tick, e il primo avvio poteva precedere la conferma della formazione. Il comportamento di background, lock e terminazione doveva essere distinto: il requisito C2 conferma il conteggio durante background/lock, ma la sessione live non è persistita.
+Il timer precedente aggiungeva un secondo per callback `Timer.publish`, quindi callback omessi o ritardati potevano sottostimare il tempo. Anche i minuti individuali erano aggiornati per tick, e il primo avvio poteva precedere la conferma della formazione. Il comportamento di background, lock e terminazione doveva essere distinto: C2 conferma il conteggio durante background/lock; C3 persiste lo snapshot e ricostruisce un nuovo anchor al restore, mentre la prova manuale kill/relaunch resta da eseguire.
 
 ## Decisione
 
@@ -32,7 +32,7 @@ Il timer precedente aggiungeva un secondo per callback `Timer.publish`, quindi c
 - L'accumulo è indipendente dalla quantità di tick UI consegnati e può essere testato deterministicamente.
 - Un callback ritardato che attraversa il termine di un periodo non genera automaticamente gioco nel periodo successivo.
 - Una scadenza di timeout dopo cui la ripresa era già autorizzata accredita il tempo post-timeout effettivamente trascorso e applica i limiti del periodo. Una scadenza da pausa non avvia il gioco; il residuo oltre la fine di un periodo non avvia intervallo o periodo successivo.
-- Il motore è pronto a essere serializzato, ma il cold-start non è recuperabile prima di C3.
+- C3 serializza e ripristina snapshot di `MatchTiming`; il test deterministico non sostituisce la prova end-to-end di cold start. La politica di confronto clock e i suoi limiti sono documentati in ADR-0005.
 - I modelli Codable storici, le chiavi UserDefaults V1, la UI e gli asset non richiedono migrazione.
 
 ## Verifica prevista/effettuata

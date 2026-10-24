@@ -1,12 +1,12 @@
 # Architettura — MAPI GROUP Match Manager
 
-**Stato:** architettura corrente dopo C3.1; C3.2 (sessione live durevole) non ancora implementato.
+**Stato:** implementazione C3 presente; il recovery è coperto da XCTest deterministici, ma non è stata eseguita una prova manuale di terminazione/rilancio dell’app.
 
 ## Contesto e decisioni di prodotto
 
-L'app di gestione resta nativa iOS, in Swift/SwiftUI, e deve funzionare offline. SwiftData è la persistenza locale principale per rosa, calendario e storico. In futuro il backend sarà autorevole per i dati condivisi, mentre la partita deve restare utilizzabile offline; sincronizzazione, conflitti e cache non sono definiti né implementati in C3.1. L'app è destinata a diventare generica per squadre e competizioni, con MAPI GROUP prima utilizzatrice, ma questo checkpoint non aggiunge entità multi-squadra, società, account o ruoli.
+L'app di gestione resta nativa iOS, in Swift/SwiftUI, e deve funzionare offline. SwiftData è la persistenza locale operativa per rosa, calendario e storico; la sessione live è un aggregate JSON locale separato, versionato e recuperabile. In futuro il backend sarà autorevole per i dati condivisi, mentre la partita deve restare utilizzabile offline; sincronizzazione, conflitti e cache non sono definiti né implementati. L'app è destinata a diventare generica per squadre e competizioni, con MAPI GROUP prima utilizzatrice, ma C3 non aggiunge entità multi-squadra, società, account o ruoli.
 
-Il target rimane un monolite modulare interno a Xcode: estrarre un confine quando porta responsabilità/testabilità reali; nessun package per classe, servizio indipendente o layer cerimoniale. Le opzioni pubblica/privata e la futura PWA non fanno parte del runtime attuale. Riferimenti: ADR-0001, ADR-0003, ADR-0004.
+Il target rimane un monolite modulare interno a Xcode: estrarre un confine quando porta responsabilità/testabilità reali; nessun package per classe, servizio indipendente o layer cerimoniale. Le opzioni pubblica/privata e la futura PWA non fanno parte del runtime attuale. Riferimenti: ADR-0001, ADR-0003, ADR-0004, ADR-0005.
 
 ## Componenti effettivi
 
@@ -15,9 +15,22 @@ Il target rimane un monolite modulare interno a Xcode: estrarre un confine quand
 | Composizione e bootstrap | `MyApp.swift` | Apre il `ModelContainer`, completa la migrazione legacy e carica lo snapshot prima di mostrare l'app. In caso di errore mostra uno stato esplicito, non una schermata vuota. |
 | UI, navigazione e stato di presentazione | `ContentView.swift` | Le schermate e i modelli Codable di dominio restano qui. La view usa `MatchDataStore` per le scritture; nessun cambiamento intenzionale a layout, palette o asset. |
 | Persistenza locale e adattamento dominio | `MatchDataPersistence.swift` | Possiede schema SwiftData V1, migrazione UserDefaults, letture e salvataggi espliciti di rosa/calendario/storico. Non contiene SwiftUI. |
-| Motore temporale in-process | `MatchTiming.swift` | Clock monotono, transizioni e contabilità live deterministiche. Non è ancora salvato: la persistenza della sessione appartiene a C3.2. |
+| Motore temporale | `MatchTiming.swift` | Clock monotono, transizioni e contabilità live deterministiche; il motore espone snapshot versionati senza dipendenze da SwiftUI o storage. |
+| Aggregate live | `LiveMatchSession.swift` | Snapshot della partita con partecipanti, formazione iniziale, eventi, riferimenti calendario e stato finale; convalida prima di salvare o ripristinare. |
+| Persistenza e recovery live | `LiveMatchSessionPersistence.swift` | Archivio JSON in Application Support, envelope/checksum, primary + generazione precedente, politica clock di recovery e finalizzazione idempotente su `MatchDataStore`. |
+| Presentazione recovery | `LiveMatchSessionViews.swift` + `ContentView.swift` | Schermate di revisione, errore recuperabile e finalizzazione pendente; le azioni live vengono esposte solo dopo bootstrap/recovery valido. |
 | Contratti di dominio | `RosterPlayer`, `ScheduledMatch`, `MatchRecord` e modelli collegati in `ContentView.swift` | Codable e identificativi restano i contratti di input/output dell'adapter; le entità SwiftData sono distinte dai valori di dominio. |
 | Test | `APPTests/` | XCTest reali su modelli di dominio, motore temporale e store SwiftData isolati. Le fixture sono sintetiche e anonime. |
+
+## Sessione live C3
+
+La sessione è un singolo documento aggregate Codable versionato (`LiveMatchSessionSnapshot`, schema 1), non una `@Model` SwiftData e non una View serializzata. `LiveMatchSessionStore` scrive `live-match-session.json` in Application Support e mantiene `live-match-session.backup.json` come generazione precedente. L’envelope ha una versione di formato e SHA-256 del payload; la scrittura usa sostituzione atomica e verifica di rilettura. Un payload primario illeggibile non viene sovrascritto automaticamente; il backup viene proposto come recovery esplicito e l’originale danneggiato è conservato.
+
+Il tempo di gioco e il tempo individuale derivano dallo snapshot di `MatchTiming`; i metadati snapshot dei giocatori servono a ricostruire UI e record anche se la rosa cambia. Vengono salvati dopo conferma formazione (prima di mostrare il live), avvio/pause/ripresa, sostituzioni, eventi/assist, timeout, transizioni di periodo, cambi rilevanti di stato e lifecycle. Non si scrive a ogni refresh grafico. Al restore viene creato un nuovo anchor monotono: quello del processo precedente non è riutilizzato.
+
+Nel processo corrente il motore usa il clock monotono. Tra processi, il recovery confronta l’intervallo monotono persistito e l’orologio civile; delta incoerenti, futuri o possibili riavvii passano da una revisione esplicita, e l’intervallo selezionabile è limitato al tempo residuo del periodo/attività. Non viene mai avviato automaticamente un nuovo tempo. Non è persistito un identificatore di boot affidabile: la rilevazione del riavvio è euristica e non prova ogni possibile combinazione di reboot e clock alterato; questo limite resta aperto.
+
+La finalizzazione usa lo UUID della sessione come ID stabile del record storico. Il percorso `active → finalizing → finalized → cleanup` salva due generazioni `finalizing` con lo stesso record prima di inserirlo nello storico; così un backup può completare il retry anche se la primary si corrompe dopo il commit. Il record viene rimosso solo dopo verifica; una ripetizione accetta lo stesso record e rifiuta conflitti. UserDefaults V1 per rosa/calendario/storico non è coinvolto né aggiornato. Nessun backend, CloudKit o sincronizzazione viene introdotto.
 
 ## Schema locale SwiftData V1
 
@@ -53,6 +66,6 @@ Le chiavi legacy sono una copia di recupero pre-migrazione, non un backup aggior
 
 `MatchDataStore` crea contesti espliciti con autosave disattivato; le operazioni `replaceRoster`, `replaceSchedule`, `replaceHistory` salvano con `save()` e fanno rollback del contesto in caso di errore. La UI applica il nuovo snapshot in memoria solo dopo il successo del salvataggio e mostra un messaggio d'errore altrimenti. Il bootstrap è sincrono prima della schermata funzionale. Nessun fallback a un nuovo store vuoto è configurato.
 
-## Confine C3.2
+## Limiti residui e evoluzione
 
-C3.1 non salva né ripristina `MatchTiming`, lo stato live o i dati temporanei di formazione. C3.2 dovrà aggiungere un modello sessione distinto, con UUID stabile, snapshot temporale serializzabile, riferimento/versone di salvataggio e stato di finalizzazione, senza incorporare SwiftUI o UserDefaults nel motore. Restore dopo cold start, riconciliazione temporale e finalizzazione non sono verificati né dichiarati implementati.
+C3 ha introdotto sessione live JSON, restore e finalizzazione idempotente. Il checkpoint successivo deve validare il percorso reale di terminazione/rilancio su simulatore; non va dedotta la prova end-to-end dai soli test deterministici. Un boot identifier affidabile non è persistito e la rilevazione del riavvio tramite confronto clock resta euristica. Nessun layer backend o sincronizzazione è parte dell’architettura implementata.

@@ -40,7 +40,15 @@ Questo documento distingue funzionalità effettive, decisioni confermate e lavor
 
 ## Ancora da implementare / verificare
 
-- **C3.2:** sessione live durevole in SwiftData, recovery dopo cold start, riconciliazione degli anchor temporali e stato di finalizzazione.
+- **Recovery live end-to-end:** il codice C3 e i test deterministici sono presenti; manca ancora la prova manuale di terminazione/rilancio su simulatore. La sessione usa JSON, non SwiftData.
 - Backup/esportazione e rollback applicativo dopo che SwiftData abbia ricevuto modifiche successive alla migrazione.
 - Validazione dell'importazione su payload reali già presenti su un dispositivo; in C3.1 sono state usate solo fixture sintetiche.
 - Backend, autenticazione, sincronizzazione, CloudKit, multi-squadra e PWA.
+
+
+## Persistenza e recovery della partita live (C3)
+
+- La sessione live viene salvata come aggregate JSON locale versionato, con copia primaria e generazione precedente verificabile. La conferma formazione viene salvata prima di mostrare il live; avvio, pause/riprese, sostituzioni, eventi, assist, timeout e transizioni rilevanti vengono persistiti senza usare i tick grafici come fonte temporale.
+- Al cold start il motore ricostruisce un nuovo anchor monotono e considera il tempo trascorso solo secondo la politica di recovery; quando i clock discordano o è possibile un riavvio, richiede revisione e limita il tempo accreditabile. Non avvia automaticamente periodi successivi.
+- La finalizzazione usa l’UUID della sessione come identità stabile del record storico e può essere ritentata senza duplicare un record equivalente. Una sessione viene rimossa solo dopo verifica dell’inserimento storico e del marcatore finale.
+- I test verificano deterministici restore e interruzioni simulate; non è stata svolta una prova manuale di kill/relaunch dell’app, né una verifica su dati reali del dispositivo. Lo stato di validazione resta PARTIAL fino alla prova end-to-end raccomandata in `STATUS.md`.

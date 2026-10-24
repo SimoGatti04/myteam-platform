@@ -1,7 +1,7 @@
 # ADR-0004 — SwiftData come persistenza locale per i dati gestionali
 
 - **Stato:** ACCETTATO — 24 ottobre 2026
-- **Ambito:** rosa, calendario, storico; la sessione live è demandata a C3.2
+- **Ambito:** rosa, calendario, storico; la sessione live è separata in C3 tramite aggregate JSON locale (ADR-0005)
 
 ## Contesto
 
@@ -37,5 +37,5 @@ La copia legacy è soltanto pre-migrazione. Dopo aggiornamenti in SwiftData non 
 
 - SwiftData è un adapter locale, non il contratto condiviso del backend.
 - I modelli di dominio rimangono indipendenti da SwiftData e UI; non si introduce un package separato.
-- La sessione live di C3.2 dovrà essere persistita localmente per l'uso offline e definire idempotenza di recovery/finalizzazione senza cambiare MatchTiming validato.
+- La sessione live è stata separata in C3 come aggregate JSON locale (ADR-0005), per mantenere una transazione coerente senza introdurre un nuovo schema relazionale per un singolo documento.
 - I test isolano store in-memory e persistenti temporanei; restano da fare prova con dati reali/backup dispositivo prima di dichiarare validata la migrazione in produzione.

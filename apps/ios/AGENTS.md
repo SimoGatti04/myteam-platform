@@ -14,7 +14,7 @@ Le convenzioni generali e dell'ambiente sono mantenute nel repository fratello `
 - L'app privata rimane nativa iOS, offline-capable. SwiftData è la fonte locale operativa di rosa, calendario e storico.
 - Le chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1` sono solo sorgenti legacy pre-migrazione: non cancellarle, non aggiornarle come archivio parallelo, non azzerare la ricevuta per reimportarle dopo modifiche operative.
 - Evoluzioni SwiftData: introdurre un nuovo `VersionedSchema` e migrazioni esplicite e testate; non modificare uno schema rilasciato in-place.
-- La sessione live non è persistita fino a C3.2. Non dichiarare il cold-start recovery e non cambiare la semantica di `MatchTiming` fuori scope.
+- La sessione live è un aggregate JSON locale introdotto in C3; `MatchTiming` mantiene i clock/transition contract C2 e gli snapshot vengono ripristinati con un nuovo anchor. I test deterministici passano, ma non dichiarare validato il kill/relaunch manuale finché non eseguito. Per cambiare la semantica temporale o il formato snapshot serve uno scope esplicito e test di recovery.
 - Preservare UI, asset e palette quando non esplicitamente richiesto. Evitare backend, CloudKit, sync, autenticazione e PWA fuori da un incarico approvato.
 - Git è locale alla root `AURINFORMATC/`; non è configurato alcun remote. Non fare push né aggiungere remote senza richiesta esplicita.
 - Errori di apertura/lettura/salvataggio non devono essere convertiti in stato apparentemente vuoto o successo. Aggiornare lo stato e le verifiche solo dopo averle effettivamente eseguite.
