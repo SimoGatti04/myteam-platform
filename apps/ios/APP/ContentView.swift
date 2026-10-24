@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import Foundation
 import Combine
 import UniformTypeIdentifiers
@@ -1440,6 +1441,15 @@ struct ContentView:
     @Environment(\.scenePhase)
     private var scenePhase
 
+    let dataStore: MatchDataStore
+
+    init(dataStore: MatchDataStore, initialData: MatchDataSnapshot) {
+        self.dataStore = dataStore
+        _roster = State(initialValue: initialData.roster)
+        _scheduledMatches = State(initialValue: initialData.schedule)
+        _history = State(initialValue: initialData.history)
+    }
+
     private var halfDuration: Int {
         FutsalMatchRules.timing.periodDurationSeconds
     }
@@ -1476,15 +1486,11 @@ struct ContentView:
     @State private var roster:
         [RosterPlayer] = []
 
-    private let rosterKey =
-        "FutsalRosterV1"
 
 
     @State private var scheduledMatches:
         [ScheduledMatch] = []
 
-    private let scheduleKey =
-        "FutsalScheduleV1"
 
     @State private var activeScheduledMatchID:
         UUID?
@@ -1581,10 +1587,12 @@ struct ContentView:
     @State private var history:
         [MatchRecord] = []
 
-    private let historyKey =
-        "FutsalMatchHistoryV1"
+    @State private var persistenceErrorMessage: String?
 
     @State private var latestRecord:
+        MatchRecord?
+
+    @State private var pendingFinishedMatchRecord:
         MatchRecord?
 
     @State private var showFinishConfirmation =
@@ -1783,13 +1791,18 @@ struct ContentView:
                 "La partita verrà salvata nello storico."
             )
         }
-        .onAppear {
-
-            loadRoster()
-
-            loadHistory()
-
-            loadSchedule()
+        .alert(
+            "Salvataggio non riuscito",
+            isPresented: Binding(
+                get: { persistenceErrorMessage != nil },
+                set: { if !$0 { persistenceErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                persistenceErrorMessage = nil
+            }
+        } message: {
+            Text(persistenceErrorMessage ?? "I dati non sono stati confermati come salvati.")
         }
         .onReceive(
             timer
@@ -1846,12 +1859,11 @@ struct ContentView:
                 onSave: {
                     updated in
 
-                    roster =
-                        updated
+                    guard persistData({
+                        try dataStore.replaceRoster(updated)
+                    }) else { return }
 
-                    saveRoster(
-                        updated
-                    )
+                    roster = updated
                 },
 
                 onBack: {
@@ -3883,15 +3895,14 @@ struct ContentView:
             [ScheduledMatch]
     ) {
 
-        scheduledMatches =
-            matches.sorted {
-                $0.date <
-                    $1.date
-            }
+        let updatedSchedule = matches.sorted {
+            $0.date < $1.date
+        }
+        guard persistData({
+            try dataStore.replaceSchedule(updatedSchedule)
+        }) else { return }
 
-        saveSchedule(
-            scheduledMatches
-        )
+        scheduledMatches = updatedSchedule
 
         if let selectedID =
             activeScheduledMatchID {
@@ -4769,93 +4780,55 @@ struct ContentView:
             return
         }
 
-        timing.synchronize()
-        syncPlayerTimesFromTiming()
-        timing.finish()
-        hasSavedCurrentMatch = true
-        associateNearestScheduledMatchIfNeeded()
+        let record: MatchRecord
+        if let pendingFinishedMatchRecord {
+            // Reuse the same stable record ID after a failed write so a retry
+            // cannot create a duplicate historical match.
+            record = pendingFinishedMatchRecord
+        } else {
+            timing.synchronize()
+            syncPlayerTimesFromTiming()
+            timing.finish()
+            associateNearestScheduledMatchIfNeeded()
 
-        pendingAssist =
-            nil
+            pendingAssist = nil
+            outgoingSubstitution = nil
+            incomingSubstitution = nil
 
-        outgoingSubstitution =
-            nil
-
-        incomingSubstitution =
-            nil
-
-        let summaries =
-            players.map {
-                player in
-
+            let summaries = players.map { player in
                 PlayerMatchSummary(
-                    player:
-                        player,
-
-                    goals:
-                        goals(
-                            for:
-                                player.id
-                        ),
-
-                    assists:
-                        assists(
-                            for:
-                                player.id
-                        )
+                    player: player,
+                    goals: goals(for: player.id),
+                    assists: assists(for: player.id)
                 )
             }
 
-        let recordDate =
-            activeScheduledMatch?
-                .date
-            ??
-            Date()
-
-        let record =
-            MatchRecord(
-                date:
-                    recordDate,
-
-                duration:
-                    totalMatchTime,
-
-                players:
-                    summaries,
-
-                ourScore:
-                    ourScore,
-
-                opponentScore:
-                    opponentScore,
-
-                events:
-                    matchEvents,
-
-                scheduledMatchID:
-                    activeScheduledMatchID,
-
-                opponentName:
-                    activeOpponentName,
-
-                isHome:
-                    activeIsHome
+            let createdRecord = MatchRecord(
+                date: activeScheduledMatch?.date ?? Date(),
+                duration: totalMatchTime,
+                players: summaries,
+                ourScore: ourScore,
+                opponentScore: opponentScore,
+                events: matchEvents,
+                scheduledMatchID: activeScheduledMatchID,
+                opponentName: activeOpponentName,
+                isHome: activeIsHome
             )
+            pendingFinishedMatchRecord = createdRecord
+            record = createdRecord
+        }
 
-        history.insert(
-            record,
-            at:
-                0
-        )
+        var updatedHistory = history.filter { $0.id != record.id }
+        updatedHistory.insert(record, at: 0)
+        guard persistData({
+            try dataStore.replaceHistory(updatedHistory)
+        }) else { return }
 
-        saveHistory(
-            history
-        )
-
-        latestRecord =
-            record
+        history = updatedHistory
+        pendingFinishedMatchRecord = nil
+        hasSavedCurrentMatch = true
+        latestRecord = record
     }
-
 
     private func startNewMatch() {
 
@@ -4884,6 +4857,7 @@ struct ContentView:
 
         timing.reset()
         hasSavedCurrentMatch = false
+        pendingFinishedMatchRecord = nil
 
         // Reset eventi
         matchEvents
@@ -4948,12 +4922,12 @@ struct ContentView:
             return
         }
 
-        history[index] =
-            updatedRecord
-
-        saveHistory(
-            history
-        )
+        var updatedHistory = history
+        updatedHistory[index] = updatedRecord
+        guard persistData({
+            try dataStore.replaceHistory(updatedHistory)
+        }) else { return }
+        history = updatedHistory
     }
 
 
@@ -4962,193 +4936,29 @@ struct ContentView:
             UUID
     ) {
 
-        history.removeAll {
-            $0.id ==
-                id
-        }
+        var updatedHistory = history
+        updatedHistory.removeAll { $0.id == id }
+        guard persistData({
+            try dataStore.replaceHistory(updatedHistory)
+        }) else { return }
+        history = updatedHistory
 
-        saveHistory(
-            history
-        )
-
-        screen =
-            .history
+        screen = .history
     }
 
 
     // MARK: - PERSISTENCE
 
-    private func saveRoster(
-        _ roster:
-            [RosterPlayer]
-    ) {
-
-        guard let data =
-            try?
-                JSONEncoder()
-                    .encode(
-                        roster
-                    )
-        else {
-
-            return
+    @discardableResult
+    private func persistData(_ operation: () throws -> Void) -> Bool {
+        do {
+            try operation()
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
         }
-
-        UserDefaults
-            .standard
-            .set(
-                data,
-                forKey:
-                    rosterKey
-            )
     }
-
-
-    private func loadRoster() {
-
-        guard
-            let data =
-                UserDefaults
-                    .standard
-                    .data(
-                        forKey:
-                            rosterKey
-                    ),
-
-            let decoded =
-                try?
-                    JSONDecoder()
-                        .decode(
-                            [RosterPlayer]
-                                .self,
-                            from:
-                                data
-                        )
-        else {
-
-            return
-        }
-
-        roster =
-            decoded
-    }
-
-
-    private func saveSchedule(
-        _ matches:
-            [ScheduledMatch]
-    ) {
-
-        guard let data =
-            try?
-                JSONEncoder()
-                    .encode(
-                        matches
-                    )
-        else {
-
-            return
-        }
-
-        UserDefaults
-            .standard
-            .set(
-                data,
-                forKey:
-                    scheduleKey
-            )
-    }
-
-
-    private func loadSchedule() {
-
-        guard
-            let data =
-                UserDefaults
-                    .standard
-                    .data(
-                        forKey:
-                            scheduleKey
-                    ),
-
-            let decoded =
-                try?
-                    JSONDecoder()
-                        .decode(
-                            [ScheduledMatch]
-                                .self,
-                            from:
-                                data
-                        )
-        else {
-
-            return
-        }
-
-        scheduledMatches =
-            decoded.sorted {
-
-                $0.date <
-                    $1.date
-            }
-    }
-
-
-    private func saveHistory(
-        _ records:
-            [MatchRecord]
-    ) {
-
-        guard let data =
-            try?
-                JSONEncoder()
-                    .encode(
-                        records
-                    )
-        else {
-
-            return
-        }
-
-        UserDefaults
-            .standard
-            .set(
-                data,
-                forKey:
-                    historyKey
-            )
-    }
-
-
-    private func loadHistory() {
-
-        guard
-            let data =
-                UserDefaults
-                    .standard
-                    .data(
-                        forKey:
-                            historyKey
-                    ),
-
-            let decoded =
-                try?
-                    JSONDecoder()
-                        .decode(
-                            [MatchRecord]
-                                .self,
-                            from:
-                                data
-                        )
-        else {
-
-            return
-        }
-
-        history =
-            decoded
-    }
-
 
     // MARK: - COMPUTED
 
@@ -10485,6 +10295,10 @@ struct MatchRecordContentView:
 // MARK: - PREVIEW
 
 #Preview {
-    ContentView()
+    let container = try! MatchDataStore.makeInMemoryContainer()
+    let store = MatchDataStore(container: container)
+    let data = MatchDataSnapshot(roster: [], schedule: [], history: [])
+    ContentView(dataStore: store, initialData: data)
+        .modelContainer(container)
 }
 
