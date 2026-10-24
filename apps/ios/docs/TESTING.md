@@ -1,162 +1,69 @@
-# Test e verifiche — MAPI GROUP Match Manager
+# Build, test e verifiche
 
-## Toolchain e target
+## Ambiente verificato in C3.1
 
-- Xcode 27.0 (27A266a), Swift 6.4.0.34.1; Swift language mode 5 (`SWIFT_VERSION = 5.0`).
-- Deployment target: iOS 27.0.
-- Scheme condiviso: `APP`; target app `APP`; target XCTest `APPTests`.
-- Dipendenze esterne rilevate: nessuna SPM/CocoaPods/Carthage.
+- Xcode 27.0 (`27A266a`).
+- Scheme: `APP`; target app `APP`; XCTest `APPTests`.
+- Destinazione test: iPhone 18 Pro Simulator, iOS 27.0, runtime build `24A434`.
+- I comandi Xcode/Simulator sono stati eseguiti fuori dalla sandbox del runner perché il sandbox impediva l'avvio dei plugin macro SwiftData e l'accesso a CoreSimulatorService. Non sono stati installati o modificati runtime/toolchain.
 
 ## Comandi
 
-Dalla root `AURINFORMATC/`:
-
-```sh
-xcodebuild -project app/APP.xcodeproj -scheme APP -list
-plutil -lint app/APP.xcodeproj/project.pbxproj
-xmllint --noout app/APP.xcodeproj/xcshareddata/xcschemes/APP.xcscheme
-```
-
-Build app e compilazione dei test senza eseguirli:
+Build app e target test senza esecuzione:
 
 ```sh
 xcodebuild -project app/APP.xcodeproj \
   -scheme APP \
-  -configuration Debug \
   -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath /private/tmp/AURINFORMATC-DerivedData \
-  CODE_SIGNING_ALLOWED=NO build-for-testing
+  -derivedDataPath /private/tmp/aurinformatc-c3-derived \
+  build-for-testing
 ```
 
-Per eseguire davvero i test occorre un runtime/device simulatore installato e compatibile; il device può essere in stato Shutdown perché Xcode lo avvia durante il test:
+Suite completa C1+C2+C3.1:
 
 ```sh
-xcrun simctl list devices available
 xcodebuild -project app/APP.xcodeproj \
   -scheme APP \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,name=<device disponibile>,OS=<runtime disponibile>' \
-  -derivedDataPath /private/tmp/AURINFORMATC-DerivedData \
-  -parallel-testing-enabled NO \
-  CODE_SIGNING_ALLOWED=NO test
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0' \
+  -derivedDataPath /private/tmp/aurinformatc-c3-derived \
+  -resultBundlePath /private/tmp/aurinformatc-c3-verified.xcresult \
+  test
 ```
 
-Sostituire entrambi i placeholder con una destinazione compatibile mostrata da `xcodebuild -showdestinations`; non indovinare nomi o versioni. Disabilitare il parallel testing mantiene il run su un solo device e riduce i cloni del simulatore. I test non devono essere dichiarati PASS se è stato eseguito solo `build-for-testing`.
+## Copertura XCTest
 
-## Suite corrente — C1
+- `DomainCharacterizationTests.swift` (C1, 16 test): forme Codable correnti/legacy e parser CSV. Fixture sintetiche in `Fixtures/DomainCharacterizationFixtures.swift`.
+- `MatchTimingTests.swift` (C2, 21 test): clock controllabile, lineup, tempi individuali, pause, timeout, intervallo, callback ritardati e limiti dei periodi.
+- `MatchDataPersistenceTests.swift` (C3.1, 16 test): store vuoto e receipt, import delle tre raccolte, preservazione di ID/ordine/campi opzionali, round-trip di partecipanti/eventi/assist, chiavi originali intatte, migrazione ripetuta, retry prima/dopo il receipt, conflitti/ID duplicati, JSON corrotto e valore di tipo errato, scrittura non consentita, store non apribile, CRUD, relazioni storiche, riapertura dello store persistente e assenza di perdita/duplicazioni.
 
-`app/APPTests/DomainCharacterizationTests.swift` contiene 16 XCTest che usano `@testable import APP` e le implementazioni effettive in `ContentView.swift`; i test non riscrivono il parser né il comportamento dei modelli.
+La suite usa store SwiftData in-memory e store persistenti temporanei isolati. Nessun payload personale è copiato o usato. Le fixture sono rappresentative della struttura legacy documentata, non dati reali estratti da un dispositivo.
 
-Copertura dei contratti Codable:
+## Risultati C3.1 — 24 ottobre 2026
 
-- `RosterPlayer`: default legacy senza `active`/`isGoalkeeper`; ID e ruolo espliciti; round-trip.
-- `ScheduledMatch`: formato corrente con tutti i campi; campi opzionali assenti; round-trip.
-- `MatchPlayer`: default legacy; ID, minuti, `inField`, `playWeight`, `superpower`, portiere; round-trip.
-- `MatchRecord` e `PlayerMatchSummary`: record legacy con `rosterPlayerID: null` e campi storici opzionali assenti; record corrente con partecipanti, score, goal/assist e snapshot calendario; round-trip.
-- `GoalEvent`: enum squadra e campi marcatore/assist mancanti; round-trip.
+- Build app + test via `xcodebuild build-for-testing`: **PASS**.
+- Suite C1+C2+C3.1 via `xcodebuild test`: **PASS — 53 test, 0 falliti, 0 skipped**.
+- Xcode result bundle: `Passed`; iPhone 18 Pro / iOS 27.0.
+- `git diff --check`: **PASS**.
+- Analisi visiva/manuale UI e prova di migrazione dati reali: **NOT RUN**.
+- Recovery della sessione live dopo terminazione/cold start: **NOT RUN / scope C3.2**; la sessione non è persistita in C3.1.
 
-Copertura CSV caratterizzata:
+## Verifiche distinte
 
-- Delimitatori virgola e punto e virgola; BOM; intestazioni/alias.
-- Campi quotati con delimitatori interni e virgolette doppie escaped; ordinamento date.
-- Normalizzazione LF, CRLF e CR; campi opzionali vuoti.
-- Righe vuote senza avversario e `RIPOSA`; date e valori casa/trasferta non validi.
-- Input vuoto, whitespace-only e intestazioni obbligatorie mancanti.
-- Comportamento corrente per virgolette non bilanciate e newline in campo quotato (limite noto, non corretto in C1).
-
-Le fixture sono in `app/APPTests/Fixtures/DomainCharacterizationFixtures.swift`. Sono **sintetiche e anonime**: i casi marcati “legacy shape” rappresentano solo la forma derivabile dai campi e dai default Codable documentati nel codice. Non sono dump del dispositivo né prova di compatibilità con payload reali. Valori legacy effettivi/UserDefaults del dispositivo: **non disponibili**. I test non scrivono/leggono le chiavi `FutsalRosterV1`, `FutsalScheduleV1` o `FutsalMatchHistoryV1`, e non sostituiscono una prova d'integrazione sulla persistenza.
-
-## Esito baseline A0 — 22 ottobre 2026
-
-| Controllo | Stato | Risultato effettivo |
+| Tipo | Stato | Evidenza/limite |
 |---|---|---|
-| Versione toolchain | PASS | `xcodebuild -version`: Xcode 27.0 (27A266a); `swift --version`: Swift 6.4.0.34.1. |
-| Enumerazione target/scheme | PASS | `xcodebuild -project app/APP.xcodeproj -scheme APP -list` elenca `APP`, `APPTests` e scheme `APP`. |
-| Lint progetto Xcode | PASS | `plutil -lint app/APP.xcodeproj/project.pbxproj`: `OK`. |
-| Lint scheme | PASS | `xmllint --noout app/APP.xcodeproj/xcshareddata/xcschemes/APP.xcscheme`: codice 0. |
-| Build app + compilazione target test | PASS | Build-for-testing in DerivedData temporaneo isolato termina con `TEST BUILD SUCCEEDED`; il log mostra la compilazione di `DomainCharacterizationTests.swift` per arm64 e x86_64. Test compilati, non lanciati. |
-| XCTest eseguiti | UNAVAILABLE / NOT RUN | `xcrun simctl list devices available` non riesce a collegarsi a CoreSimulatorService e non trova runtime. Nessun risultato di test è attribuito PASS. |
-| Avvio app / ispezione visiva | NOT RUN | Non è stato avviato un simulatore o device. |
-| Dati reali UserDefaults | UNAVAILABLE | Non accessibili dalla workspace; non letti o modificati. |
-| Validazione di background/lock/relaunch | NOT RUN | Nessun test su runtime/device in questa fase. |
-| Payload UserDefaults da dispositivo | NOT RUN | Solo fixture sintetiche compilate nella suite. |
+| Build app e target XCTest | PASS | `xcodebuild build-for-testing` su destinazione generica iOS Simulator. |
+| XCTest C1+C2+C3.1 | PASS | 53 pass, 0 fail, 0 skipped su iPhone 18 Pro Simulator iOS 27.0. |
+| Migrazione legacy con fixture | PASS | Fixture anonime sintetiche; store isolati. |
+| Retry dopo commit dati e prima del receipt | PASS | Simulazione deterministica: righe preesistenti identiche senza receipt, poi bootstrap. |
+| Retry dopo fallimento di scrittura | PASS | Store persistente aperto read-only, poi riaperto writable. |
+| Store SwiftData non apribile | PASS | File store sintetico non valido; apertura fallisce e il file resta invariato. |
+| Dati reali esistenti su dispositivo | NOT RUN | Non acquisiti, non presenti nel repository e non simulati. |
+| Avvio UI/manuale su dispositivo reale | NOT RUN | Test automatici non equivalgono a validazione visuale o operativa. |
+| Recovery live dopo cold start | NOT RUN | Da implementare e verificare in C3.2. |
 
-Durante la prima compilazione non elevata il plugin esterno della macro SwiftUI `State` ha restituito una risposta malformata e la build è fallita; senza modifiche al sorgente, la ripetizione autorizzata in ambiente elevato ha completato la build. Anche la build-for-testing in DerivedData temporaneo isolato è stata ripetuta in ambiente elevato e ha compilato entrambi i target, inclusi i cinque test. Questo indica un limite del contesto di esecuzione/sandbox nella prima prova, non un errore Swift riproducibile nel sorgente.
+## Limiti interpretativi
 
-La build riuscita emette il warning non bloccante AppIntents: estrazione metadata saltata perché il target non dipende da `AppIntents.framework`. Xcode ha inoltre segnalato l'indisponibilità di CoreSimulatorService durante i comandi di enumerazione; questo non ha impedito la compilazione generica, ma ha impedito di lanciare i test nel simulatore.
-
-## Esito C1 — 22 ottobre 2026
-
-| Controllo | Stato | Risultato effettivo |
-|---|---|---|
-| Xcode/Swift e runtime | PASS | Xcode 27.0 (27A266a), Swift 6.4.0.34.1; runtime iOS Simulator 26.5 e 27.0 presenti. `-showdestinations` ha elencato device iOS 27.0 compatibili. |
-| Accesso CoreSimulator nel sandbox | UNAVAILABLE nel sandbox / PASS fuori dal sandbox | I comandi sandboxed hanno riportato connessione CoreSimulator/XPC invalida e accesso negato ai log in `~/Library/Logs`. Le interrogazioni autorizzate fuori sandbox hanno raggiunto CoreSimulatorService e confermato runtime/device: era un limite della sessione di esecuzione, non l'assenza del runtime o una toolchain mancante. Nessuna configurazione host è stata modificata. |
-| Cinque XCTest originali eseguiti | FAIL iniziale, poi test expectation corretta | Eseguiti sul simulatore: 4 PASS, 1 FAIL perché il test cercava `riga 4` minuscolo mentre il parser restituisce `Riga 4`. Nessun errore produttivo dimostrato; l'asserzione è stata allineata al testo corrente. |
-| Prima esecuzione suite ampliata | FAIL di un'asserzione | 15 test PASS, 1 FAIL: il test classificava come vuoto un input whitespace-only; il parser attuale segnala invece intestazioni obbligatorie mancanti. Test aggiornato per caratterizzare separatamente stringa vuota e whitespace-only. |
-| Suite finale `APP` + `APPTests` | PASS | `xcodebuild ... test`, iPhone 18 Pro Simulator iOS 27.0 (24A434), `-parallel-testing-enabled NO`: result bundle `Passed`, **16 PASS, 0 FAIL, 0 SKIPPED**, 24.57 s. Il comando ha compilato entrambi i target ed eseguito realmente XCTest. |
-| Payload reali e integrazione UserDefaults | UNAVAILABLE / NOT RUN | Nessun dato del dispositivo è stato consultato o modificato. |
-| Timer, background, lock, riapertura, UI end-to-end | NOT RUN | C1 non caratterizza il timer né esegue prove manuali del flusso applicativo. |
-
-Il primo run originale impiegò 638.9 s totali perché, dopo il singolo fallimento, Xcode attese la diagnostica CoreSimulator per il timeout di 600 s; i casi XCTest erano comunque stati eseguiti. Nella prima sessione del runner è stato inoltre osservato il log SwiftUI `Invalid frame dimension (negative or non-finite)` durante l'avvio dell'app host dei test: non ha causato fallimenti ulteriori, non è stato riprodotto come anomalia UI manuale e resta **non classificato**, non un bug confermato. La suite finale non ha segnalato runtime warnings nel riepilogo xcresult.
-
-Comando finale eseguito (percorsi temporanei poi rimossi):
-
-```sh
-xcodebuild -quiet -project app/APP.xcodeproj \
-  -scheme APP \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,id=94F3DA93-9BEA-4674-AAE8-CE127F97EBF7' \
-  -derivedDataPath /private/tmp/AURINFORMATC-C1-20261022-DerivedData \
-  -resultBundlePath /private/tmp/AURINFORMATC-C1-final2-20261022.xcresult \
-  -parallel-testing-enabled NO \
-  CODE_SIGNING_ALLOWED=NO test
-```
-
-Per ripeterlo, scegliere un device/runtime presente in `xcrun simctl list devices available`; se CoreSimulator è negato dal sandbox agente, serve esecuzione autorizzata in una sessione che possa accedere al servizio. Una build generica o `build-for-testing` da sola non attribuisce PASS a XCTest.
-
-## Esito C2 — 22 ottobre 2026
-
-La suite `APP` + `APPTests` è stata eseguita realmente su iPhone 18 Pro Simulator, iOS 27.0 (24A434), con Xcode 27.0 (27A266a). Il comando finale ha compilato app e test ed eseguito XCTest: **37 PASS, 0 FAIL, 0 SKIPPED** (16 test C1 + 21 test C2; result bundle `Passed`). `xcresulttool get build-results` ha riportato `status=succeeded`, 0 errori, 0 warning e 0 analyzer warning; il riepilogo test non segnala runtime warning.
-
-Comando finale:
-
-```sh
-xcodebuild -quiet -project app/APP.xcodeproj \
-  -scheme APP \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,id=94F3DA93-9BEA-4674-AAE8-CE127F97EBF7' \
-  -derivedDataPath /private/tmp/AURINFORMATC-C2-DerivedData \
-  -resultBundlePath /private/tmp/AURINFORMATC-C2-final4.xcresult \
-  -parallel-testing-enabled NO \
-  CODE_SIGNING_ALLOWED=NO test
-```
-
-`xcresulttool get test-results summary` ha confermato 37 test totali, tutti passati. Un run preliminare C2 ha eseguito 36 PASS e 1 FAIL nell'aspettativa del test di sostituzioni: il test aveva calcolato minuti incompatibili con gli intervalli in campo effettivi; ricalcolate le aspettative sul comportamento del motore reale, il run finale è passato. Quel run ha inoltre atteso 600 secondi la raccolta diagnostica del simulatore dopo il fallimento; il run finale verde è terminato in circa 25 secondi.
-
-I 21 test in `app/APPTests/MatchTimingTests.swift` esercitano **l'implementazione reale** `MatchTiming` con clock controllabile, e coprono:
-
-- distinta e formazione iniziale, blocco del primo avvio e richiesta di Play esplicita;
-- zero iniziale per titolari/riserve, assenza di accredito retroattivo, ingresso/uscita e rientri;
-- pause/riprese, sincronizzazioni ripetute, clock arretrato e callback mancanti/ritardate;
-- intervallo, timeout da running e paused, ripresa autorizzata alla scadenza e residuo post-timeout;
-- attraversamento del limite di un periodo, fine secondo tempo, assenza di avvio implicito del periodo successivo e limite dei tempi individuali;
-- serializzazione Codable del contratto snapshot, senza anchor monotono di processo.
-
-È stato anche eseguito `swiftc -typecheck -module-cache-path /private/tmp/AURINFORMATC-C2-SwiftModuleCache app/APP/MatchTiming.swift`: **PASS**. La suite finale `xcodebuild test` ha compilato il target app e il target test, quindi la compilazione non è dedotta dal solo typecheck.
-
-| Verifica | Stato | Risultato / limite |
-|---|---|---|
-| Suite C1+C2 su simulatore | PASS | 37 XCTest; 0 fallimenti e 0 skipped; iPhone 18 Pro iOS 27.0. |
-| Build app e compilazione test | PASS | Incluse nel run `xcodebuild test` finale; result `Passed`. |
-| Typecheck isolato `MatchTiming.swift` | PASS | `swiftc -typecheck` completato con exit code 0. |
-| Prova OS manuale in background/ritorno foreground | NOT RUN | Non è stata aperta/interagita la UI del Simulator: il target Simulator non era esposto nell'inventario dell'interfaccia di controllo disponibile. I test con clock finto dimostrano il calcolo del tempo ma non la consegna reale degli eventi lifecycle all'app. |
-| Prova OS manuale con schermo bloccato | NOT RUN | Stesso limite di accesso alla UI; copertura deterministica del salto temporale presente, non equivale a una prova di lock iOS. |
-| Recupero dopo terminazione/cold start | NOT RUN — C3 | La sessione live resta in memoria e non è serializzata. Lo snapshot C2 è un contratto non collegato a storage; non viene dichiarata alcuna capacità di recovery. |
-| Dati reali del dispositivo/UserDefaults | UNAVAILABLE | Non consultati né modificati; i test di C1 usano fixture sintetiche. |
-| Ispezione visiva completa dell'app | NOT RUN | Nessun test UI end-to-end; non si dichiara una validazione visiva runtime. |
-
-La documentazione Apple descrive [`ContinuousClock`](https://developer.apple.com/documentation/swift/continuousclock) come clock che continua ad avanzare durante il sonno del sistema e specifica che i suoi istanti sono confrontabili solo localmente durante l’esecuzione del programma; [`ScenePhase.active`](https://developer.apple.com/documentation/swiftui/scenephase/active) identifica una scena in primo piano e interattiva. Ciò sostiene la scelta del clock e la sincronizzazione lifecycle, ma non sostituisce la prova manuale d’integrazione non eseguita.
-
-## Passaggio a C3
-
-Il successivo intervento è la persistenza locale e il recupero della sessione live, senza sostituire le chiavi UserDefaults V1 né introdurre backend o sincronizzazione. Prima di implementare storage definire policy cold-start per segmento attivo, timeout, intervallo, corruzione/versione e ripristino. Aggiungere test di snapshot/restore e guasto su copia sintetica; C2 non dimostra recupero dopo terminazione. Pianificare inoltre una prova UI manuale di background/ritorno e lock quando sarà disponibile un Simulator interattivo o un dispositivo di test. Le fixture restano sintetiche e prive di dati personali.
+- Un XCTest PASS con fixture sintetiche verifica il contratto campionato, non la compatibilità di ogni payload già installato.
+- Un build PASS non prova il comportamento visivo o l'apertura dello store di produzione su un dispositivo esistente.
+- Le chiavi UserDefaults conservate sono snapshot pre-migrazione e diventano stale dopo modifiche a SwiftData; non costituiscono rollback da sole.
+- Ogni evoluzione SwiftData deve aggiungere test della migrazione da schema persistente precedente e mantenere una strategia di backup/recupero.

@@ -1,9 +1,10 @@
 # Decisioni architetturali
 
-Decisioni attive per il consolidamento dell'app:
+| ADR | Stato | Decisione |
+|---|---|---|
+| [ADR-0001](ADR-0001-modular-monolith.md) | Accettato | Monolite modulare interno, senza layer o package cerimoniali. |
+| [ADR-0002](ADR-0002-preserve-json-contract.md) | Attivo per compatibilità; scelta storage superata | Conservare i payload/chiavi JSON V1 e gestire gli errori senza sovrascrivere. |
+| [ADR-0003](ADR-0003-match-timing.md) | Accettato | Motore temporale deterministico e formazione iniziale obbligatoria. |
+| [ADR-0004](ADR-0004-swiftdata-local-persistence.md) | Accettato | SwiftData locale per rosa, calendario e storico; import UserDefaults V1 verificato. |
 
-- [ADR-0001 — Monolite modulare nello stesso target Xcode](ADR-0001-modular-monolith.md)
-- [ADR-0002 — Preservare i contratti JSON locali](ADR-0002-preserve-json-contract.md)
-- [ADR-0003 — Tempo partita basato su riferimenti monotoni](ADR-0003-match-timing.md)
-
-Gli ADR registrano il perché; `../ARCHITECTURE.md` descrive i confini correnti/proposti e `../STATUS.md` lo stato di verifica. Una decisione superata va sostituita da un nuovo ADR, non riscritta come se fosse sempre stata diversa.
+Gli ADR sono decisioni documentali; lo stato implementato e le verifiche eseguite sono in `../STATUS.md` e `../TESTING.md`.

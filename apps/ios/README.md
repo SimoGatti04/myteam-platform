@@ -1,14 +1,14 @@
 # MAPI GROUP Match Manager — iOS
 
-App iOS locale per la gestione della squadra di calcio a 5 MAPI GROUP: rosa, calendario, partita live, eventi e storico. La UI è realizzata in SwiftUI. La presa in carico A0 ha consolidato la baseline e la documentazione senza modificare il comportamento o la grafica dell'app.
+App nativa iOS per gestire rosa, calendario, partita live, eventi e storico di calcio a 5. L'interfaccia è SwiftUI; i dati gestionali locali usano SwiftData. La sessione live non è ancora persistita (C3.2).
 
 ## Aprire e compilare
 
 1. Aprire `app/APP.xcodeproj` con Xcode.
-2. Selezionare lo scheme condiviso `APP` e un simulatore iOS installato.
+2. Selezionare lo scheme condiviso `APP` e un runtime iOS installato.
 3. Avviare con **Product → Run** (⌘R).
 
-Build da terminale (firma disabilitata, destinazione generica simulatore):
+Build senza firma per simulatore:
 
 ```sh
 xcodebuild -project app/APP.xcodeproj \
@@ -19,46 +19,29 @@ xcodebuild -project app/APP.xcodeproj \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-Il target `APPTests` contiene characterization test per i modelli Codable e il parser CSV, oltre ai test deterministici del motore temporale. Per compilare app e test senza eseguirli:
+La suite `APPTests` contiene test sui contratti Codable/CSV, sul motore temporale e sulla migrazione/persistenza SwiftData. Per i comandi e i limiti verificati, consultare [`docs/TESTING.md`](docs/TESTING.md).
 
-```sh
-xcodebuild -project app/APP.xcodeproj \
-  -scheme APP \
-  -configuration Debug \
-  -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath /private/tmp/AURINFORMATC-DerivedData \
-  CODE_SIGNING_ALLOWED=NO build-for-testing
-```
-
-Per eseguire i test serve un runtime/dispositivo simulatore iOS disponibile. Procedura e stato verificato: [`docs/TESTING.md`](docs/TESTING.md).
-
-## Struttura attuale
+## Struttura essenziale
 
 ```text
 AURINFORMATC/
 ├── AGENTS.md
 ├── .gitignore
-├── backups/                         # locale, esclusa da Git; preservata
 └── app/
-    ├── APP.xcodeproj/               # scheme APP condiviso, target APP e APPTests
+    ├── APP.xcodeproj/                  # scheme APP, target APP e APPTests
     ├── APP/
-    │   ├── MyApp.swift              # entry point SwiftUI
-    │   ├── ContentView.swift        # UI, modelli, logica, import e persistenza attuali
-    │   └── Assets.xcassets/
-    ├── APPTests/                    # test XCTest
+    │   ├── MyApp.swift                 # apertura container e bootstrap/migrazione
+    │   ├── ContentView.swift           # UI e flussi esistenti
+    │   ├── MatchTiming.swift           # motore temporale deterministico
+    │   ├── MatchDataPersistence.swift   # schema SwiftData V1 e adapter di persistenza
+    │   └── Assets.xcassets/            # asset MAPI GROUP invariati
+    ├── APPTests/                       # XCTest + fixture sintetiche anonime
     ├── calendario_mapi_2026_2027.csv
-    ├── grafica/                     # sorgenti e varianti grafiche
-    └── docs/                        # architettura, audit, stato, piano e test
+    └── docs/                           # architettura, stato, decisioni e piano
 ```
 
-`ContentView.swift` resta il monolite principale (la UI e molte logiche non temporali vi risiedono); C2 ha estratto soltanto `MatchTiming.swift`. Ulteriori separazioni saranno incrementali e basate su test. Vedi [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+## Dati
 
-## Tecnologia e dati
+Al primo avvio, il bootstrap importa `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1` in SwiftData. Mantiene i payload legacy e una ricevuta durevole; non continua a scrivere in UserDefaults. Se apertura, decode, verifica o salvataggio falliscono, l'app mostra un errore e non simula uno store vuoto. Le chiavi legacy sono una copia pre-migrazione, non un backup degli aggiornamenti successivi.
 
-- Xcode 27.0; toolchain Swift 6.4.0; modalità linguaggio Swift 5; deployment target iOS 27.0 (baseline 22 ottobre 2026).
-- Un target app iOS, un target XCTest introdotto in A0; nessuna dipendenza SPM/CocoaPods/Carthage rilevata.
-- Rosa, calendario e storico sono codificati JSON nei tre valori `UserDefaults.standard` con chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`.
-- La sessione live non è ancora persistita né recuperabile dopo cold start; `MatchTimingSnapshot` è solo un contratto preparatorio per C3.
-- Nessun backend o sincronizzazione cloud.
-
-La descrizione completa di comportamenti implementati e requisiti pianificati è in [`docs/FEATURES.md`](docs/FEATURES.md); lo stato delle verifiche è in [`docs/STATUS.md`](docs/STATUS.md).
+La partita live rimane volatile fino a C3.2. Non è presente backend, sincronizzazione o CloudKit.

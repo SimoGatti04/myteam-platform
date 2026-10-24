@@ -1,13 +1,13 @@
 # Registro funzionale — MAPI GROUP Match Manager
 
-Questo registro distingue requisiti confermati, comportamento implementato e idee non ancora sviluppate. L'implementazione non equivale a validazione su dispositivo: consultare `STATUS.md` e `TESTING.md`.
+Questo documento distingue funzionalità effettive, decisioni confermate e lavoro pianificato. Implementazione e test sintetici non equivalgono a validazione con dati reali del dispositivo: consultare `STATUS.md` e `TESTING.md`.
 
-## 1. Implementato nel codice attuale
+## Implementato nel codice attuale
 
 ### Welcome, Home e rosa
 - Welcome con sfondo/logo esistenti e pulsante **ENTRA**; Home con stato partita, calendario, anteprima formazione e accessi a Rosa, Calendario e Storico.
 - Gestione dei tesserati attivi e non attivi: aggiunta, modifica, attivazione/disattivazione ed eliminazione.
-- Modello `RosterPlayer` con ruolo Portiere; i payload legacy senza `active` o `isGoalkeeper` usano i default correnti.
+- Modello `RosterPlayer` con ruolo portiere; i payload precedenti privi di `active` o `isGoalkeeper` usano i default già previsti.
 
 ### Calendario e CSV
 - Visualizzazione, inserimento, modifica, eliminazione e associazione manuale delle partite programmate.
@@ -16,42 +16,31 @@ Questo registro distingue requisiti confermati, comportamento implementato e ide
 - Associazione automatica della partita non giocata più vicina entro sei ore, se non è già stata associata una partita.
 
 ### Preparazione e partita live
-- Selezione dei presenti tra i tesserati attivi e conferma della distinta.
-- Formazione iniziale obbligatoria di esattamente cinque titolari effettivamente in campo; il primo Play è bloccato finché distinta e formazione non sono confermate.
-- La conferma della distinta/formazione e l'ingresso nella schermata live non avviano il tempo. Il primo avvio richiede Play esplicito.
+- Selezione dei presenti e conferma della distinta; formazione iniziale obbligatoria di esattamente cinque titolari in campo prima del primo Play.
+- La conferma della distinta/formazione e l'ingresso nella schermata live non avviano il tempo. Il primo avvio richiede Play esplicito; la pausa e la successiva ripresa non richiedono nuovamente cinque giocatori.
 - Primo e secondo tempo da 20 minuti, intervallo da 5 minuti avviabile manualmente e secondo tempo che inizia in pausa. Il termine di un periodo non trasferisce automaticamente il tempo residuo al periodo successivo.
-- Pausa/ripresa basate sul tempo trascorso da un clock monotono, non sul conteggio dei tick UI. Il refresh periodico può essere ritardato; alla successiva sincronizzazione la durata viene ricalcolata rispetto all'anchor.
-- Timeout separato di 60 secondi, misurato dal clock monotono. Se richiesto mentre il gioco era attivo, la ripresa automatica avviene all’esatta scadenza; una sincronizzazione ritardata accredita il residuo successivo come tempo di gioco, senza superare il limite del periodo. Se richiesto mentre il gioco era in pausa, non riprende automaticamente. Il countdown di intervallo e il periodo successivo non vengono avviati implicitamente da un salto temporale.
-- Ogni titolare parte da zero al primo Play; le riserve partono da zero. Il tempo individuale aumenta solo mentre il giocatore è in campo e scorre il tempo di gioco. Ingressi, uscite, pause, timeout, intervallo e assenza di attribuzione retroattiva sono gestiti dal motore temporale.
-- Stato campo/panchina, Handicap con pesi 1, 0.75, 0.5, 0.25 e Superpower; cambio manuale, ingresso diretto quando vi sono meno di cinque giocatori in campo e possibilità di rimanere temporaneamente in inferiorità numerica.
-- Suggerimento di cambio a cinque giocatori in campo quando il divario supera 120 secondi; usa `timePlayed / max(playWeight, 0.25)` e non propone in uscita un giocatore con Superpower.
-- Gol della squadra con marcatore e assist facoltativo, gol avversario, score live derivato dagli eventi e annullamento dell'ultimo evento.
+- Pause, periodi, timeout di 60 secondi, cambi e tempi dei giocatori gestiti dal motore monotono `MatchTiming`; i tick periodici aggiornano la UI ma non sono fonte autorevole della durata.
+- Titolari da zero al primo Play; riserve da zero. Il tempo individuale aumenta solo mentre un giocatore è in campo e scorre il tempo di gara; nessuna attribuzione retroattiva.
+- Presenze in campo/panchina, cambi manuali, suggerimenti di rotazione, pesi Handicap e Superpower.
+- Gol, assist e altri eventi; punteggi, cronologia, modifica e cancellazione dei record storici.
 
-### Storico e persistenza
-- Fine partita: snapshot con data, durata, partecipanti, tempi, gol/assist, score, eventi gol e associazione al calendario se presente.
-- Elenco, dettaglio, modifica ed eliminazione delle partite storiche; correzione/ricalcolo di score e statistiche secondo i controlli esistenti.
-- I record storici conservano nome e ID opzionale del tesserato anche se poi viene rimosso dalla rosa.
-- JSON in `UserDefaults.standard` per rosa, calendario e storico con chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`.
-- `MatchTimingSnapshot` è un contratto Codable in memoria preparato per una futura persistenza della sessione; non è ancora collegato a un adapter o salvato.
+### Persistenza locale (C3.1)
+- SwiftData V1 è l'archivio operativo locale per rosa, calendario e storico.
+- Primo avvio: import idempotente dalle chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1`; preserva UUID, campi opzionali, ordine ove applicabile e snapshot storico di nomi/statistiche/eventi.
+- Le chiavi UserDefaults legacy non vengono cancellate o aggiornate dopo la migrazione; sono sorgente di recupero pre-migrazione, non un archivio operativo parallelo.
+- Lo storico rimane consultabile anche dopo la rimozione di un giocatore dalla rosa; cancellare una partita programmata non elimina lo storico.
+- Errori di apertura, decodifica, conflitto, verifica o salvataggio non sono presentati come uno store vuoto o come scritture riuscite.
 
-## 2. Requisiti confermati e non ancora implementati
+## Decisioni di prodotto confermate, non tutte implementate
 
-- La sessione live deve poter essere serializzata e recuperata dopo terminazione/cold start in C3, con una politica esplicita per i segmenti attivi, checkpoint wall-clock, timeout, formazione ed eventi. C2 non dimostra recupero dopo riapertura.
-- La futura piattaforma potrà supportare più squadre, società/account, ruoli, branding personalizzato, dati condivisi e provider esterni. Sono intenzioni di prodotto: backend, sincronizzazione, fonte di verità cloud e PWA restano non decisi e fuori dallo scope C2.
+- L'app privata di gestione rimane nativa iOS; deve funzionare offline.
+- Il backend futuro sarà autoritativo per i dati condivisi. La sincronizzazione e la gestione dei conflitti non sono state implementate.
+- Il prodotto evolverà verso uso generico per squadre/competizioni, con MAPI GROUP prima utilizzatrice. In C3.1 non sono stati aggiunti tenant, società, utenti o ruoli.
+- Branding dinamico, sito pubblico, area privata e PWA non sono parte di questo checkpoint.
 
-## 3. Requisiti pianificati non implementati
+## Ancora da implementare / verificare
 
-- Tre azioni dirette **PARTITA**, **ROSA**, **STORICO**, mantenendo i materiali grafici esistenti.
-- Inserimento rapido dell'avversario o selezione da calendario.
-- Schermata con campo 2–2–1, portiere e quattro giocatori di movimento, avatar, nome e minutaggio, con panchina compatta e controlli contestuali.
-- Cambio del portiere solo con un altro portiere ed esclusione del portiere dai suggerimenti dei giocatori di movimento.
-- Colore del timer in base alla media: verde almeno due minuti sotto, giallo entro ±2 minuti, rosso almeno due minuti sopra; confronti separati per portieri e giocatori di movimento, includendo la panchina.
-
-Il requisito storico dei titolari facoltativi è **superato**: il requisito corrente impone cinque titolari confermati prima del primo avvio.
-
-## 4. Limiti e interpretazione
-
-- Il modello possiede un attributo Portiere, ma le regole attuali di cambio e suggerimento non applicano il vincolo ruolo-portiere.
-- I minuti di `MatchTiming` sono autorevoli in nanosecondi durante il processo; le viste ricevono una proiezione in secondi. Non è ancora implementata la sincronizzazione persistita.
-- Il record storico conserva snapshot e goal events, non l'intera timeline di cambi, timeout e partecipazione.
-- Background e blocco schermo sono coperti da test deterministici con clock controllabile, ma la sospensione/riattivazione reale iOS deve essere collaudata separatamente. La terminazione del processo resta non recuperabile prima di C3.
+- **C3.2:** sessione live durevole in SwiftData, recovery dopo cold start, riconciliazione degli anchor temporali e stato di finalizzazione.
+- Backup/esportazione e rollback applicativo dopo che SwiftData abbia ricevuto modifiche successive alla migrazione.
+- Validazione dell'importazione su payload reali già presenti su un dispositivo; in C3.1 sono state usate solo fixture sintetiche.
+- Backend, autenticazione, sincronizzazione, CloudKit, multi-squadra e PWA.

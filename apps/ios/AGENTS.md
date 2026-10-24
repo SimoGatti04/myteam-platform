@@ -1,31 +1,20 @@
 # AURINFORMATC — Istruzioni per gli agenti
 
-Questa è la guida operativa specifica per l'app **MAPI GROUP Match Manager**. Le regole generali non sono ridefinite qui: la fonte autorevole è il repository fratello `../../development-environment/`.
+Le convenzioni generali e dell'ambiente sono mantenute nel repository fratello `../../development-environment/`. Per un'attività non banale leggere gli indici e le norme pertinenti prima di modificare file; non modificare quel repository per un incarico limitato ad AURINFORMATC.
 
-## Lettura iniziale
+## Contesto e lettura iniziale
 
-Per un'attività non banale consulta:
+- Architettura e decisioni: `docs/ARCHITECTURE.md`, `docs/decisions/`.
+- Stato e prossima attività: `docs/STATUS.md`, `docs/MIGRATION_PLAN.md`.
+- Funzionalità e verifiche: `docs/FEATURES.md`, `docs/TESTING.md`.
+- Progetto Xcode: `APP.xcodeproj`, scheme `APP`; target app `APP`, XCTest `APPTests`.
 
-1. `../../development-environment/AGENTS.md` e i documenti normativi applicabili in `docs/engineering/` e `docs/environment/`;
-2. `docs/ARCHITECTURE.md` e `docs/STATUS.md`;
-3. `docs/FEATURES.md` per lo stato funzionale e i requisiti ancora pianificati;
-4. gli ADR attivi in `docs/decisions/`;
-5. `docs/TESTING.md` per comandi e limiti di verifica.
+## Confini operativi
 
-Il workflow operativo corrente è descritto in `docs/WORKFLOW.md`.
-
-## Confini e manutenzione
-
-- Il progetto è attualmente un'app iOS SwiftUI locale. L'architettura corrente e i confini proposti sono descritti in `docs/ARCHITECTURE.md`; non assumere una migrazione web, un backend o un servizio cloud.
-- Modifica solo lo scope necessario. Mantieni l'interfaccia e gli asset esistenti quando la richiesta non richiede esplicitamente un cambiamento visivo.
-- La compatibilità con le chiavi e i payload JSON locali esistenti è un vincolo fino a una migrazione pianificata, testata e recuperabile; vedi ADR-0002.
-- Le vecchie istruzioni “niente Git”, “niente refactoring” e “niente database” non sono regole permanenti. Applica gli standard generali con proporzionalità e decisioni documentate.
-- Git è locale alla root `AURINFORMATC/`; non esiste un remote configurato. Non aggiungere remote, fare push o pubblicare senza esplicita richiesta.
-- A0 non ha modificato intenzionalmente il codice funzionale, l'interfaccia o gli asset. Il lavoro successivo deve comunque verificare il proprio diff e validare ogni cambiamento.
-
-## Xcode e test
-
-- Progetto: `APP.xcodeproj`; scheme condiviso: `APP`.
-- Target app: `APP`; target XCTest: `APPTests`.
-- Comandi riproducibili e limiti dell'ambiente: `docs/TESTING.md`.
-- Distinguere sempre build, compilazione dei test, esecuzione dei test e verifica visiva/funzionale.
+- L'app privata rimane nativa iOS, offline-capable. SwiftData è la fonte locale operativa di rosa, calendario e storico.
+- Le chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1` sono solo sorgenti legacy pre-migrazione: non cancellarle, non aggiornarle come archivio parallelo, non azzerare la ricevuta per reimportarle dopo modifiche operative.
+- Evoluzioni SwiftData: introdurre un nuovo `VersionedSchema` e migrazioni esplicite e testate; non modificare uno schema rilasciato in-place.
+- La sessione live non è persistita fino a C3.2. Non dichiarare il cold-start recovery e non cambiare la semantica di `MatchTiming` fuori scope.
+- Preservare UI, asset e palette quando non esplicitamente richiesto. Evitare backend, CloudKit, sync, autenticazione e PWA fuori da un incarico approvato.
+- Git è locale alla root `AURINFORMATC/`; non è configurato alcun remote. Non fare push né aggiungere remote senza richiesta esplicita.
+- Errori di apertura/lettura/salvataggio non devono essere convertiti in stato apparentemente vuoto o successo. Aggiornare lo stato e le verifiche solo dopo averle effettivamente eseguite.
