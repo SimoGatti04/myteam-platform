@@ -2,7 +2,13 @@ import SwiftUI
 import SwiftData
 
 private enum ApplicationLaunchState {
-    case ready(container: ModelContainer, store: MatchDataStore, data: MatchDataSnapshot)
+    case ready(
+        container: ModelContainer,
+        store: MatchDataStore,
+        data: MatchDataSnapshot,
+        liveSessionStore: LiveMatchSessionStore,
+        liveStartup: LiveMatchSessionStartup
+    )
     case persistenceUnavailable(message: String)
 }
 
@@ -14,8 +20,40 @@ struct MyApp: App {
         do {
             let container = try MatchDataStore.makePersistentContainer()
             let store = MatchDataStore(container: container)
-            let data = try store.bootstrap()
-            launchState = .ready(container: container, store: store, data: data)
+            var data = try store.bootstrap()
+            let liveSessionStore = try LiveMatchSessionStore.applicationSupportStore()
+            var liveStartup = LiveMatchSessionStartupFactory.make(
+                from: liveSessionStore.load(),
+                now: SystemLiveMatchRecoveryClock().reading()
+            )
+
+            if case let .finalizationPending(snapshot, restoreBackupFirst, _) = liveStartup {
+                do {
+                    let pendingSnapshot = restoreBackupFirst
+                        ? try liveSessionStore.restoreBackup()
+                        : snapshot
+                    try LiveMatchFinalizationCoordinator(
+                        sessionRepository: liveSessionStore,
+                        dataStore: store
+                    ).finalize(pendingSnapshot)
+                    data = try store.loadSnapshot()
+                    liveStartup = .none
+                } catch {
+                    liveStartup = .finalizationPending(
+                        snapshot: snapshot,
+                        restoreBackupFirst: restoreBackupFirst,
+                        reason: error.localizedDescription
+                    )
+                }
+            }
+
+            launchState = .ready(
+                container: container,
+                store: store,
+                data: data,
+                liveSessionStore: liveSessionStore,
+                liveStartup: liveStartup
+            )
         } catch {
             launchState = .persistenceUnavailable(message: error.localizedDescription)
         }
@@ -24,9 +62,14 @@ struct MyApp: App {
     var body: some Scene {
         WindowGroup {
             switch launchState {
-            case let .ready(container, store, data):
-                ContentView(dataStore: store, initialData: data)
-                    .modelContainer(container)
+            case let .ready(container, store, data, liveSessionStore, liveStartup):
+                ContentView(
+                    dataStore: store,
+                    initialData: data,
+                    liveSessionStore: liveSessionStore,
+                    initialLiveStartup: liveStartup
+                )
+                .modelContainer(container)
             case let .persistenceUnavailable(message):
                 PersistenceUnavailableView(message: message)
             }

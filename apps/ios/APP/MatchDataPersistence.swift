@@ -324,6 +324,8 @@ enum MatchDataPersistenceError: LocalizedError {
     case duplicateIdentifier(collection: String, id: UUID)
     case migrationConflict(collection: String, id: UUID)
     case migrationReadbackFailed(collection: String, id: UUID)
+    case historyRecordConflict(id: UUID)
+    case historyRecordReadbackFailed(id: UUID)
     case invalidStoredGoalTeam(id: UUID, value: String)
 
     var errorDescription: String? {
@@ -338,6 +340,10 @@ enum MatchDataPersistenceError: LocalizedError {
             return "È già presente nello store un elemento '\(collection)' con identificativo \(id) ma contenuto diverso. La migrazione non ha sovrascritto i dati."
         case let .migrationReadbackFailed(collection, id):
             return "La verifica di rilettura non ha trovato un elemento '\(collection)' atteso (\(id)). La migrazione non è stata marcata come completata."
+        case let .historyRecordConflict(id):
+            return "Esiste già un record storico diverso con l'identificativo di finalizzazione \(id). Il record esistente non è stato modificato."
+        case let .historyRecordReadbackFailed(id):
+            return "Il record storico \(id) non è stato confermato dopo la scrittura. La sessione live è stata conservata per un nuovo tentativo."
         case let .invalidStoredGoalTeam(id, value):
             return "L'evento \(id) contiene un tipo squadra non riconosciuto ('\(value)')."
         }
@@ -478,6 +484,39 @@ final class MatchDataStore {
             context.rollback()
             throw error
         }
+    }
+
+    /// Idempotent insert used by live-session finalization. A stable session UUID is
+    /// also the history record UUID; retries accept only byte-for-byte equivalent domain
+    /// content and never overwrite a different historical record.
+    @discardableResult
+    func insertHistoryRecordIfAbsent(_ record: MatchRecord) throws -> Bool {
+        try validateHistoryIdentifiers([record])
+        let context = makeContext()
+        do {
+            let current = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+            if let existing = current.first(where: { $0.id == record.id }) {
+                guard recordsAreEquivalent(try existing.domainValue(), record) else {
+                    throw MatchDataPersistenceError.historyRecordConflict(id: record.id)
+                }
+                return false
+            }
+
+            for existing in current {
+                existing.position += 1
+            }
+            context.insert(StoredMatchRecord(record, position: 0))
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+
+        let readback = try readSnapshot(using: makeContext()).history.first { $0.id == record.id }
+        guard let readback, recordsAreEquivalent(readback, record) else {
+            throw MatchDataPersistenceError.historyRecordReadbackFailed(id: record.id)
+        }
+        return true
     }
 
     private func migrateLegacyDataIfNeeded() throws {

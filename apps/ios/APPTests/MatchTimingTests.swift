@@ -410,6 +410,171 @@ final class MatchTimingTests: XCTestCase {
         XCTAssertEqual(decoded.capturedAt, capturedAt)
     }
 
+    func testRestoreRunningSnapshotAccruesRecoveryGapAndReanchorsNewProcessClock() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 4)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        let restoredClock = ControllableMatchTimingClock()
+        var restored = try MatchTiming.restoring(
+            from: snapshot,
+            clock: restoredClock,
+            recoveredElapsedNanoseconds: 12 * nanosecondsPerSecond
+        )
+
+        XCTAssertEqual(restored.activity, .playing)
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 16)
+        }
+        for id in fixture.bench {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 0)
+        }
+
+        restoredClock.advance(seconds: 3)
+        restored.synchronize()
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 19)
+        }
+    }
+
+    func testRestorePausedSnapshotDoesNotAccrueRecoveryGap() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 8)
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        let restoredClock = ControllableMatchTimingClock()
+        var restored = try MatchTiming.restoring(
+            from: snapshot,
+            clock: restoredClock,
+            recoveredElapsedNanoseconds: 90 * nanosecondsPerSecond
+        )
+        restoredClock.advance(seconds: 10)
+        restored.synchronize()
+
+        XCTAssertEqual(restored.activity, .stopped)
+        XCTAssertEqual(restored.totalMatchElapsedSeconds, 8)
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 8)
+        }
+    }
+
+    func testRestoreRunningSnapshotStopsAtFirstPeriodBoundaryWithoutStartingHalftime() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 19 * 60 + 50)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        var restored = try MatchTiming.restoring(
+            from: snapshot,
+            clock: ControllableMatchTimingClock(),
+            recoveredElapsedNanoseconds: 30 * nanosecondsPerSecond
+        )
+
+        XCTAssertEqual(restored.phase, .halftime)
+        XCTAssertEqual(restored.activity, .stopped)
+        XCTAssertEqual(restored.firstHalfElapsedSeconds, 20 * 60)
+        XCTAssertEqual(restored.secondHalfElapsedSeconds, 0)
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 20 * 60)
+        }
+    }
+
+    func testRestoreHalftimeCountdownCompletesIntoPausedSecondHalfOnly() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 20 * 60)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.phase, .halftime)
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .halftimeStarted)
+        fixture.clock.advance(seconds: 30)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        var restored = try MatchTiming.restoring(
+            from: snapshot,
+            clock: ControllableMatchTimingClock(),
+            recoveredElapsedNanoseconds: 10 * 60 * nanosecondsPerSecond
+        )
+
+        XCTAssertEqual(restored.phase, .secondHalf)
+        XCTAssertEqual(restored.activity, .stopped)
+        XCTAssertEqual(restored.firstHalfElapsedSeconds, 20 * 60)
+        XCTAssertEqual(restored.secondHalfElapsedSeconds, 0)
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 20 * 60)
+        }
+    }
+
+    func testRestoreTimeoutAppliesExpiryAndOnlyThenAuthorizedResumption() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 2)
+        XCTAssertTrue(fixture.timing.startTimeout(for: .ours))
+        fixture.clock.advance(seconds: 20)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        let restored = try MatchTiming.restoring(
+            from: snapshot,
+            clock: ControllableMatchTimingClock(),
+            recoveredElapsedNanoseconds: 70 * nanosecondsPerSecond
+        )
+
+        XCTAssertEqual(restored.activity, .playing)
+        XCTAssertEqual(restored.timeoutRemainingSeconds, 0)
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 32)
+        }
+    }
+
+    func testRestoreRejectsDuplicateParticipantsAndUnsupportedSnapshotVersion() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        let duplicate = MatchTimingSnapshot(
+            schemaVersion: snapshot.schemaVersion,
+            configuration: snapshot.configuration,
+            phase: snapshot.phase,
+            activity: snapshot.activity,
+            hasStarted: snapshot.hasStarted,
+            attendanceConfirmed: snapshot.attendanceConfirmed,
+            lineupConfirmed: snapshot.lineupConfirmed,
+            firstHalfElapsedNanoseconds: snapshot.firstHalfElapsedNanoseconds,
+            secondHalfElapsedNanoseconds: snapshot.secondHalfElapsedNanoseconds,
+            halftimeElapsedNanoseconds: snapshot.halftimeElapsedNanoseconds,
+            timeoutRemainingNanoseconds: snapshot.timeoutRemainingNanoseconds,
+            timeoutOwner: snapshot.timeoutOwner,
+            resumeAfterTimeout: snapshot.resumeAfterTimeout,
+            ourTimeoutsUsed: snapshot.ourTimeoutsUsed,
+            opponentTimeoutsUsed: snapshot.opponentTimeoutsUsed,
+            participants: [snapshot.participants[0], snapshot.participants[0]],
+            capturedAt: snapshot.capturedAt
+        )
+        XCTAssertThrowsError(try MatchTiming.restoring(from: duplicate, clock: ControllableMatchTimingClock()))
+
+        let unsupported = MatchTimingSnapshot(
+            schemaVersion: MatchTimingSnapshot.currentSchemaVersion + 1,
+            configuration: snapshot.configuration,
+            phase: snapshot.phase,
+            activity: snapshot.activity,
+            hasStarted: snapshot.hasStarted,
+            attendanceConfirmed: snapshot.attendanceConfirmed,
+            lineupConfirmed: snapshot.lineupConfirmed,
+            firstHalfElapsedNanoseconds: snapshot.firstHalfElapsedNanoseconds,
+            secondHalfElapsedNanoseconds: snapshot.secondHalfElapsedNanoseconds,
+            halftimeElapsedNanoseconds: snapshot.halftimeElapsedNanoseconds,
+            timeoutRemainingNanoseconds: snapshot.timeoutRemainingNanoseconds,
+            timeoutOwner: snapshot.timeoutOwner,
+            resumeAfterTimeout: snapshot.resumeAfterTimeout,
+            ourTimeoutsUsed: snapshot.ourTimeoutsUsed,
+            opponentTimeoutsUsed: snapshot.opponentTimeoutsUsed,
+            participants: snapshot.participants,
+            capturedAt: snapshot.capturedAt
+        )
+        XCTAssertThrowsError(try MatchTiming.restoring(from: unsupported, clock: ControllableMatchTimingClock()))
+    }
+
     private func makeMatch(presentCount: Int = 7) -> (
         clock: ControllableMatchTimingClock,
         timing: MatchTiming,

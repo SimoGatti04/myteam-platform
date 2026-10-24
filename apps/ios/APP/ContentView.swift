@@ -1442,12 +1442,63 @@ struct ContentView:
     private var scenePhase
 
     let dataStore: MatchDataStore
+    let liveSessionStore: LiveMatchSessionStore
+    private let liveRecoveryClock: any LiveMatchRecoveryClock
 
-    init(dataStore: MatchDataStore, initialData: MatchDataSnapshot) {
+    init(
+        dataStore: MatchDataStore,
+        initialData: MatchDataSnapshot,
+        liveSessionStore: LiveMatchSessionStore,
+        initialLiveStartup: LiveMatchSessionStartup
+    ) {
         self.dataStore = dataStore
+        self.liveSessionStore = liveSessionStore
+        let recoveryClock = SystemLiveMatchRecoveryClock()
+        self.liveRecoveryClock = recoveryClock
         _roster = State(initialValue: initialData.roster)
         _scheduledMatches = State(initialValue: initialData.schedule)
         _history = State(initialValue: initialData.history)
+
+        var startup = initialLiveStartup
+        if case let .resume(snapshot, elapsedNanoseconds, clockAdjustmentDetected) = initialLiveStartup {
+            do {
+                let restored = try LiveMatchSessionRestorer.restore(
+                    snapshot: snapshot,
+                    elapsedNanoseconds: elapsedNanoseconds,
+                    recoveryClock: recoveryClock
+                )
+                _liveSessionStartup = State(initialValue: .none)
+                _timing = State(initialValue: restored.timing)
+                _screen = State(initialValue: .live)
+                _players = State(initialValue: restored.players)
+                _matchEvents = State(initialValue: restored.snapshot.events)
+                _selectedPresentIDs = State(initialValue: Set(restored.snapshot.players.map(\.rosterPlayerID)))
+                _selectedStarterIDs = State(initialValue: Set(restored.snapshot.startingPlayerIDs))
+                _startingPlayerIDs = State(initialValue: restored.snapshot.startingPlayerIDs)
+                _activeScheduledMatchID = State(initialValue: restored.snapshot.scheduledMatchID)
+                _activeOpponentName = State(initialValue: restored.snapshot.opponentName)
+                _activeIsHome = State(initialValue: restored.snapshot.isHome)
+                _liveScheduledMatchDate = State(initialValue: restored.snapshot.scheduledMatchDate)
+                _liveSessionID = State(initialValue: restored.snapshot.sessionID)
+                _hasActiveMatch = State(initialValue: true)
+                _shouldPersistRestoredSession = State(initialValue: true)
+                if let pending = restored.snapshot.pendingAssist {
+                    _pendingAssist = State(initialValue: PendingAssist(
+                        goalEventID: pending.goalEventID,
+                        scorerID: pending.scorerID,
+                        scorerName: pending.scorerName
+                    ))
+                }
+                if clockAdjustmentDetected {
+                    _liveRestoreNotice = State(initialValue: "È stata rilevata una variazione dell'orologio di sistema. Per il recupero è stata usata la sorgente monotona del dispositivo.")
+                }
+            } catch {
+                startup = .unavailable(message: error.localizedDescription)
+                _liveSessionStartup = State(initialValue: startup)
+            }
+        } else {
+            _liveSessionStartup = State(initialValue: startup)
+        }
     }
 
     private var halfDuration: Int {
@@ -1501,6 +1552,17 @@ struct ContentView:
     @State private var activeIsHome:
         Bool?
 
+    @State private var liveScheduledMatchDate: Date?
+
+    @State private var liveSessionID: UUID?
+
+    @State private var startingPlayerIDs: [UUID] = []
+
+    @State private var shouldPersistRestoredSession = false
+
+    @State private var liveRestoreNotice: String?
+
+    @State private var liveSessionStartup: LiveMatchSessionStartup = .none
 
     @State private var selectedPresentIDs:
         Set<UUID> = []
@@ -1638,20 +1700,19 @@ struct ContentView:
                 onAssist: {
                     player in
 
-                    addAssist(
+                    _ = addAssist(
                         player,
                         toGoalEventID:
                             request.goalEventID
                     )
-
-                    pendingAssist =
-                        nil
                 },
 
                 onNoAssist: {
-
-                    pendingAssist =
-                        nil
+                    let previousPendingAssist = pendingAssist
+                    pendingAssist = nil
+                    if !persistLiveSession() {
+                        pendingAssist = previousPendingAssist
+                    }
                 }
             )
         }
@@ -1804,11 +1865,36 @@ struct ContentView:
         } message: {
             Text(persistenceErrorMessage ?? "I dati non sono stati confermati come salvati.")
         }
+        .alert(
+            "Partita recuperata",
+            isPresented: Binding(
+                get: { liveRestoreNotice != nil },
+                set: { if !$0 { liveRestoreNotice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { liveRestoreNotice = nil }
+        } message: {
+            Text(liveRestoreNotice ?? "La partita è stata ripristinata.")
+        }
         .onReceive(
             timer
         ) { _ in
 
             handleTimerTick()
+        }
+        .onAppear {
+            if shouldPersistRestoredSession {
+                guard persistLiveSession() else {
+                    liveSessionStartup = .unavailable(
+                        message: persistenceErrorMessage ?? "Il ripristino non è stato salvato; la sessione originale è stata conservata."
+                    )
+                    return
+                }
+                shouldPersistRestoredSession = false
+                if timing.phase == .finished {
+                    finishMatch()
+                }
+            }
         }
         .onChange(
             of: scenePhase
@@ -1816,6 +1902,9 @@ struct ContentView:
 
             if newPhase == .active {
                 handleTimerTick()
+            } else if newPhase == .inactive || newPhase == .background {
+                synchronizeMatchTiming()
+                _ = persistLiveSession()
             }
         }
     }
@@ -1827,7 +1916,38 @@ struct ContentView:
     private var screenContent:
         some View {
 
-        switch screen {
+        switch liveSessionStartup {
+        case let .review(snapshot, suggestedElapsedNanoseconds, maximumElapsedNanoseconds, reason, restoreBackupFirst):
+            LiveMatchRecoveryReviewView(
+                snapshot: snapshot,
+                suggestedElapsedNanoseconds: suggestedElapsedNanoseconds,
+                maximumElapsedNanoseconds: maximumElapsedNanoseconds,
+                reason: reason,
+                restoreBackupFirst: restoreBackupFirst,
+                onRecover: { elapsedNanoseconds in
+                    recoverLiveSession(
+                        snapshot: snapshot,
+                        elapsedNanoseconds: elapsedNanoseconds,
+                        restoreBackupFirst: restoreBackupFirst
+                    )
+                }
+            )
+
+        case let .finalizationPending(snapshot, _, reason):
+            LiveMatchFinalizationRecoveryView(
+                opponentName: snapshot.opponentName,
+                reason: reason,
+                onRetry: retryFinalization
+            )
+
+        case let .unavailable(message):
+            LiveMatchSessionUnavailableView(
+                message: message,
+                onRetry: retryLiveSessionLoad
+            )
+
+        case .none, .resume:
+            switch screen {
 
         case .welcome:
 
@@ -2092,6 +2212,7 @@ struct ContentView:
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -3819,7 +3940,7 @@ struct ContentView:
     }
 
 
-    private func associateNearestScheduledMatchIfNeeded() {
+    private func associateNearestScheduledMatchIfNeeded(persistChanges: Bool = true) {
 
         guard
             activeScheduledMatchID ==
@@ -3842,40 +3963,46 @@ struct ContentView:
             return
         }
 
-        associateScheduledMatch(
-            match
-        )
+        associateScheduledMatch(match, persistChanges: persistChanges)
     }
 
 
     private func associateScheduledMatch(
-        _ match:
-            ScheduledMatch
+        _ match: ScheduledMatch,
+        persistChanges: Bool = true
     ) {
-
-        activeScheduledMatchID =
-            match.id
-
-        activeOpponentName =
-            match.opponentName
-
-        activeIsHome =
-            match.isHome
+        let previousID = activeScheduledMatchID
+        let previousOpponent = activeOpponentName
+        let previousHome = activeIsHome
+        let previousDate = liveScheduledMatchDate
+        activeScheduledMatchID = match.id
+        activeOpponentName = match.opponentName
+        activeIsHome = match.isHome
+        liveScheduledMatchDate = match.date
+        if persistChanges, hasActiveMatch, liveSessionActionsEnabled, !persistLiveSession() {
+            activeScheduledMatchID = previousID
+            activeOpponentName = previousOpponent
+            activeIsHome = previousHome
+            liveScheduledMatchDate = previousDate
+        }
     }
-
 
     private func clearScheduledMatchAssociation() {
-
-        activeScheduledMatchID =
-            nil
-
-        activeOpponentName =
-            nil
-
-        activeIsHome =
-            nil
+        let previousID = activeScheduledMatchID
+        let previousOpponent = activeOpponentName
+        let previousHome = activeIsHome
+        let previousDate = liveScheduledMatchDate
+        activeScheduledMatchID = nil
+        activeOpponentName = nil
+        activeIsHome = nil
+        liveScheduledMatchDate = nil
+        if hasActiveMatch, liveSessionActionsEnabled, !persistLiveSession() {
+            activeScheduledMatchID = previousID
+            activeOpponentName = previousOpponent
+            activeIsHome = previousHome
+            liveScheduledMatchDate = previousDate
+        }
     }
-
 
     private func openCalendar(
         returnTo:
@@ -3932,6 +4059,192 @@ struct ContentView:
     }
 
 
+    // MARK: - LIVE SESSION RECOVERY AND PERSISTENCE
+
+    private func retryLiveSessionLoad() {
+        let startup = LiveMatchSessionStartupFactory.make(
+            from: liveSessionStore.load(),
+            now: liveRecoveryClock.reading()
+        )
+        switch startup {
+        case .none:
+            liveSessionStartup = .none
+        case let .resume(snapshot, elapsedNanoseconds, _):
+            recoverLiveSession(
+                snapshot: snapshot,
+                elapsedNanoseconds: elapsedNanoseconds,
+                restoreBackupFirst: false
+            )
+        case let .review(snapshot, suggested, maximum, reason, restoreBackupFirst):
+            liveSessionStartup = .review(
+                snapshot: snapshot,
+                suggestedElapsedNanoseconds: suggested,
+                maximumElapsedNanoseconds: maximum,
+                reason: reason,
+                restoreBackupFirst: restoreBackupFirst
+            )
+        case let .finalizationPending(snapshot, restoreBackupFirst, reason):
+            liveSessionStartup = .finalizationPending(
+                snapshot: snapshot,
+                restoreBackupFirst: restoreBackupFirst,
+                reason: reason
+            )
+        case let .unavailable(message):
+            liveSessionStartup = .unavailable(message: message)
+        }
+    }
+
+    private func recoverLiveSession(
+        snapshot originalSnapshot: LiveMatchSessionSnapshot,
+        elapsedNanoseconds: Int64,
+        restoreBackupFirst: Bool
+    ) {
+        do {
+            let snapshot = restoreBackupFirst
+                ? try liveSessionStore.restoreBackup()
+                : originalSnapshot
+            let restored = try LiveMatchSessionRestorer.restore(
+                snapshot: snapshot,
+                elapsedNanoseconds: elapsedNanoseconds,
+                recoveryClock: liveRecoveryClock
+            )
+            try liveSessionStore.save(restored.snapshot)
+
+            timing = restored.timing
+            players = restored.players
+            matchEvents = restored.snapshot.events
+            if let pending = restored.snapshot.pendingAssist {
+                pendingAssist = PendingAssist(
+                    goalEventID: pending.goalEventID,
+                    scorerID: pending.scorerID,
+                    scorerName: pending.scorerName
+                )
+            } else {
+                pendingAssist = nil
+            }
+            selectedPresentIDs = Set(restored.snapshot.players.map(\.rosterPlayerID))
+            selectedStarterIDs = Set(restored.snapshot.startingPlayerIDs)
+            startingPlayerIDs = restored.snapshot.startingPlayerIDs
+            activeScheduledMatchID = restored.snapshot.scheduledMatchID
+            activeOpponentName = restored.snapshot.opponentName
+            activeIsHome = restored.snapshot.isHome
+            liveScheduledMatchDate = restored.snapshot.scheduledMatchDate
+            liveSessionID = restored.snapshot.sessionID
+            hasActiveMatch = true
+            hasSavedCurrentMatch = false
+            shouldPersistRestoredSession = false
+            liveSessionStartup = .none
+            screen = .live
+            persistenceErrorMessage = nil
+            syncPlayerTimesFromTiming()
+            if timing.phase == .finished {
+                finishMatch()
+            }
+        } catch {
+            liveSessionStartup = .unavailable(message: error.localizedDescription)
+        }
+    }
+
+    private func retryFinalization() {
+        guard case let .finalizationPending(snapshot, restoreBackupFirst, _) = liveSessionStartup else {
+            return
+        }
+        do {
+            let candidate = restoreBackupFirst
+                ? try liveSessionStore.restoreBackup()
+                : snapshot
+            try completeFinalization(candidate)
+        } catch {
+            liveSessionStartup = .finalizationPending(
+                snapshot: snapshot,
+                restoreBackupFirst: restoreBackupFirst,
+                reason: error.localizedDescription
+            )
+        }
+    }
+
+    private func completeFinalization(_ snapshot: LiveMatchSessionSnapshot) throws {
+        try LiveMatchFinalizationCoordinator(
+            sessionRepository: liveSessionStore,
+            dataStore: dataStore
+        ).finalize(snapshot)
+        if let record = snapshot.finalRecord {
+            var updatedHistory = history.filter { $0.id != record.id }
+            updatedHistory.insert(record, at: 0)
+            history = updatedHistory
+            latestRecord = record
+        }
+        pendingFinishedMatchRecord = nil
+        hasSavedCurrentMatch = true
+        liveSessionStartup = .none
+        persistenceErrorMessage = nil
+    }
+
+    private func makeLiveSessionSnapshot(
+        status: LiveMatchSessionStatus = .active,
+        finalRecord: MatchRecord? = nil
+    ) throws -> LiveMatchSessionSnapshot {
+        guard hasActiveMatch,
+              timing.lineupConfirmed,
+              let liveSessionID,
+              !players.isEmpty,
+              startingPlayerIDs.count == FutsalMatchRules.timing.requiredStartingPlayers else {
+            throw LiveMatchSessionValidationError.invalid("la sessione live non è pronta per il salvataggio")
+        }
+
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        let timingSnapshot = timing.snapshot(capturedAt: Date())
+        let continuousTime = liveRecoveryClock.reading().continuousTimeNanoseconds
+        let snapshot = LiveMatchSessionSnapshot(
+            schemaVersion: LiveMatchSessionSnapshot.currentSchemaVersion,
+            sessionID: liveSessionID,
+            status: status,
+            timing: timingSnapshot,
+            startingPlayerIDs: startingPlayerIDs,
+            players: players.map {
+                LiveMatchPlayerSnapshot(
+                    rosterPlayerID: $0.rosterPlayerID,
+                    name: $0.name,
+                    isGoalkeeper: $0.isGoalkeeper,
+                    playWeight: $0.playWeight,
+                    superpower: $0.superpower
+                )
+            },
+            events: matchEvents,
+            pendingAssist: pendingAssist.map {
+                LiveMatchPendingAssistSnapshot(
+                    goalEventID: $0.goalEventID,
+                    scorerID: $0.scorerID,
+                    scorerName: $0.scorerName
+                )
+            },
+            scheduledMatchID: activeScheduledMatchID,
+            scheduledMatchDate: activeScheduledMatch?.date ?? liveScheduledMatchDate,
+            opponentName: activeOpponentName,
+            isHome: activeIsHome,
+            continuousTimeNanoseconds: continuousTime,
+            finalRecord: finalRecord
+        )
+        try snapshot.validate()
+        return snapshot
+    }
+
+    @discardableResult
+    private func persistLiveSession() -> Bool {
+        guard hasActiveMatch, !hasSavedCurrentMatch else { return true }
+        if case .finalizationPending = liveSessionStartup { return false }
+        do {
+            let snapshot = try makeLiveSessionSnapshot()
+            try liveSessionStore.save(snapshot)
+            persistenceErrorMessage = nil
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     // MARK: - TIMER
 
     private var timerButtonTitle:
@@ -3961,7 +4274,13 @@ struct ContentView:
 
 
     private func toggleMainTimer() {
-
+        guard liveSessionActionsEnabled else { return }
+        guard persistLiveSession() else { return }
+        let previousTiming = timing
+        let previousScheduledMatchID = activeScheduledMatchID
+        let previousOpponentName = activeOpponentName
+        let previousIsHome = activeIsHome
+        let previousScheduledMatchDate = liveScheduledMatchDate
         let result = timing.toggleMainClock()
         syncPlayerTimesFromTiming()
 
@@ -3974,44 +4293,57 @@ struct ContentView:
         case .requiresConfirmedStartingLineup:
             // Reuse the existing preparation flow; entering it never starts the clock.
             screen = .presence
+            return
 
         case .started:
             hasActiveMatch = true
-            associateNearestScheduledMatchIfNeeded()
+            associateNearestScheduledMatchIfNeeded(persistChanges: false)
 
         case .paused, .resumed, .halftimeStarted, .halftimePaused, .unavailable:
             break
         }
-    }
 
+        if !persistLiveSession() {
+            timing = previousTiming
+            activeScheduledMatchID = previousScheduledMatchID
+            activeOpponentName = previousOpponentName
+            activeIsHome = previousIsHome
+            liveScheduledMatchDate = previousScheduledMatchDate
+            syncPlayerTimesFromTiming()
+        }
+    }
 
     private func handleTimerTick() {
-
-        guard
-            hasActiveMatch
-        else {
-
-            return
-        }
-
+        guard hasActiveMatch, liveSessionActionsEnabled else { return }
+        let previousPhase = timing.phase
+        let previousActivity = timing.activity
         timing.synchronize()
         syncPlayerTimesFromTiming()
 
         if timing.phase == .finished {
             finishMatch()
+        } else if timing.phase != previousPhase || timing.activity != previousActivity {
+            _ = persistLiveSession()
         }
     }
-
 
     private func synchronizeMatchTiming() {
-
+        guard liveSessionActionsEnabled else { return }
+        let previousPhase = timing.phase
+        let previousActivity = timing.activity
         timing.synchronize()
         syncPlayerTimesFromTiming()
         if timing.phase == .finished {
             finishMatch()
+        } else if timing.phase != previousPhase || timing.activity != previousActivity {
+            _ = persistLiveSession()
         }
     }
 
+    private var liveSessionActionsEnabled: Bool {
+        if case .none = liveSessionStartup { return true }
+        return false
+    }
 
     private func syncPlayerTimesFromTiming() {
 
@@ -4095,38 +4427,105 @@ struct ContentView:
         let selectedPlayerIDs = selectedPlayers.map(\.id)
         guard
             selectedPlayers.count == selectedPresentIDs.count,
-            Set(selectedPlayerIDs).count == selectedPlayerIDs.count,
-            timing.confirmAttendance(presentPlayerIDs: selectedPlayerIDs),
-            timing.confirmStartingLineup(fieldPlayerIDs: selectedStarterIDs)
+            Set(selectedPlayerIDs).count == selectedPlayerIDs.count
         else {
             return
         }
 
+        var preparedTiming = timing
+        guard
+            preparedTiming.confirmAttendance(presentPlayerIDs: selectedPlayerIDs),
+            preparedTiming.confirmStartingLineup(fieldPlayerIDs: selectedStarterIDs)
+        else {
+            return
+        }
+
+        let preparedStartingPlayerIDs = selectedPlayers
+            .filter { selectedStarterIDs.contains($0.id) }
+            .map(\.id)
+        let preparedPlayers = selectedPlayers.map { rosterPlayer in
+            MatchPlayer(
+                rosterPlayer: rosterPlayer,
+                inField: selectedStarterIDs.contains(rosterPlayer.id)
+            )
+        }
+
+        let associatedMatch: ScheduledMatch?
+        if let activeScheduledMatch {
+            associatedMatch = activeScheduledMatch
+        } else if activeScheduledMatchID == nil {
+            associatedMatch = nearestUnplayedScheduledMatch(
+                to: Date(),
+                within: automaticMatchWindow
+            )
+        } else {
+            associatedMatch = nil
+        }
+
+        var proposedScheduledMatchID = activeScheduledMatchID
+        var proposedOpponentName = activeOpponentName
+        var proposedIsHome = activeIsHome
+        var proposedScheduledMatchDate = liveScheduledMatchDate
+        if let associatedMatch {
+            proposedScheduledMatchID = associatedMatch.id
+            proposedOpponentName = associatedMatch.opponentName
+            proposedIsHome = associatedMatch.isHome
+            proposedScheduledMatchDate = associatedMatch.date
+        }
+
+        let sessionID = liveSessionID ?? UUID()
+        let reading = liveRecoveryClock.reading()
+        let snapshot = LiveMatchSessionSnapshot(
+            schemaVersion: LiveMatchSessionSnapshot.currentSchemaVersion,
+            sessionID: sessionID,
+            status: .active,
+            timing: preparedTiming.snapshot(capturedAt: reading.wallClockDate),
+            startingPlayerIDs: preparedStartingPlayerIDs,
+            players: preparedPlayers.map { player in
+                LiveMatchPlayerSnapshot(
+                    rosterPlayerID: player.rosterPlayerID,
+                    name: player.name,
+                    isGoalkeeper: player.isGoalkeeper,
+                    playWeight: player.playWeight,
+                    superpower: player.superpower
+                )
+            },
+            events: matchEvents,
+            pendingAssist: pendingAssist.map { pending in
+                LiveMatchPendingAssistSnapshot(
+                    goalEventID: pending.goalEventID,
+                    scorerID: pending.scorerID,
+                    scorerName: pending.scorerName
+                )
+            },
+            scheduledMatchID: proposedScheduledMatchID,
+            scheduledMatchDate: proposedScheduledMatchDate,
+            opponentName: proposedOpponentName,
+            isHome: proposedIsHome,
+            continuousTimeNanoseconds: reading.continuousTimeNanoseconds,
+            finalRecord: nil
+        )
+
+        do {
+            try snapshot.validate()
+            try liveSessionStore.save(snapshot)
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return
+        }
+
+        timing = preparedTiming
         hasActiveMatch = true
         hasSavedCurrentMatch = false
-        associateNearestScheduledMatchIfNeeded()
-
-        players =
-            selectedPlayers.map {
-                rosterPlayer in
-
-                let isStarter =
-                    selectedStarterIDs
-                        .contains(
-                            rosterPlayer.id
-                        )
-
-                return MatchPlayer(
-                    rosterPlayer:
-                        rosterPlayer,
-
-                    inField:
-                        isStarter
-                )
-            }
-
-        screen =
-            .live
+        liveSessionID = sessionID
+        if activeScheduledMatchID == nil, let associatedMatch {
+            associateScheduledMatch(associatedMatch, persistChanges: false)
+        }
+        liveScheduledMatchDate = proposedScheduledMatchDate
+        startingPlayerIDs = preparedStartingPlayerIDs
+        players = preparedPlayers
+        screen = .live
+        persistenceErrorMessage = nil
     }
 
 
@@ -4137,7 +4536,7 @@ struct ContentView:
     ) {
 
         synchronizeMatchTiming()
-        guard phase != .finished else {
+        guard phase != .finished, liveSessionActionsEnabled else {
             return
         }
 
@@ -4164,11 +4563,21 @@ struct ContentView:
         if fieldPlayersCount <
             maxPlayersOnField {
 
-            _ = timing.setParticipantInField(id, inField: true)
+            guard persistLiveSession() else { return }
+            let previousTiming = timing
+            let previousPlayers = players
+
+            guard timing.setParticipantInField(id, inField: true) else { return }
             syncPlayerTimesFromTiming()
             players[index]
                 .inField =
                 true
+
+            if !persistLiveSession() {
+                timing = previousTiming
+                players = previousPlayers
+                syncPlayerTimesFromTiming()
+            }
 
             return
         }
@@ -4187,9 +4596,12 @@ struct ContentView:
     ) {
 
         synchronizeMatchTiming()
-        guard phase != .finished else {
+        guard phase != .finished, liveSessionActionsEnabled else {
             return
         }
+        guard persistLiveSession() else { return }
+        let previousTiming = timing
+        let previousPlayers = players
 
         guard
             outID !=
@@ -4251,6 +4663,12 @@ struct ContentView:
         players[inIndex]
             .inField =
             true
+
+        if !persistLiveSession() {
+            timing = previousTiming
+            players = previousPlayers
+            syncPlayerTimesFromTiming()
+        }
     }
 
 
@@ -4259,9 +4677,12 @@ struct ContentView:
     ) {
 
         synchronizeMatchTiming()
-        guard phase != .finished else {
+        guard phase != .finished, liveSessionActionsEnabled else {
             return
         }
+        guard persistLiveSession() else { return }
+        let previousTiming = timing
+        let previousPlayers = players
 
         guard let index =
             players.firstIndex(
@@ -4280,6 +4701,12 @@ struct ContentView:
         players[index]
             .inField =
             false
+
+        if !persistLiveSession() {
+            timing = previousTiming
+            players = previousPlayers
+            syncPlayerTimesFromTiming()
+        }
     }
 
 
@@ -4310,155 +4737,78 @@ struct ContentView:
     }
 
 
-    private func addOurGoal(
-        for playerID:
-            UUID
-    ) {
-
+    private func addOurGoal(for playerID: UUID) {
         synchronizeMatchTiming()
-        guard phase != .finished else {
-            return
-        }
+        guard phase != .finished,
+              canRecordMatchEvent,
+              liveSessionActionsEnabled,
+              persistLiveSession(),
+              let player = player(withID: playerID),
+              player.inField else { return }
 
-        guard
-            canRecordMatchEvent
-        else {
-
-            return
-        }
-
-        guard
-            let player =
-                player(
-                    withID:
-                        playerID
-                ),
-            player.inField
-        else {
-
-            return
-        }
-
-        let event =
-            GoalEvent(
-                team:
-                    .ours,
-
-                matchSecond:
-                    totalMatchTime,
-
-                scorerID:
-                    player.id,
-
-                scorerName:
-                    player.name
-            )
-
-        matchEvents.append(
-            event
+        let event = GoalEvent(
+            team: .ours,
+            matchSecond: totalMatchTime,
+            scorerID: player.id,
+            scorerName: player.name
         )
-
-        pendingAssist =
-            PendingAssist(
-                goalEventID:
-                    event.id,
-
-                scorerID:
-                    player.id,
-
-                scorerName:
-                    player.name
-            )
+        matchEvents.append(event)
+        pendingAssist = PendingAssist(
+            goalEventID: event.id,
+            scorerID: player.id,
+            scorerName: player.name
+        )
+        if !persistLiveSession() {
+            matchEvents.removeAll { $0.id == event.id }
+            pendingAssist = nil
+        }
     }
 
+    @discardableResult
+    private func addAssist(_ player: MatchPlayer, toGoalEventID eventID: UUID) -> Bool {
+        guard liveSessionActionsEnabled, persistLiveSession() else { return false }
+        let previousEvents = matchEvents
+        let previousPendingAssist = pendingAssist
+        guard let index = matchEvents.firstIndex(where: { $0.id == eventID }),
+              matchEvents[index].team == .ours else { return false }
 
-    private func addAssist(
-        _ player:
-            MatchPlayer,
-        toGoalEventID eventID:
-            UUID
-    ) {
-
-        guard let index =
-            matchEvents.firstIndex(
-                where: {
-                    $0.id ==
-                        eventID
-                }
-            )
-        else {
-
-            return
+        pendingAssist = nil
+        matchEvents[index].assistID = player.id
+        matchEvents[index].assistName = player.name
+        guard persistLiveSession() else {
+            matchEvents = previousEvents
+            pendingAssist = previousPendingAssist
+            return false
         }
-
-        guard
-            matchEvents[index]
-                .team ==
-                .ours
-        else {
-
-            return
-        }
-
-        matchEvents[index]
-            .assistID =
-            player.id
-
-        matchEvents[index]
-            .assistName =
-            player.name
+        return true
     }
-
 
     private func addOpponentGoal() {
-
         synchronizeMatchTiming()
-        guard phase != .finished else {
-            return
+        guard phase != .finished,
+              canRecordMatchEvent,
+              liveSessionActionsEnabled,
+              persistLiveSession() else { return }
+        let previousEvents = matchEvents
+        matchEvents.append(GoalEvent(team: .opponent, matchSecond: totalMatchTime))
+        if !persistLiveSession() {
+            matchEvents = previousEvents
         }
-
-        guard
-            canRecordMatchEvent
-        else {
-
-            return
-        }
-
-        matchEvents.append(
-            GoalEvent(
-                team:
-                    .opponent,
-
-                matchSecond:
-                    totalMatchTime
-            )
-        )
     }
-
 
     private func undoLastEvent() {
-
-        guard
-            !matchEvents
-                .isEmpty
-        else {
-
-            return
+        guard liveSessionActionsEnabled, persistLiveSession(), !matchEvents.isEmpty else { return }
+        let previousEvents = matchEvents
+        let previousPendingAssist = pendingAssist
+        let removed = matchEvents.removeLast()
+        if pendingAssist?.goalEventID == removed.id {
+            pendingAssist = nil
         }
-
-        let removed =
-            matchEvents
-                .removeLast()
-
-        if pendingAssist?
-            .goalEventID ==
-            removed.id {
-
-            pendingAssist =
-                nil
+        if !persistLiveSession() {
+            matchEvents = previousEvents
+            pendingAssist = previousPendingAssist
         }
     }
-
 
     private func goals(
         for id:
@@ -4645,52 +4995,21 @@ struct ContentView:
 
     // MARK: - HANDICAP
 
-    private func cycleHandicap(
-        _ id: UUID
-    ) {
-
-        guard let index =
-            players.firstIndex(
-                where: {
-                    $0.id ==
-                        id
-                }
-            )
-        else {
-
-            return
+    private func cycleHandicap(_ id: UUID) {
+        guard liveSessionActionsEnabled,
+              persistLiveSession(),
+              let index = players.firstIndex(where: { $0.id == id }) else { return }
+        let previousWeight = players[index].playWeight
+        switch previousWeight {
+        case 1.0: players[index].playWeight = 0.75
+        case 0.75: players[index].playWeight = 0.50
+        case 0.50: players[index].playWeight = 0.25
+        default: players[index].playWeight = 1.0
         }
-
-        switch
-            players[index]
-                .playWeight {
-
-        case 1.0:
-
-            players[index]
-                .playWeight =
-                0.75
-
-        case 0.75:
-
-            players[index]
-                .playWeight =
-                0.50
-
-        case 0.50:
-
-            players[index]
-                .playWeight =
-                0.25
-
-        default:
-
-            players[index]
-                .playWeight =
-                1.0
+        if !persistLiveSession() {
+            players[index].playWeight = previousWeight
         }
     }
-
 
     private func handicapLabel(
         _ weight:
@@ -4701,27 +5020,16 @@ struct ContentView:
     }
 
 
-    private func toggleSuperpower(
-        _ id: UUID
-    ) {
-
-        guard let index =
-            players.firstIndex(
-                where: {
-                    $0.id ==
-                        id
-                }
-            )
-        else {
-
-            return
+    private func toggleSuperpower(_ id: UUID) {
+        guard liveSessionActionsEnabled,
+              persistLiveSession(),
+              let index = players.firstIndex(where: { $0.id == id }) else { return }
+        let previousValue = players[index].superpower
+        players[index].superpower.toggle()
+        if !persistLiveSession() {
+            players[index].superpower = previousValue
         }
-
-        players[index]
-            .superpower
-            .toggle()
     }
-
 
     // MARK: - TIMEOUT
 
@@ -4743,58 +5051,63 @@ struct ContentView:
     private func startTimeout(
         owner: MatchTimeoutOwner
     ) {
-
         synchronizeMatchTiming()
-        guard canUseTimeout else {
-            return
+        guard canUseTimeout, liveSessionActionsEnabled, persistLiveSession() else { return }
+        let previousTiming = timing
+        guard timing.startTimeout(for: owner) else { return }
+        syncPlayerTimesFromTiming()
+        if !persistLiveSession() {
+            timing = previousTiming
+            syncPlayerTimesFromTiming()
         }
-
-        _ = timing.startTimeout(for: owner)
-        synchronizeMatchTiming()
     }
-
 
     private func endTimeout() {
-
+        guard liveSessionActionsEnabled, persistLiveSession() else { return }
+        let previousTiming = timing
         timing.endTimeout()
-        synchronizeMatchTiming()
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        if !persistLiveSession() {
+            timing = previousTiming
+            syncPlayerTimesFromTiming()
+        }
     }
-
 
     private func startSecondHalf() {
-
         synchronizeMatchTiming()
-        guard phase == .halftime else {
-            return
-        }
+        guard phase == .halftime,
+              liveSessionActionsEnabled,
+              persistLiveSession() else { return }
+        let previousTiming = timing
         timing.startSecondHalfManually()
-        synchronizeMatchTiming()
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        if !persistLiveSession() {
+            timing = previousTiming
+            syncPlayerTimesFromTiming()
+        }
     }
-
 
     // MARK: - FINISH
 
     private func finishMatch() {
+        guard hasActiveMatch, !hasSavedCurrentMatch, liveSessionActionsEnabled else { return }
 
-        guard hasActiveMatch, !hasSavedCurrentMatch else {
-            return
-        }
+        timing.synchronize()
+        syncPlayerTimesFromTiming()
+        timing.finish()
+        associateNearestScheduledMatchIfNeeded(persistChanges: false)
+        pendingAssist = nil
+        outgoingSubstitution = nil
+        incomingSubstitution = nil
 
+        let sessionID = liveSessionID ?? UUID()
+        liveSessionID = sessionID
         let record: MatchRecord
         if let pendingFinishedMatchRecord {
-            // Reuse the same stable record ID after a failed write so a retry
-            // cannot create a duplicate historical match.
             record = pendingFinishedMatchRecord
         } else {
-            timing.synchronize()
-            syncPlayerTimesFromTiming()
-            timing.finish()
-            associateNearestScheduledMatchIfNeeded()
-
-            pendingAssist = nil
-            outgoingSubstitution = nil
-            incomingSubstitution = nil
-
             let summaries = players.map { player in
                 PlayerMatchSummary(
                     player: player,
@@ -4802,9 +5115,9 @@ struct ContentView:
                     assists: assists(for: player.id)
                 )
             }
-
-            let createdRecord = MatchRecord(
-                date: activeScheduledMatch?.date ?? Date(),
+            record = MatchRecord(
+                id: sessionID,
+                date: liveScheduledMatchDate ?? activeScheduledMatch?.date ?? Date(),
                 duration: totalMatchTime,
                 players: summaries,
                 ourScore: ourScore,
@@ -4814,20 +5127,23 @@ struct ContentView:
                 opponentName: activeOpponentName,
                 isHome: activeIsHome
             )
-            pendingFinishedMatchRecord = createdRecord
-            record = createdRecord
+            pendingFinishedMatchRecord = record
         }
 
-        var updatedHistory = history.filter { $0.id != record.id }
-        updatedHistory.insert(record, at: 0)
-        guard persistData({
-            try dataStore.replaceHistory(updatedHistory)
-        }) else { return }
-
-        history = updatedHistory
-        pendingFinishedMatchRecord = nil
-        hasSavedCurrentMatch = true
-        latestRecord = record
+        do {
+            // First persist a finished timing snapshot without a history side effect.
+            // The finalizing aggregate is then the durable retry token for the history insert.
+            let completedSnapshot = try makeLiveSessionSnapshot(status: .active)
+            try liveSessionStore.save(completedSnapshot)
+            let finalizingSnapshot = try makeLiveSessionSnapshot(
+                status: .finalizing,
+                finalRecord: record
+            )
+            try completeFinalization(finalizingSnapshot)
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            liveSessionStartup = .unavailable(message: "La partita è conclusa ma il salvataggio finale non è stato verificato. I dati live sono conservati. Dettaglio: \(error.localizedDescription)")
+        }
     }
 
     private func startNewMatch() {
@@ -4838,6 +5154,9 @@ struct ContentView:
             false
 
         hasSavedCurrentMatch = false
+        liveSessionID = nil
+        startingPlayerIDs.removeAll()
+        liveScheduledMatchDate = nil
         players.removeAll()
 
         selectedPresentIDs
@@ -10298,7 +10617,15 @@ struct MatchRecordContentView:
     let container = try! MatchDataStore.makeInMemoryContainer()
     let store = MatchDataStore(container: container)
     let data = MatchDataSnapshot(roster: [], schedule: [], history: [])
-    ContentView(dataStore: store, initialData: data)
-        .modelContainer(container)
+    ContentView(
+        dataStore: store,
+        initialData: data,
+        liveSessionStore: LiveMatchSessionStore(
+            directoryURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("AURINFORMATC-Preview", isDirectory: true)
+        ),
+        initialLiveStartup: .none
+    )
+    .modelContainer(container)
 }
 

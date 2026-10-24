@@ -119,6 +119,30 @@ struct MatchTimingSnapshot: Codable, Equatable {
     let opponentTimeoutsUsed: Int
     let participants: [MatchTimingParticipantSnapshot]
     let capturedAt: Date
+
+    var totalMatchElapsedSeconds: Int {
+        Int((firstHalfElapsedNanoseconds + secondHalfElapsedNanoseconds) / 1_000_000_000)
+    }
+}
+
+enum MatchTimingRestoreError: LocalizedError, Equatable {
+    case unsupportedSchema(Int)
+    case invalidConfiguration
+    case invalidSnapshot(String)
+    case negativeRecoveryInterval
+
+    var errorDescription: String? {
+        switch self {
+        case let .unsupportedSchema(version):
+            return "Versione dello snapshot temporale non supportata: \(version)."
+        case .invalidConfiguration:
+            return "La configurazione temporale salvata non è valida."
+        case let .invalidSnapshot(reason):
+            return "Lo snapshot temporale non è coerente: \(reason)."
+        case .negativeRecoveryInterval:
+            return "L'intervallo temporale di recupero non può essere negativo."
+        }
+    }
 }
 
 /// A deterministic, in-process match clock. All active durations are measured from monotonic anchors,
@@ -152,6 +176,193 @@ struct MatchTiming {
     ) {
         self.configuration = configuration
         self.clock = clock
+    }
+
+    /// Rebuilds the engine from a durable snapshot. Process-local monotonic anchors are
+    /// always created anew; recovered elapsed time is consumed through the same transition
+    /// logic used for delayed callbacks, so period and timeout boundaries remain authoritative.
+    static func restoring(
+        from snapshot: MatchTimingSnapshot,
+        clock: any MatchTimingClock = ContinuousMatchTimingClock(),
+        recoveredElapsedNanoseconds: Int64 = 0
+    ) throws -> MatchTiming {
+        try validate(snapshot)
+        guard recoveredElapsedNanoseconds >= 0 else {
+            throw MatchTimingRestoreError.negativeRecoveryInterval
+        }
+
+        var timing = MatchTiming(configuration: snapshot.configuration, clock: clock)
+        timing.phase = snapshot.phase
+        timing.activity = snapshot.activity
+        timing.hasStarted = snapshot.hasStarted
+        timing.attendanceConfirmed = snapshot.attendanceConfirmed
+        timing.lineupConfirmed = snapshot.lineupConfirmed
+        timing.firstHalfElapsedNanoseconds = snapshot.firstHalfElapsedNanoseconds
+        timing.secondHalfElapsedNanoseconds = snapshot.secondHalfElapsedNanoseconds
+        timing.halftimeElapsedNanoseconds = snapshot.halftimeElapsedNanoseconds
+        timing.timeoutRemainingNanoseconds = snapshot.timeoutRemainingNanoseconds
+        timing.timeoutOwner = snapshot.timeoutOwner
+        timing.resumeAfterTimeout = snapshot.resumeAfterTimeout
+        timing.ourTimeoutsUsed = snapshot.ourTimeoutsUsed
+        timing.opponentTimeoutsUsed = snapshot.opponentTimeoutsUsed
+        timing.participants = snapshot.participants
+        timing.attendanceIDs = Set(snapshot.participants.map(\.id))
+
+        if timing.hasActiveSegment {
+            timing.segmentAnchorNanoseconds = clock.nowNanoseconds()
+        }
+        if recoveredElapsedNanoseconds > 0 {
+            timing.consume(recoveredElapsedNanoseconds)
+        }
+        timing.segmentAnchorNanoseconds = timing.hasActiveSegment
+            ? clock.nowNanoseconds()
+            : nil
+        return timing
+    }
+
+    static func validate(_ snapshot: MatchTimingSnapshot) throws {
+        guard snapshot.schemaVersion == MatchTimingSnapshot.currentSchemaVersion else {
+            throw MatchTimingRestoreError.unsupportedSchema(snapshot.schemaVersion)
+        }
+
+        let configuration = snapshot.configuration
+        let maximumDurationSeconds = 24 * 60 * 60
+        guard configuration.requiredStartingPlayers > 0,
+              configuration.requiredStartingPlayers <= 32,
+              configuration.periodDurationSeconds > 0,
+              configuration.periodDurationSeconds <= maximumDurationSeconds,
+              configuration.halftimeDurationSeconds > 0,
+              configuration.halftimeDurationSeconds <= maximumDurationSeconds,
+              configuration.timeoutDurationSeconds > 0,
+              configuration.timeoutDurationSeconds <= maximumDurationSeconds,
+              configuration.timeoutsPerTeamPerHalf >= 0,
+              configuration.timeoutsPerTeamPerHalf <= 10 else {
+            throw MatchTimingRestoreError.invalidConfiguration
+        }
+
+        let periodDuration = Int64(configuration.periodDurationSeconds) * nanosecondsPerSecond
+        let halftimeDuration = Int64(configuration.halftimeDurationSeconds) * nanosecondsPerSecond
+        let timeoutDuration = Int64(configuration.timeoutDurationSeconds) * nanosecondsPerSecond
+        let firstHalf = snapshot.firstHalfElapsedNanoseconds
+        let secondHalf = snapshot.secondHalfElapsedNanoseconds
+        let halftime = snapshot.halftimeElapsedNanoseconds
+        let timeoutRemaining = snapshot.timeoutRemainingNanoseconds
+        let identifiers = snapshot.participants.map(\.id)
+        let fieldCount = snapshot.participants.filter(\.inField).count
+
+        guard firstHalf >= 0, firstHalf <= periodDuration,
+              secondHalf >= 0, secondHalf <= periodDuration,
+              halftime >= 0, halftime <= halftimeDuration,
+              timeoutRemaining >= 0, timeoutRemaining <= timeoutDuration,
+              identifiers.count == Set(identifiers).count,
+              snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds >= 0 }),
+              fieldCount <= configuration.requiredStartingPlayers,
+              snapshot.ourTimeoutsUsed >= 0,
+              snapshot.ourTimeoutsUsed <= configuration.timeoutsPerTeamPerHalf,
+              snapshot.opponentTimeoutsUsed >= 0,
+              snapshot.opponentTimeoutsUsed <= configuration.timeoutsPerTeamPerHalf else {
+            throw MatchTimingRestoreError.invalidSnapshot("tempi, contatori o identificativi fuori dai limiti")
+        }
+
+        guard snapshot.lineupConfirmed == snapshot.attendanceConfirmed,
+              snapshot.attendanceConfirmed == !snapshot.participants.isEmpty,
+              snapshot.participants.isEmpty || snapshot.participants.count >= configuration.requiredStartingPlayers,
+              !snapshot.hasStarted || snapshot.lineupConfirmed,
+              snapshot.phase == .firstHalf || snapshot.phase == .finished || snapshot.hasStarted else {
+            throw MatchTimingRestoreError.invalidSnapshot("distinta, formazione e stato di avvio non coincidono")
+        }
+
+        let totalPlayed = firstHalf + secondHalf
+        guard snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds <= totalPlayed }),
+              snapshot.hasStarted || snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds == 0 }) else {
+            throw MatchTimingRestoreError.invalidSnapshot("il minutaggio individuale supera il tempo di gara")
+        }
+        if !snapshot.hasStarted && !snapshot.participants.isEmpty && fieldCount != configuration.requiredStartingPlayers {
+            throw MatchTimingRestoreError.invalidSnapshot("la formazione iniziale non contiene il numero richiesto di giocatori")
+        }
+
+        switch snapshot.phase {
+        case .firstHalf:
+            guard secondHalf == 0, halftime == 0, firstHalf < periodDuration else {
+                throw MatchTimingRestoreError.invalidSnapshot("tempi incompatibili con il primo periodo")
+            }
+        case .halftime:
+            guard firstHalf == periodDuration, secondHalf == 0 else {
+                throw MatchTimingRestoreError.invalidSnapshot("tempi incompatibili con l'intervallo")
+            }
+        case .secondHalf:
+            guard firstHalf == periodDuration, halftime == 0, secondHalf < periodDuration else {
+                throw MatchTimingRestoreError.invalidSnapshot("tempi incompatibili con il secondo periodo")
+            }
+        case .finished:
+            guard secondHalf == 0 || firstHalf == periodDuration,
+                  secondHalf == 0 || halftime == 0 else {
+                throw MatchTimingRestoreError.invalidSnapshot("tempi incompatibili con la conclusione della partita")
+            }
+        }
+
+        switch snapshot.activity {
+        case .stopped:
+            guard timeoutRemaining == 0,
+                  snapshot.timeoutOwner == nil,
+                  !snapshot.resumeAfterTimeout else {
+                throw MatchTimingRestoreError.invalidSnapshot("attività ferma con dati di timeout attivi")
+            }
+        case .playing:
+            guard snapshot.hasStarted,
+                  snapshot.phase == .firstHalf || snapshot.phase == .secondHalf,
+                  timeoutRemaining == 0,
+                  snapshot.timeoutOwner == nil,
+                  !snapshot.resumeAfterTimeout else {
+                throw MatchTimingRestoreError.invalidSnapshot("stato di gioco attivo incompatibile con la fase")
+            }
+        case .halftimeCountdown:
+            guard snapshot.hasStarted,
+                  snapshot.phase == .halftime,
+                  halftime < halftimeDuration,
+                  timeoutRemaining == 0,
+                  snapshot.timeoutOwner == nil,
+                  !snapshot.resumeAfterTimeout else {
+                throw MatchTimingRestoreError.invalidSnapshot("countdown dell'intervallo incoerente")
+            }
+        case .timeout:
+            guard snapshot.hasStarted,
+                  snapshot.phase == .firstHalf || snapshot.phase == .secondHalf,
+                  timeoutRemaining > 0,
+                  snapshot.timeoutOwner != nil else {
+                throw MatchTimingRestoreError.invalidSnapshot("timeout senza fase, proprietario o durata validi")
+            }
+        }
+
+        if snapshot.phase == .finished && snapshot.activity != .stopped {
+            throw MatchTimingRestoreError.invalidSnapshot("partita conclusa ma cronometro ancora attivo")
+        }
+    }
+
+    static func maximumRecoverableElapsedNanoseconds(for snapshot: MatchTimingSnapshot) -> Int64 {
+        let periodDuration = snapshot.configuration.periodDurationNanoseconds
+        switch snapshot.activity {
+        case .stopped:
+            return 0
+        case .playing:
+            let elapsed = snapshot.phase == .firstHalf
+                ? snapshot.firstHalfElapsedNanoseconds
+                : snapshot.secondHalfElapsedNanoseconds
+            return max(0, periodDuration - elapsed)
+        case .halftimeCountdown:
+            return max(0, snapshot.configuration.halftimeDurationNanoseconds - snapshot.halftimeElapsedNanoseconds)
+        case .timeout:
+            let timeoutElapsed = snapshot.timeoutRemainingNanoseconds
+            guard snapshot.resumeAfterTimeout else { return timeoutElapsed }
+            let periodElapsed = snapshot.phase == .firstHalf
+                ? snapshot.firstHalfElapsedNanoseconds
+                : snapshot.secondHalfElapsedNanoseconds
+            return timeoutElapsed + max(0, periodDuration - periodElapsed)
+        }
+    }
+
+    private var hasActiveSegment: Bool {
+        activity == .playing || activity == .halftimeCountdown || activity == .timeout
     }
 
     var isRunning: Bool {
