@@ -8,7 +8,7 @@
 
 Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la migrazione di uno store V1 popolato a V2, la chiusura/riapertura e la preservazione di rosa, calendario, record, partecipanti ed eventi. È stata eseguita l'intera suite aggiornata: **90 XCTest PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator, iOS 27.0 (build runtime 24A434). Il build-for-testing app+test è riuscito. La verifica supplementare ha aggiunto un test di scrittura dopo il restore e ha reso effettiva la chiusura dei riferimenti SwiftData prima della riapertura nei test di finalizzazione; il checkpoint `.finalizing` riaperto è verificato come retry pendente. Non sono stati usati dati personali o store reali del dispositivo.
 
-**Limite runtime:** la prova UI end-to-end di avvio, terminazione forzata, riapertura e finalizzazione non è stata eseguita. Il controllo computer ha riportato il Mac bloccato e non è stato aggirato. I test deterministici sul repository e sul recovery non dimostrano il cold start manuale né il comportamento dopo reboot reale. Il sistema conserva il limite del recovery temporale euristico già documentato in C3.
+**Limite runtime registrato prima della verifica C3.2-V:** la prova UI di terminazione e riapertura non era stata eseguita in C3.2-R1; il successivo test end-to-end C3.2-V è ora riportato in fondo a questo documento. Restano distinti il comportamento dopo terminazione del processo, verificato da XCUITest, e il recupero dopo reboot o su dispositivo reale, non verificato.
 
 ## Stato iniziale e Git
 
@@ -26,14 +26,24 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 - Sostituito l'adapter JSON operativo con un reader legacy in sola lettura; bootstrap importa prima di caricare la sessione.
 - Aggiornati i test di persistenza live e documentazione/ADR. Nessuna modifica intenzionale alla UI ordinaria, palette, asset o comportamento temporale C2.
 
-## Prossimo gate consigliato
+## Prossime verifiche residue
 
-Quando il Mac è sbloccato, eseguire la prova UI con dati sintetici e ambiente isolato: creare una gara, avviare il tempo, registrare un gol e un cambio, terminare forzatamente l'app, riaprirla e verificare ripristino e finalizzazione con un solo record. Non usare dati reali e non cancellare lo store locale di produzione per preparare la prova.
+Il percorso essenziale di partita live è stato esercitato in C3.2-V. Restano da verificare separatamente il blocco/sblocco dello schermo del simulatore, il recupero con riferimenti temporali incerti, l’avvio di una nuova partita subito dopo la finalizzazione e l’identità UUID osservata direttamente. Non iniziare C3.3 o modifiche al motore temporale come parte di queste verifiche.
 
-## C3.2-V — Esito: PARTIAL
+## C3.2-V — Esito: PARTIAL, flussi essenziali PASS
 
-La verifica end-to-end con UI non è stata eseguita. Computer Use ha segnalato che il Mac è bloccato e che lo sblocco automatico non è riuscito; non è stato tentato alcun aggiramento del blocco o dei controlli di accesso. Una chiamata di sola lettura a `xcrun simctl list runtimes` ha restituito `CoreSimulatorService connection became invalid` e non ha potuto inventariare i runtime. Xcode 27.0 è installato, ma lo stato del simulatore in questa sessione non è stato verificabile.
+Il test XCUITest `LiveMatchLifecycleUITests/testActivePausedAndFinalizedMatchSurvivesProcessTermination` ha interagito con l’app reale installata nel simulatore isolato `AURINFORMATC-C3.2-V` (iPhone 18 Pro, iOS 27.0, runtime build 24A434; UDID `2CF865DB-369B-47B1-9608-FA1212AD3FD4`) usando esclusivamente sei giocatori sintetici. Sono passati il flusso attivo, il kill/relaunch, il ripristino di timer/eventi/partecipanti, la pausa/ripresa esplicita, il background/foreground e la finalizzazione con record storico unico e nessuna sessione live riproposta dopo il nuovo avvio.
 
-Il bundle XCTest preesistente `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult` è stato letto senza modificarlo: riporta 90 test passati, 0 falliti e 0 saltati su iPhone 18 Pro Simulator/iOS 27.0. È evidenza del checkpoint C3.2-R1, non una nuova esecuzione C3.2-V e non dimostra terminazione reale del processo, cold start o interazione UI.
+La suite di regressione C1–C3.2-R1 aggiornata è passata: **91 XCTest PASS, 0 FAIL, 0 SKIPPED**. La build app per iOS Simulator è passata. Il test UI ha un esito `Passed` nel result bundle (1 PASS, 0 FAIL, 0 SKIPPED); il processo `xcodebuild` è però terminato con codice 75 dopo il timeout di 600 secondi nella raccolta delle diagnostiche del simulatore, successiva all’esecuzione del test. Il warning runtime `Invalid frame dimension (negative or non-finite)` è rimasto non classificato; la build segnala inoltre un warning di isolamento `@MainActor` preesistente in `MatchDataPersistence.swift`.
 
-Gli scenari A–E sono rimasti non eseguiti tramite UI; la matrice e i limiti sono registrati in `TESTING.md`. In questo checkpoint non sono stati avviati l’app, creati o resettati simulatori, né letti o modificati store, UserDefaults, dati personali, backup o risorse grafiche. Nessun difetto applicativo è stato riprodotto; l’assenza di una prova UI non consente di concludere che non ve ne siano.
+Una prima esecuzione UI ha riprodotto un conflitto di finalizzazione tra la data del record in memoria e quella serializzata nel checkpoint live (JSON a millisecondi). È stata introdotta una tolleranza di 1 microsecondo nella verifica di equivalenza dei record e un test di regressione deterministico; il test prima falliva e ora è incluso nella suite da 91 test. Nessuna chiave o formato persistito è stato cambiato.
+
+**Limiti residui:** il controllo Computer Use ha segnalato il Mac bloccato e non è stato aggirato; è stata comunque eseguita la modalità XCUITest reale. Il background/foreground è verificato via `.home`/`activate`, ma non il blocco schermo. Non sono stati eseguiti lo scenario di recovery temporale incerto, la verifica UI dell’avvio di una nuova partita dopo la finalizzazione, né l’ispezione diretta dell’UUID della sessione. Non sono stati usati store di produzione, dati personali o backup reali. Nessun push o remote.
+
+Result bundle mantenuti come evidenza:
+
+- UI end-to-end: `/private/tmp/AURINFORMATC-C3.2-V-UIFinal.xcresult` (test case Passed; raccolta diagnostica Xcode timeout successiva).
+- Suite XCTest: `/private/tmp/AURINFORMATC-C3.2-V-Regression-Retry.xcresult` (91 Passed).
+- Regressione data post-fix: `/private/tmp/AURINFORMATC-C3.2-V-DateRegression-Fixed.xcresult` (1 Passed).
+
+Per dettagli, comandi, matrice e file interessati consultare `TESTING.md`.
