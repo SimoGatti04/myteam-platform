@@ -1,7 +1,7 @@
 # Architettura — MAPI GROUP Match Manager
 
 **Aggiornato:** 25 ottobre 2026 — correzione C3.2-R1 e verifica del checkpoint di finalizzazione.
-**Stato:** persistenza locale operativa della sessione live in SwiftData V2; suite integrata di 89 XCTest superata. La prova manuale UI di terminazione/rilancio non è stata eseguibile perché il Mac era bloccato.
+**Stato:** persistenza locale operativa della sessione live in SwiftData V2; suite integrata di 90 XCTest superata. La prova manuale UI di terminazione/rilancio non è stata eseguibile perché il Mac era bloccato.
 
 ## Contesto e decisioni di prodotto
 

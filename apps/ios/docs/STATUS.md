@@ -6,7 +6,7 @@
 
 **C3.2-R1: COMPLETE per lo scope architetturale, migrazione e test.** La sessione live usa ora SwiftData V2 come archivio operativo locale insieme a rosa, calendario e storico. Il JSON scritto dal precedente C3 è soltanto una sorgente d'importazione in sola lettura; i file originali non vengono cancellati o riscritti. Prima della transazione terminale, la sessione viene salvata come `.finalizing` con lo snapshot esatto del record; inserimento/verifica dello storico e rimozione della sessione restano atomici nello stesso `ModelContext`.
 
-Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la migrazione di uno store V1 popolato a V2, la chiusura/riapertura e la preservazione di rosa, calendario, record, partecipanti ed eventi. È stata eseguita l'intera suite aggiornata: **89 XCTest PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator, iOS 27.0 (build runtime 24A434). Il build-for-testing app+test è riuscito. Non sono stati usati dati personali o store reali del dispositivo.
+Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la migrazione di uno store V1 popolato a V2, la chiusura/riapertura e la preservazione di rosa, calendario, record, partecipanti ed eventi. È stata eseguita l'intera suite aggiornata: **90 XCTest PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator, iOS 27.0 (build runtime 24A434). Il build-for-testing app+test è riuscito. La verifica supplementare ha aggiunto un test di scrittura dopo il restore e ha reso effettiva la chiusura dei riferimenti SwiftData prima della riapertura nei test di finalizzazione; il checkpoint `.finalizing` riaperto è verificato come retry pendente. Non sono stati usati dati personali o store reali del dispositivo.
 
 **Limite runtime:** la prova UI end-to-end di avvio, terminazione forzata, riapertura e finalizzazione non è stata eseguita. Il controllo computer ha riportato il Mac bloccato e non è stato aggirato. I test deterministici sul repository e sul recovery non dimostrano il cold start manuale né il comportamento dopo reboot reale. Il sistema conserva il limite del recovery temporale euristico già documentato in C3.
 
@@ -15,7 +15,7 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 - Baseline richiesta: `bbabf8a` su branch `main`; il working tree iniziale conteneva modifiche non committate relative al tentativo precedente, preservate e verificate prima di proseguire.
 - Nessun remote configurato; nessun push effettuato.
 - Non sono stati aperti né modificati i file reali in Application Support o dati UserDefaults dell'utente. I test hanno usato ModelContainer e directory temporanei isolati.
-- Il precedente ADR-0005 e i report C3 sono conservati come evidenza storica, con la decisione JSON operativa ora contrassegnata SUPERSEDED da ADR-0006.
+- Il precedente ADR-0005 e i report C3 sono conservati come evidenza storica, con la decisione JSON operativa ora contrassegnata SUPERSEDED da ADR-0006. Il bundle della riesecuzione XCTest è `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult` (90 passati, 0 falliti, 0 saltati).
 - I commit di implementazione, test e documentazione di questo checkpoint sono locali. Fare riferimento a `git log` per gli identificativi correnti; non è stato creato alcun remote.
 
 ## Modifiche principali

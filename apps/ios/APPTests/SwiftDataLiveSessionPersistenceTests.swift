@@ -198,6 +198,48 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
         XCTAssertEqual(try LiveMatchSessionDocumentCodec.decode(row.currentDocument).timing.totalMatchElapsedSeconds, 10)
     }
 
+    func testSavingAfterRestoringBackupRetainsQuarantineAndCreatesNewGeneration() throws {
+        let environment = try makeEnvironment(persistent: true)
+        defer { environment.cleanup() }
+        let store = try XCTUnwrap(environment.store)
+        let first = LiveSessionTestData.activeSnapshot(advancedSeconds: 10)
+        let second = LiveSessionTestData.activeSnapshot(sessionID: first.sessionID, advancedSeconds: 20)
+        try store.save(first)
+        try store.save(second)
+
+        let corruptBytes = Data("synthetic-corruption-after-restore".utf8)
+        do {
+            let context = ModelContext(try XCTUnwrap(environment.container))
+            let row = try XCTUnwrap(context.fetch(FetchDescriptor<StoredLiveMatchSession>()).first)
+            row.currentDocument = corruptBytes
+            try context.save()
+        }
+        guard case .backupAvailable = store.load() else {
+            return XCTFail("The corrupt current generation should require explicit backup restoration")
+        }
+        let restored = try store.restoreBackup()
+        XCTAssertEqual(restored.timing.totalMatchElapsedSeconds, 10)
+
+        let updated = LiveSessionTestData.activeSnapshot(sessionID: first.sessionID, advancedSeconds: 15)
+        try store.save(updated)
+
+        guard case let .primary(readback) = store.load() else {
+            return XCTFail("A new save after recovery should become the readable current generation")
+        }
+        XCTAssertEqual(readback.timing.totalMatchElapsedSeconds, 15)
+        let row = try XCTUnwrap(try ModelContext(try XCTUnwrap(environment.container))
+            .fetch(FetchDescriptor<StoredLiveMatchSession>()).first)
+        XCTAssertEqual(row.currentGeneration, 2)
+        XCTAssertEqual(row.previousGeneration, 1)
+        let previousDocument = try XCTUnwrap(row.previousDocument)
+        XCTAssertEqual(
+            try LiveMatchSessionDocumentCodec.decode(previousDocument).timing.totalMatchElapsedSeconds,
+            10
+        )
+        XCTAssertEqual(row.quarantinedDocument, corruptBytes)
+        XCTAssertNotNil(row.quarantineReason)
+    }
+
     func testMetadataMismatchFailsClosedWithoutMutatingStoredDocument() throws {
         let environment = try makeEnvironment()
         defer { environment.cleanup() }
@@ -359,29 +401,33 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
     func testFinalizationCommitsHistoryAndRemovesSessionInOneStoreAndIsIdempotent() throws {
         let environment = try makeEnvironment(persistent: true)
         defer { environment.cleanup() }
-        let store = try XCTUnwrap(environment.store)
         let active = LiveSessionTestData.activeSnapshot(advancedSeconds: 42)
         let snapshot = LiveSessionTestData.finalizingSnapshot(sessionID: active.sessionID)
-        try store.save(active)
+        do {
+            let store = try XCTUnwrap(environment.store)
+            try store.save(active)
+            try LiveMatchFinalizationCoordinator(sessionRepository: store).finalize(snapshot)
+        }
 
-        try LiveMatchFinalizationCoordinator(sessionRepository: store).finalize(snapshot)
-
-        // Reopening the persistent container models a process interruption after commit.
+        // All repository/container references from the first process scope are
+        // released before reopening the persistent store.
         environment.close()
         try environment.reopen()
-        let reopenedStore = try XCTUnwrap(environment.store)
-        try LiveMatchFinalizationCoordinator(sessionRepository: reopenedStore).finalize(snapshot)
+        do {
+            let reopenedStore = try XCTUnwrap(environment.store)
+            try LiveMatchFinalizationCoordinator(sessionRepository: reopenedStore).finalize(snapshot)
 
-        let result = try reopenedStore.loadSnapshot()
-        XCTAssertEqual(result.history.count, 1)
-        XCTAssertEqual(result.history.first?.id, snapshot.sessionID)
-        XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 0)
+            let result = try reopenedStore.loadSnapshot()
+            XCTAssertEqual(result.history.count, 1)
+            XCTAssertEqual(result.history.first?.id, snapshot.sessionID)
+            XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 0)
+        }
+        environment.close()
     }
 
     func testFinalizationTransactionFailureKeepsCheckpointAndRetryDoesNotDuplicateHistory() throws {
         let environment = try makeEnvironment(persistent: true)
         defer { environment.cleanup() }
-        let store = try XCTUnwrap(environment.store)
         let active = LiveSessionTestData.activeSnapshot(advancedSeconds: 42)
         let finalizing = LiveSessionTestData.finalizingSnapshot(sessionID: active.sessionID)
         let conflict = MatchRecord(
@@ -393,34 +439,57 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
             opponentScore: 9,
             events: []
         )
-        try store.replaceHistory([conflict])
-        try store.save(active)
-        let finalizer = LiveMatchFinalizationCoordinator(sessionRepository: store)
+        do {
+            let store = try XCTUnwrap(environment.store)
+            try store.replaceHistory([conflict])
+            try store.save(active)
+            let finalizer = LiveMatchFinalizationCoordinator(sessionRepository: store)
+            XCTAssertThrowsError(try finalizer.finalize(finalizing))
+        }
 
-        XCTAssertThrowsError(try finalizer.finalize(finalizing))
-
-        // Reopen with the existing conflict still present to model interruption before commit.
+        // Release every repository/container reference before reopening to
+        // model interruption before the terminal transaction commits.
         environment.close()
         try environment.reopen()
-        let reopenedStore = try XCTUnwrap(environment.store)
-        XCTAssertEqual(try reopenedStore.loadSnapshot().history.map(\.id), [conflict.id])
-        guard case let .primary(checkpoint) = reopenedStore.load() else {
-            return XCTFail("A failed terminal transaction must leave its finalizing checkpoint recoverable")
+        do {
+            let reopenedStore = try XCTUnwrap(environment.store)
+            XCTAssertEqual(try reopenedStore.loadSnapshot().history.map(\.id), [conflict.id])
+            guard case let .primary(checkpoint) = reopenedStore.load() else {
+                return XCTFail("A failed terminal transaction must leave its finalizing checkpoint recoverable")
+            }
+            XCTAssertEqual(checkpoint.status.rawValue, LiveMatchSessionStatus.finalizing.rawValue)
+            XCTAssertEqual(checkpoint.finalRecord?.id, finalizing.finalRecord?.id)
+            XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 1)
+
+            let startup = LiveMatchSessionStartupFactory.make(
+                from: reopenedStore.load(),
+                now: LiveMatchRecoveryReading(
+                    wallClockDate: Date(timeIntervalSince1970: 1_900_000_000),
+                    continuousTimeNanoseconds: 0
+                )
+            )
+            guard case let .finalizationPending(startupSnapshot, restoreBackupFirst, reason) = startup else {
+                return XCTFail("A reopened finalizing checkpoint must be surfaced as a pending finalization retry")
+            }
+            XCTAssertEqual(startupSnapshot.sessionID, checkpoint.sessionID)
+            XCTAssertEqual(startupSnapshot.status, checkpoint.status)
+            XCTAssertEqual(startupSnapshot.timing, checkpoint.timing)
+            XCTAssertEqual(startupSnapshot.finalRecord?.id, checkpoint.finalRecord?.id)
+            XCTAssertFalse(restoreBackupFirst)
+            XCTAssertNil(reason)
+
+            // Resolve only the synthetic conflict, then retry the exact saved intent.
+            try reopenedStore.replaceHistory([])
+            let retryFinalizer = LiveMatchFinalizationCoordinator(sessionRepository: reopenedStore)
+            try retryFinalizer.finalize(finalizing)
+            try retryFinalizer.finalize(finalizing)
+
+            let completed = try reopenedStore.loadSnapshot()
+            XCTAssertEqual(completed.history.count, 1)
+            XCTAssertEqual(completed.history.first?.id, finalizing.sessionID)
+            XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 0)
         }
-        XCTAssertEqual(checkpoint.status.rawValue, LiveMatchSessionStatus.finalizing.rawValue)
-        XCTAssertEqual(checkpoint.finalRecord?.id, finalizing.finalRecord?.id)
-        XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 1)
-
-        // Resolve only the synthetic conflict, then retry the exact saved intent.
-        try reopenedStore.replaceHistory([])
-        let retryFinalizer = LiveMatchFinalizationCoordinator(sessionRepository: reopenedStore)
-        try retryFinalizer.finalize(finalizing)
-        try retryFinalizer.finalize(finalizing)
-
-        let completed = try reopenedStore.loadSnapshot()
-        XCTAssertEqual(completed.history.count, 1)
-        XCTAssertEqual(completed.history.first?.id, finalizing.sessionID)
-        XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 0)
+        environment.close()
     }
 
     func testFinalizationCheckpointWriteFailureLeavesActiveSessionAndNoHistory() throws {
