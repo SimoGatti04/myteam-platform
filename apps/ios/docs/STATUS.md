@@ -1,6 +1,6 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 25 ottobre 2026 — verifica C3.2-V.
+**Aggiornato:** 25 ottobre 2026 — verifica supplementare C3.2-V-SUPP.
 
 ## Esito del checkpoint
 
@@ -28,7 +28,7 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 
 ## Prossime verifiche residue
 
-Il percorso essenziale di partita live è stato esercitato in C3.2-V. Restano da verificare separatamente il blocco/sblocco dello schermo del simulatore, il recupero con riferimenti temporali incerti, l’avvio di una nuova partita subito dopo la finalizzazione e l’identità UUID osservata direttamente. Non iniziare C3.3 o modifiche al motore temporale come parte di queste verifiche.
+Il recovery temporale incerto e la creazione di una nuova partita dopo finalizzazione sono stati verificati in C3.2-V-SUPP su simulatori isolati con dati sintetici. Il solo lock/unlock reale resta `NOT RUN`: l’interfaccia pubblica `simctl io` di Xcode 27.0 espone il power on/off dello schermo ma non un’operazione lock/unlock; spegnere il display non è stato trattato come equivalente al blocco del dispositivo. Non sono stati usati workaround o interazioni con un host bloccato. Mantenere questa verifica nel collaudo pre-release su un dispositivo o tramite un’interfaccia supportata. Non iniziare C3.3 né modificare il motore temporale nell’ambito di questo residuo.
 
 ## C3.2-V — Esito: COMPLETE per i flussi essenziali
 
@@ -47,3 +47,12 @@ Result bundle mantenuti come evidenza:
 - Regressione data post-fix: `/private/tmp/AURINFORMATC-C3.2-V-DateRegression-Fixed.xcresult` (1 Passed).
 
 Per dettagli, comandi, matrice e file interessati consultare `TESTING.md`.
+
+
+## C3.2-V-SUPP — Esito: PARTIAL, casi supplementari verificati
+
+Il test UI di recovery con fixture sintetica ha superato 1 test; il flusso esercita la revisione temporale, il limite massimo di 30 secondi, la correzione a zero e la persistenza della decisione dopo kill/relaunch. Il test UI del ciclo partita ha superato 1 test; dopo la finalizzazione ha avviato una seconda partita senza duplicare o sostituire il record storico. Una query SQLite in sola lettura sullo store V2 isolato ha confermato un record storico (1 gol, 1 evento collegato, 6 partecipanti) e una sola sessione live attiva con UUID diverso dall’UUID del record finalizzato.
+
+La suite `APPTests` è passata: **91 PASS, 0 FAIL, 0 SKIPPED**. I due test UI supplementari sono passati separatamente (1 PASS ciascuno). Build app+test e controlli del diff sono passati. Non è stato modificato codice produttivo, schema SwiftData, UI ordinaria o asset. Un’asserzione di test iniziale richiedeva erroneamente che il cronometro restasse esattamente a `00:30` dopo aver ripreso il gioco; la misura reale `00:27` rifletteva il normale avanzamento durante l’interazione UI. È stata corretta solo l’asserzione, che ora verifica il limite `0...30` e il successivo stato in pausa dopo il riavvio.
+
+C3.2-V-SUPP resta `PARTIAL` perché il lock/unlock reale non è stato eseguibile con gli strumenti pubblici disponibili. Nessun dato reale è stato letto, nessun backup è stato modificato e C3.3 non è iniziato. Le evidenze e la matrice completa sono in `docs/TESTING.md`.

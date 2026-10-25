@@ -134,3 +134,66 @@ Un tentativo precedente aveva inoltre un’aspettativa test-only errata sul test
 Bundle finali conservati: `/private/tmp/AURINFORMATC-C3.2-V-UIFinal.xcresult`, `/private/tmp/AURINFORMATC-C3.2-V-Regression-Retry.xcresult` e `/private/tmp/AURINFORMATC-C3.2-V-DateRegression-Fixed.xcresult`. Il simulatore isolato contiene soltanto i dati sintetici di prova ed è stato mantenuto per un eventuale retest; nessun simulatore preesistente è stato resettato o eliminato. Non è stato configurato remote né eseguito push.
 
 **Conclusione:** C3.2-V è `COMPLETE` rispetto al criterio di accettazione dei flussi essenziali: partita attiva, pausa, terminazione/rilancio, recovery della sessione e finalizzazione sono stati esercitati sull’app reale via XCUITest. Restano esplicitamente non verificati il lock screen, il recovery temporale incerto, l’identità UUID osservata direttamente e l’avvio di una nuova partita subito dopo la finalizzazione; non sono inclusi tra gli esiti PASS. Non si avvia C3.3 in questa attività.
+
+
+## C3.2-V-SUPP — recovery temporale, nuova partita e diagnostica Xcode (25 ottobre 2026)
+
+Questa verifica supplementare non ripete la progettazione o il refactoring C3.2-V. Sono stati usati i simulatori isolati creati per il test `AURINFORMATC-C3.2-V-SUPP-Recovery` (`1D3A6979-DF28-40D6-A46C-1A8EC3D5690E`) e `AURINFORMATC-C3.2-V-SUPP-Lifecycle` (`046D790F-E0A2-467D-91B2-E770B3E175DC`), entrambi iPhone 18 Pro con iOS 27.0 / runtime build `24A434`. La fixture non contiene dati di persone reali; il container Recovery è stato reinstallato e alimentato attraverso l’importer esistente con `app/scripts/create_synthetic_recovery_fixture.py`. Il payload mantiene un tempo salvato di 19:30 su un periodo di 20:00, un checkpoint monotono incongruente e un timestamp civile recente; nessun orologio è stato alterato. L’hash SHA-256 dei byte copiati nel container e del file fixture era identico (`2ea717832cec6afa22e48a8adc4d8388611f8dc328b4a3e97743385da6b9c705`).
+
+### Matrice supplementare
+
+| Scenario | Stato | Evidenza |
+|---|---|---|
+| Recovery temporalmente incerto: schermata di revisione e suggerimento | PASS | XCUITest `testTemporallyUncertainRecoveryCanBeCorrectedAndSurvivesRelaunch`; mostra `PARTITA DA RIPRISTINARE`, avversario sintetico e suggerimento `00:30`. Il controllo di incremento è disabilitato al massimo residuo del periodo; sono presenti entrambe le azioni di conferma e correzione. |
+| Decisione di recovery e conservazione dati | PASS | È stata scelta la correzione `RIPRENDI SENZA AGGIUNGERE TEMPO`; il test verifica avversario, marcatore, assist, tempo dei titolari e tempo zero del sostituto, poi mette in pausa, termina davvero il processo con `XCUIApplication.terminate()` e rilancia. Dopo il secondo avvio non compare una seconda revisione, lo stato resta in pausa e il clock/tempo individuale restano invariati. Il pulsante di conferma del suggerimento è stato verificato come disponibile ma non azionato in un run distinto. |
+| Confine massimo dopo la correzione | PASS | Il clock rientrato è analizzato come `MM:SS`, non negativo e con residuo non superiore a 30 secondi. La prima esecuzione aveva un’asserzione test-only che si aspettava esattamente `00:30` dopo l’azione; il risultato `00:27` era coerente con il cronometro già in marcia durante l’interazione UI. Non è stato riprodotto un difetto produttivo; l’asserzione è stata resa temporaneamente corretta e il test è poi passato. |
+| Finalizzazione, assenza della vecchia sessione e nuova partita | PASS | XCUITest `testActivePausedAndFinalizedMatchSurvivesProcessTermination` passa dopo aver finalizzato, terminato e riaperto l’app, controllato lo storico, avviato e messo in pausa una seconda partita, quindi riaperto lo storico. La UI continua a mostrare un solo record con marcatore/assist originali. |
+| UUID e integrità dello store dopo la nuova partita | PASS | Query `sqlite3 -readonly` sullo store SwiftData V2 del solo simulatore Lifecycle, a processo terminato: 1 record; 1 sessione live `active`; 1 evento e 6 partecipanti collegati al record, punteggio 1–0. UUID del record finalizzato `4024F7A5-EAE2-471D-9B6D-A6AFECCA6ABC`; UUID della nuova sessione `310ED8D4-46EB-44E0-ABF0-0D352EF9C886`, distinti. Nessuna sessione finalizzata separata è rimasta nello store. |
+| Background → foreground | PASS | Il test lifecycle esercita Home/riattivazione e il percorso di background/foreground; questa prova non è un lock screen. |
+| Lock → unlock reale | NOT RUN | `xcrun simctl help io` espone anche `screenConfig power on|off`, ma non un’operazione lock/unlock. Lo spegnimento del display non è stato considerato una simulazione equivalente del blocco; non è stata usata automazione privata né aggirato lo stato di blocco del Mac. Rimane un controllo pre-release. |
+
+### Build, test e processo Xcode
+
+- Xcode `27.0` (`27A266a`), Swift `6.4`, scheme `APP`, destinazione iOS Simulator 27.0.
+- `xcodebuild build-for-testing ... -derivedDataPath /private/tmp/AURINFORMATC-C3.2-V-SUPP-DerivedData CODE_SIGNING_ALLOWED=NO`: exit 0 dopo la modifica test-only; app e target `APPTests`/`APPUITests` compilati.
+- XCUITest Recovery con `-collect-test-diagnostics never`: **1 PASS, 0 FAIL, 0 SKIPPED**, test 36,4 s nell’ultima esecuzione, `xcodebuild` exit 0, bundle finale `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Verified2.xcresult`. Il test identifica separatamente i controlli accessibili `Increment` e `Decrement`; l’incremento è disabilitato e la correzione verso il basso resta abilitata. Il precedente bundle `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Verified.xcresult` è anch’esso passato.
+- XCUITest Lifecycle con `-collect-test-diagnostics never`: **1 PASS, 0 FAIL, 0 SKIPPED**, test 144,1 s, `xcodebuild` exit 0, bundle `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Lifecycle-Verified.xcresult`. Il bundle registra il warning runtime `Invalid frame dimension (negative or non-finite)`, già presente nel run C3.2-V; non è stato attribuito a questo scope.
+- Regressione completa `-only-testing:APPTests`, ripetuta dopo l’ultima modifica ai test: **91 PASS, 0 FAIL, 0 SKIPPED**, `xcodebuild` exit 0, bundle finale `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Regression-Final.xcresult`. Il run precedente `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Regression.xcresult` aveva lo stesso esito.
+- `xcodebuild -help` della versione installata documenta `-collect-test-diagnostics on-failure|never`; i run supplementari hanno usato l’opzione supportata `never` e sono terminati normalmente. Il bundle precedente `/private/tmp/AURINFORMATC-C3.2-V-UIFinal.xcresult` continua a riportare 1 test passato, 0 falliti, mentre il run originario aveva terminato il processo `xcodebuild` con exit 75 dopo circa 600 secondi nella diagnostica post-test. L’anomalia è quindi distinta dall’esito delle asserzioni; con i dati disponibili non si può attribuire la causa interna del timeout oltre al sottosistema di diagnostica/post-test Xcode. Non è stata cambiata alcuna impostazione globale dell’host.
+- `git diff --check`: PASS. Il diff non contiene sorgenti produttive né asset, palette o modifiche visuali.
+
+### Riproduzione del fixture Recovery
+
+Ripetere soltanto sul simulatore isolato dedicato, mai su un dispositivo, uno store o un simulatore con dati non sintetici. `simctl uninstall` rimuove l’intero container dell’app del simulatore indicato; la sequenza seguente è quindi distruttiva per quel container, non per il repository:
+
+```sh
+SIM=1D3A6979-DF28-40D6-A46C-1A8EC3D5690E
+APP_ID=com.aurorabellinipersonalteam.APP
+FIXTURE=/private/tmp/AURINFORMATC-C3.2-V-SUPP-RecoveryFixture-repeat.json
+DERIVED=/private/tmp/AURINFORMATC-C3.2-V-SUPP-DerivedData
+APP="$DERIVED/Build/Products/Debug-iphonesimulator/APP.app"
+RESULT="/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Rerun-$(date +%Y%m%d-%H%M%S).xcresult"
+
+xcodebuild build-for-testing -project app/APP.xcodeproj -scheme APP \
+  -destination "platform=iOS Simulator,id=$SIM" -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO
+xcrun simctl uninstall "$SIM" "$APP_ID"
+xcrun simctl install "$SIM" "$APP"
+python3 app/scripts/create_synthetic_recovery_fixture.py "$FIXTURE"
+APP_DATA=$(xcrun simctl get_app_container "$SIM" "$APP_ID" data)
+mkdir -p "$APP_DATA/Library/Application Support/AURINFORMATC/LiveMatchSession"
+cp "$FIXTURE" "$APP_DATA/Library/Application Support/AURINFORMATC/LiveMatchSession/live-match-session.json"
+xcodebuild test-without-building -project app/APP.xcodeproj -scheme APP \
+  -destination "platform=iOS Simulator,id=$SIM" \
+  -derivedDataPath "$DERIVED" \
+  -resultBundlePath "$RESULT" \
+  -only-testing:APPUITests/LiveMatchLifecycleUITests/testTemporallyUncertainRecoveryCanBeCorrectedAndSurvivesRelaunch \
+  -parallel-testing-enabled NO -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+```
+
+Il file è importato dal bootstrap tramite il reader legacy già esistente e poi la UI legge lo store SwiftData V2; non si scrive direttamente nel database. Per l’esito verificabile usare il result bundle, non il solo codice di compilazione.
+
+### File ed evidenze
+
+Modifiche C3.2-V-SUPP: `app/APPUITests/LiveMatchLifecycleUITests.swift` (copertura UI aggiunta/estesa), `app/scripts/create_synthetic_recovery_fixture.py` (fixture riproducibile), `app/docs/TESTING.md` e `app/docs/STATUS.md`. Nessun file di produzione o progetto Xcode è stato cambiato. I bundle finali conservati sono `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Verified2.xcresult`, `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Lifecycle-Verified.xcresult` e `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Regression-Final.xcresult`; i bundle intermedi, inclusi i fallimenti dovuti alle prime asserzioni test-only, restano sotto `/private/tmp/AURINFORMATC-C3.2-V-SUPP-*.xcresult`. Sono conservati anche gli screenshot intermedi Recovery e `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Attachments/`, che registra le label `Increment`/`Decrement` e lo stato disabilitato dell’incremento. Il fixture sintetico usato è `/private/tmp/AURINFORMATC-C3.2-V-SUPP-RecoveryFixture.json`. Il DerivedData temporaneo è stato eliminato dopo il completamento dei test. I due simulatori supplementari contengono solo dati sintetici, sono stati spenti con `simctl shutdown` senza cancellarli e sono mantenuti per un retest riproducibile. Il simulatore C3.2-V preesistente non è stato modificato; nessun remote o push.
+
+**Conclusione:** C3.2-V-SUPP è `PARTIAL`: tutti i percorsi supplementari eseguibili sono passati; lock/unlock reale resta `NOT RUN` per indisponibilità di un’interfaccia pubblica adatta. Non dichiarare la persistenza live completamente validata prima del controllo pre-release del lock screen.
