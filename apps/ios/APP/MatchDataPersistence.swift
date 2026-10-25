@@ -780,9 +780,17 @@ final class MatchDataStore {
         }
     }
 
+    private func datesAreEquivalent(_ lhs: Date, _ rhs: Date) -> Bool {
+        // LiveMatchSessionDocumentCodec encodes dates as millisecondsSince1970.
+        // The Double conversion can shift a Date by a few hundred nanoseconds;
+        // do not treat that serialization noise as a conflicting history record.
+        let serializationTolerance: TimeInterval = 0.000_001
+        return abs(lhs.timeIntervalSince(rhs)) <= serializationTolerance
+    }
+
     func recordsAreEquivalent(_ lhs: MatchRecord, _ rhs: MatchRecord) -> Bool {
         guard lhs.id == rhs.id,
-              lhs.date == rhs.date,
+              datesAreEquivalent(lhs.date, rhs.date),
               lhs.duration == rhs.duration,
               lhs.ourScore == rhs.ourScore,
               lhs.opponentScore == rhs.opponentScore,

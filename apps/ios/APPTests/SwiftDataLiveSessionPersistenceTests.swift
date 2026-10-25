@@ -425,6 +425,27 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
         environment.close()
     }
 
+    func testFinalizationAcceptsDatePrecisionAfterSessionSnapshotRoundTrip() throws {
+        let environment = try makeEnvironment(persistent: true)
+        defer { environment.cleanup() }
+        let active = LiveSessionTestData.activeSnapshot(advancedSeconds: 42)
+        var snapshot = LiveSessionTestData.finalizingSnapshot(sessionID: active.sessionID)
+        var record = try XCTUnwrap(snapshot.finalRecord)
+        record.date = Date(timeIntervalSince1970: 1_800_000_000.000005)
+        snapshot.finalRecord = record
+
+        let store = try XCTUnwrap(environment.store)
+        try store.save(active)
+        try LiveMatchFinalizationCoordinator(sessionRepository: store).finalize(snapshot)
+
+        let stored = try store.loadSnapshot()
+        XCTAssertEqual(stored.history.count, 1)
+        XCTAssertEqual(stored.history.first?.id, active.sessionID)
+        guard case .none = store.load() else {
+            return XCTFail("A finalized match must not leave a live session")
+        }
+    }
+
     func testFinalizationTransactionFailureKeepsCheckpointAndRetryDoesNotDuplicateHistory() throws {
         let environment = try makeEnvironment(persistent: true)
         defer { environment.cleanup() }
