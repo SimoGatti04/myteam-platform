@@ -3258,6 +3258,7 @@ struct ContentView:
             Text(
                 mainTimerText
             )
+            .accessibilityIdentifier("live.match-clock")
             .font(
                 .system(
                     size: 60,
@@ -3610,6 +3611,7 @@ struct ContentView:
                             player.timePlayed
                         )
                     )
+                    .accessibilityIdentifier("live.player-time.\(player.name)")
                     .font(
                         .system(
                             size: 22,
@@ -3624,6 +3626,7 @@ struct ContentView:
                     Text(
                         "⚽ \(goals(for: player.id))   A \(assists(for: player.id))"
                     )
+                    .accessibilityIdentifier("live.player-stats.\(player.name)")
                     .font(
                         .system(
                             size: 12,
@@ -8020,6 +8023,7 @@ struct PresenceSelectionView:
                             )
                         }
                     }
+                    .accessibilityIdentifier("presence.player.\(player.name)")
                 }
             }
 
@@ -8292,6 +8296,7 @@ struct LineupSelectionView:
                             )
                         }
                     }
+                    .accessibilityIdentifier("lineup.player.\(player.name)")
                 }
             }
         }
