@@ -1,6 +1,6 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 25 ottobre 2026 — checkpoint correttivo C3.2-R1.
+**Aggiornato:** 25 ottobre 2026 — verifica C3.2-V.
 
 ## Esito del checkpoint
 
@@ -29,3 +29,11 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 ## Prossimo gate consigliato
 
 Quando il Mac è sbloccato, eseguire la prova UI con dati sintetici e ambiente isolato: creare una gara, avviare il tempo, registrare un gol e un cambio, terminare forzatamente l'app, riaprirla e verificare ripristino e finalizzazione con un solo record. Non usare dati reali e non cancellare lo store locale di produzione per preparare la prova.
+
+## C3.2-V — Esito: PARTIAL
+
+La verifica end-to-end con UI non è stata eseguita. Computer Use ha segnalato che il Mac è bloccato e che lo sblocco automatico non è riuscito; non è stato tentato alcun aggiramento del blocco o dei controlli di accesso. Una chiamata di sola lettura a `xcrun simctl list runtimes` ha restituito `CoreSimulatorService connection became invalid` e non ha potuto inventariare i runtime. Xcode 27.0 è installato, ma lo stato del simulatore in questa sessione non è stato verificabile.
+
+Il bundle XCTest preesistente `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult` è stato letto senza modificarlo: riporta 90 test passati, 0 falliti e 0 saltati su iPhone 18 Pro Simulator/iOS 27.0. È evidenza del checkpoint C3.2-R1, non una nuova esecuzione C3.2-V e non dimostra terminazione reale del processo, cold start o interazione UI.
+
+Gli scenari A–E sono rimasti non eseguiti tramite UI; la matrice e i limiti sono registrati in `TESTING.md`. In questo checkpoint non sono stati avviati l’app, creati o resettati simulatori, né letti o modificati store, UserDefaults, dati personali, backup o risorse grafiche. Nessun difetto applicativo è stato riprodotto; l’assenza di una prova UI non consente di concludere che non ve ne siano.

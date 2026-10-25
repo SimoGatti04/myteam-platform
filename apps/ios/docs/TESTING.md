@@ -63,3 +63,33 @@ Il payload di JSON legacy è creato sinteticamente: questi test provano il contr
 ## Verifica supplementare dopo audit C3.2-R1
 
 Il 25 ottobre 2026 la suite è stata ricompilata ed eseguita di nuovo dopo aver rafforzato i test di riapertura reale del `ModelContainer`. Il bundle `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult` è mantenuto come evidenza; il DerivedData e i due log creati per la riesecuzione sono stati rimossi dopo la verifica. Il bundle precedente `/private/tmp/AURINFORMATC-C3R1-verified.xcresult` è stato conservato come evidenza del run iniziale. La prova UI di kill/relaunch resta `NOT RUN` e non è sostituita dalla chiusura/riapertura del container nei test.
+
+## C3.2-V — Validazione end-to-end della persistenza live (25 ottobre 2026)
+
+### Accesso e metodo
+
+Computer Use non ha esposto app native utilizzabili e ha restituito: `The Mac is locked and automatic unlock could not unlock it. Ask the user to unlock the Mac manually before continuing.` In conformità al checkpoint, il blocco e i controlli di accesso non sono stati aggirati. La verifica di sola lettura `xcrun simctl list runtimes` non è riuscita: `CoreSimulatorService connection became invalid`; non si conclude che i runtime siano assenti, soltanto che non sono stati ispezionabili in questa sessione. Xcode 27.0 (`27A266a`) e Swift 6.4 risultano installati.
+
+### Matrice degli scenari
+
+| Scenario | Stato | Evidenza / limite |
+|---|---|---|
+| A — Partita attiva, gol/assist/cambio, terminazione reale, rilancio e verifica del ripristino | UNAVAILABLE | La UI non era accessibile. Nessun flusso app è stato avviato; non è stata simulata una terminazione del processo reale. |
+| B — Partita in pausa, terminazione e rilancio senza incremento | UNAVAILABLE | Non eseguito tramite UI; nessuna evidenza cold-start C3.2-V. |
+| C — Background e blocco schermo reali | UNAVAILABLE | Non è stato possibile interagire con l’app o osservare il ritorno in primo piano. XCTest con clock simulato non è prova del comportamento OS. |
+| D — Finalizzazione, record storico unico e assenza di sessione live dopo nuovo rilancio | UNAVAILABLE | Nessun percorso UI di finalizzazione/riapertura eseguito. I test del repository con riapertura `ModelContainer` restano evidenza distinta e non equivalgono a un kill dell’app. |
+| E — Revisione UI di un recupero temporalmente incerto | UNAVAILABLE | Nessuna UI disponibile; non è stato alterato l’orologio dell’host né creato un caso su un dispositivo/store reale. |
+| XCTest C3.2-R1 già registrati | PASS (storico) | Il bundle preesistente `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult`, consultato in sola lettura, riporta 90 passati, 0 falliti, 0 saltati (iPhone 18 Pro Simulator, iOS 27.0). Non è una riesecuzione del checkpoint C3.2-V. |
+| Nuova esecuzione completa XCTest in C3.2-V | NOT RUN | CoreSimulatorService non era raggiungibile; nessun tentativo di accesso privilegiato o di aggiramento del blocco. |
+| Build app/test in C3.2-V | NOT RUN | Non è stata tentata una nuova build perché in questo checkpoint non sono stati modificati sorgenti; la build documentata è quella C3.2-R1, non una nuova verifica. |
+| Dati reali, backup e store di produzione | PASS (preservazione) | Nessun dato app è stato letto o modificato; nessun simulatore è stato creato, resettato o alterato. |
+
+I test deterministici C3.2-R1 includono il conteggio del tempo con callback ritardate/background/lock simulati, le policy di recovery e la finalizzazione SwiftData; sono test del motore/repository. Non verificano il kill reale dell’app, il cold start, la UI di revisione o il background/lock del sistema operativo. Nessun difetto C3.2 è stato dimostrato in questo checkpoint perché i percorsi runtime non sono stati eseguiti.
+
+### Repository e cleanup
+
+La verifica è partita da `main`, HEAD `73523abf8c3e151da8490aa2fedf949953b02808`, working tree pulito e senza remote configurati. Non sono stati creati artefatti di test espliciti nel repository o in `/private/tmp`; eventuali cache Xcode preesistenti non sono state pulite o alterate deliberatamente. Il bundle `.xcresult` preesistente è stato conservato e soltanto letto; non è stato eseguito cleanup su risorse non create in questo checkpoint.
+
+### Gate residuo
+
+Ripetere A–E su un simulatore nuovo/isolato o altro ambiente autorizzato, con dati sintetici e senza toccare gli store di produzione. La validazione C3.2-V e quindi la convalida end-to-end di C3 restano parziali fino a quando terminazione reale, rilancio, recupero, background/lock accessibili e finalizzazione non saranno verificati con evidenze UI/runtime.
