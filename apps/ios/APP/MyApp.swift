@@ -6,7 +6,7 @@ private enum ApplicationLaunchState {
         container: ModelContainer,
         store: MatchDataStore,
         data: MatchDataSnapshot,
-        liveSessionStore: LiveMatchSessionStore,
+        liveSessionStore: any LiveMatchSessionRepository,
         liveStartup: LiveMatchSessionStartup
     )
     case persistenceUnavailable(message: String)
@@ -21,7 +21,9 @@ struct MyApp: App {
             let container = try MatchDataStore.makePersistentContainer()
             let store = MatchDataStore(container: container)
             var data = try store.bootstrap()
-            let liveSessionStore = try LiveMatchSessionStore.applicationSupportStore()
+            let legacySessionSource = try LegacyLiveMatchSessionJSONSource.applicationSupportSource()
+            try store.importLegacyLiveSessionIfNeeded(from: legacySessionSource)
+            let liveSessionStore: any LiveMatchSessionRepository = store
             var liveStartup = LiveMatchSessionStartupFactory.make(
                 from: liveSessionStore.load(),
                 now: SystemLiveMatchRecoveryClock().reading()
@@ -33,8 +35,7 @@ struct MyApp: App {
                         ? try liveSessionStore.restoreBackup()
                         : snapshot
                     try LiveMatchFinalizationCoordinator(
-                        sessionRepository: liveSessionStore,
-                        dataStore: store
+                        sessionRepository: liveSessionStore
                     ).finalize(pendingSnapshot)
                     data = try store.loadSnapshot()
                     liveStartup = .none

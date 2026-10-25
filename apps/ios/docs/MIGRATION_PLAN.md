@@ -1,36 +1,35 @@
 # Piano incrementale di consolidamento
 
-Questo piano registra checkpoint e dipendenze. L’esito effettivo è in `STATUS.md` e `TESTING.md`.
+Questo piano registra checkpoint, dipendenze e stato verificato. Gli esiti correnti sono in `STATUS.md` e `TESTING.md`.
 
 ## Completato — C1: characterization test
 
-Suite XCTest sui contratti Codable/CSV, fixture anonime sintetiche e baseline iniziale.
+Suite su contratti Codable/CSV con fixture anonime sintetiche e baseline del comportamento esistente.
 
 ## Completato — C2: motore temporale
 
-`MatchTiming` deterministico con clock monotono controllabile, formazione iniziale obbligatoria, contabilità dei giocatori in campo, pausa/timeout/intervallo e test dei salti temporali. La semantica del motore non è stata alterata in C3.
+`MatchTiming` deterministico con clock controllabile, formazione iniziale obbligatoria, contabilità individuale e transizioni pause/timeout/intervallo. La semantica C2 è rimasta invariata in C3.2-R1.
 
-## Completato — C3.1: persistenza locale di rosa/calendario/storico
+## Completato — C3.1: rosa, calendario e storico in SwiftData V1
 
-SwiftData V1 è la fonte operativa per le tre collezioni gestionali. Import una tantum e idempotente da `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`; le chiavi originali restano conservate. Build e 53 XCTest C1+C2+C3.1 sono stati verificati su iPhone 18 Pro Simulator iOS 27.0. La migrazione di payload reali non è stata eseguita.
+SwiftData V1 è la fonte operativa per le tre collezioni gestionali. Import idempotente dalle chiavi `FutsalRosterV1`, `FutsalScheduleV1` e `FutsalMatchHistoryV1`; le chiavi originali restano conservate come sorgente legacy. I test usano fixture sintetiche; nessuna migrazione di payload reali è attestata.
 
-## Implementato — C3: persistenza e recovery live
+## Implementato — C3: recovery live, storage operativo poi superato
 
-**Problema:** lo stato live era volatile e la finalizzazione poteva essere duplicata o perdere il token di recovery dopo un’interruzione.
+Il precedente C3 ha introdotto snapshot/recovery temporale e salvataggio live JSON in Application Support. La parte di formato e recovery è riutilizzata; la scelta di JSON come archivio operativo non è più valida. ADR-0005 conserva il resoconto storico ed è SUPERSEDED da ADR-0006.
 
-**Scelta:** un documento aggregate JSON Codable versionato in Application Support, primary atomica e generazione precedente; niente nuova entità SwiftData per l’unica sessione live. SwiftData resta la fonte per rosa, calendario e storico. Rationale e condizioni di revisione in `decisions/ADR-0005-live-session-json-recovery.md`.
+## Completato — C3.2-R1: sessione live operativa in SwiftData V2
 
-**Scope effettivo:** `LiveMatchSessionSnapshot`, restore validato del `MatchTiming` con nuovo anchor, policy clock monotono/civile, recovery UI, checkpoint su operazioni live importanti e lifecycle, inserimento storico idempotente con UUID sessione e cleanup solo dopo marker finale. La conferma della formazione persiste prima di entrare nella schermata live. UserDefaults V1, backend, CloudKit e sincronizzazione non sono coinvolti.
+**Problema corretto:** il JSON esterno del precedente C3 separava la sessione live da rosa/calendario/storico, in contrasto con la decisione di SwiftData come archivio locale principale.
 
-**Verifiche:** app-only build PASS e 81 XCTest C1+C2+C3.1+C3 PASS su iPhone 18 Pro Simulator iOS 27.0; zero fail/skipped. Nessuna prova manuale kill/relaunch, dati reali o reboot reale: l’accettazione end-to-end resta da completare.
+**Implementazione:** V1 resta immutato; V2 aggiunge un aggregate live, una ricevuta d'import per i file C3 preesistenti e una migrazione additiva. Un repository `MatchDataStore` salva il payload Codable dentro SwiftData, mantiene una generazione precedente e quarantine per recovery, legge JSON legacy in sola lettura. Prima della finalizzazione atomica dello storico e della rimozione della sessione viene salvato e riletto un checkpoint `.finalizing`, che rende ritentabile l'intento esatto.
 
-**Recovery e rollback:** le fixture C3 sono sintetiche; nessuna chiave legacy o backup esistente è stata rimossa. Primary/backup danneggiati restano preservati e il backup richiede recovery esplicito. Il record storico usa una chiave stabile e la finalizzazione è ripetibile. Non cancellare manualmente file di recovery o chiavi V1 senza export/backup verificato.
+**Verifiche:** build-for-testing PASS; 89 XCTest PASS, 0 FAIL, 0 SKIPPED. La migrazione V1→V2, la riapertura e la preservazione dei dati C3.1 sono testate su store sintetici. L'import dei file JSON precedenti e i retry sono coperti da fixture sintetiche con verifica dei byte originali. Checkpoint di finalizzazione, errore di scrittura, rollback per conflitto, rifiuto del backup in revisione e retry idempotente sono coperti da test. Non è stata eseguita la prova UI kill/relaunch perché il Mac era bloccato; non sono state usate sessioni o dati reali.
 
-## Prossimo gate raccomandato — verifica cold start end-to-end
+**Recupero e limiti:** l'import non cancella né riscrive i file JSON originari. Dati corrotti/non supportati non producono una sessione vuota o una ricevuta di successo. La generazione precedente è nello stesso database SwiftData e non protegge da perdita/corruzione dell'intero store; il checksum non sostituisce backup. Non cancellare manualmente store, file di recovery o chiavi V1. La sessione post-reboot resta soggetta alla policy temporale già documentata.
 
-- **Problema:** i test dimostrano il motore e il repository ma non il percorso UI/bootstrap con l’app realmente terminata.
-- **Scope:** test con sessione sintetica isolata sul simulatore; salvare, terminare forzatamente, rilanciare e verificare fase, cronometro, formazione, eventi, minuti e finalizzazione; cancellare solo gli artefatti sintetici creati dal test.
-- **Dipendenze:** accesso a CoreSimulator e un metodo controllato di seed/cleanup senza dati dell’utente.
-- **Rischi:** contaminare il container simulatore o confondere fixture con dati reali; assicurare sempre cleanup e verificare i percorsi prima di rimuovere file.
-- **Accettazione:** prova documentata con esito; nessun doppio conteggio/record; se la recovery fallisce, preservare il bundle JSON e aprire un follow-up prima di cambiare il timer.
-- **Limite aperto:** il boot ID non è persistito; valutare il rischio della stima monotono+civile separatamente, senza introdurre `ProcessInfo.systemUptime` o API sensibili senza revisione privacy e test.
+## Gate operativo successivo (non avviato)
+
+- Eseguire, con Mac sbloccato e store di test isolato, la prova UI di sessione live: creare partita, avviare, registrare gol/cambio, forzare la chiusura, riaprire, verificare recovery e finalizzare una sola volta.
+- Non usare o migrare dati reali durante tale prova senza una strategia di backup esplicita.
+- C3.3 editor, backend, CloudKit, autenticazione, sincronizzazione, PWA e branding dinamico restano fuori da C3.2-R1 e richiedono incarichi separati.

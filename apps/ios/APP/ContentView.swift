@@ -1442,13 +1442,13 @@ struct ContentView:
     private var scenePhase
 
     let dataStore: MatchDataStore
-    let liveSessionStore: LiveMatchSessionStore
+    let liveSessionStore: any LiveMatchSessionRepository
     private let liveRecoveryClock: any LiveMatchRecoveryClock
 
     init(
         dataStore: MatchDataStore,
         initialData: MatchDataSnapshot,
-        liveSessionStore: LiveMatchSessionStore,
+        liveSessionStore: any LiveMatchSessionRepository,
         initialLiveStartup: LiveMatchSessionStartup
     ) {
         self.dataStore = dataStore
@@ -4165,8 +4165,7 @@ struct ContentView:
 
     private func completeFinalization(_ snapshot: LiveMatchSessionSnapshot) throws {
         try LiveMatchFinalizationCoordinator(
-            sessionRepository: liveSessionStore,
-            dataStore: dataStore
+            sessionRepository: liveSessionStore
         ).finalize(snapshot)
         if let record = snapshot.finalRecord {
             var updatedHistory = history.filter { $0.id != record.id }
@@ -5130,19 +5129,29 @@ struct ContentView:
             pendingFinishedMatchRecord = record
         }
 
+        let finalizingSnapshot: LiveMatchSessionSnapshot
         do {
-            // First persist a finished timing snapshot without a history side effect.
-            // The finalizing aggregate is then the durable retry token for the history insert.
-            let completedSnapshot = try makeLiveSessionSnapshot(status: .active)
-            try liveSessionStore.save(completedSnapshot)
-            let finalizingSnapshot = try makeLiveSessionSnapshot(
+            finalizingSnapshot = try makeLiveSessionSnapshot(
                 status: .finalizing,
                 finalRecord: record
             )
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            liveSessionStartup = .unavailable(message: "La partita è conclusa ma lo snapshot finale non è valido. I dati live precedenti restano conservati. Dettaglio: \(error.localizedDescription)")
+            return
+        }
+
+        do {
+            // The finalizing snapshot is checkpointed first; history insertion and
+            // session removal then share one SwiftData transaction.
             try completeFinalization(finalizingSnapshot)
         } catch {
             persistenceErrorMessage = error.localizedDescription
-            liveSessionStartup = .unavailable(message: "La partita è conclusa ma il salvataggio finale non è stato verificato. I dati live sono conservati. Dettaglio: \(error.localizedDescription)")
+            liveSessionStartup = .finalizationPending(
+                snapshot: finalizingSnapshot,
+                restoreBackupFirst: false,
+                reason: error.localizedDescription
+            )
         }
     }
 
@@ -10620,10 +10629,7 @@ struct MatchRecordContentView:
     ContentView(
         dataStore: store,
         initialData: data,
-        liveSessionStore: LiveMatchSessionStore(
-            directoryURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("AURINFORMATC-Preview", isDirectory: true)
-        ),
+        liveSessionStore: store,
         initialLiveStartup: .none
     )
     .modelContainer(container)

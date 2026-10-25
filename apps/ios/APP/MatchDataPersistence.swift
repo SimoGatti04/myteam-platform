@@ -21,9 +21,29 @@ enum MatchManagerSchemaV1: VersionedSchema {
     }
 }
 
+/// Schema V2 adds the single live-session aggregate and its one-time legacy
+/// import receipt. V1 remains unchanged so existing C3.1 stores migrate safely.
+enum MatchManagerSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        MatchManagerSchemaV1.models + [
+            StoredLiveMatchSession.self,
+            StoredLiveSessionImportReceipt.self
+        ]
+    }
+}
+
 enum MatchManagerMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [MatchManagerSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] {
+        [MatchManagerSchemaV1.self, MatchManagerSchemaV2.self]
+    }
+
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: MatchManagerSchemaV1.self, toVersion: MatchManagerSchemaV2.self)
+        ]
+    }
 }
 
 @Model
@@ -304,6 +324,63 @@ final class StoredLegacyImportReceipt {
     }
 }
 
+/// The operational session is one versioned Codable snapshot stored as a row in
+/// the same SwiftData store as history. The previous document is a bounded
+/// recovery generation; a rejected/corrupt current document can be retained in
+/// quarantine before an explicit recovery promotes the previous generation.
+@Model
+final class StoredLiveMatchSession {
+    @Attribute(.unique) var sessionID: UUID
+    var payloadVersion: Int
+    var statusRawValue: String
+    var currentDocument: Data
+    var currentGeneration: Int64
+    var previousDocument: Data?
+    var previousGeneration: Int64?
+    var quarantinedDocument: Data?
+    var quarantineReason: String?
+    var quarantinedAt: Date?
+    var requiresRecoveryReview: Bool
+    var recoveryReviewReason: String?
+    var updatedAt: Date
+
+    init(
+        snapshot: LiveMatchSessionSnapshot,
+        document: Data,
+        requiresRecoveryReview: Bool = false,
+        recoveryReviewReason: String? = nil
+    ) {
+        sessionID = snapshot.sessionID
+        payloadVersion = snapshot.schemaVersion
+        statusRawValue = snapshot.status.rawValue
+        currentDocument = document
+        currentGeneration = 1
+        previousDocument = nil
+        previousGeneration = nil
+        quarantinedDocument = nil
+        quarantineReason = nil
+        quarantinedAt = nil
+        self.requiresRecoveryReview = requiresRecoveryReview
+        self.recoveryReviewReason = recoveryReviewReason
+        updatedAt = .now
+    }
+}
+
+@Model
+final class StoredLiveSessionImportReceipt {
+    @Attribute(.unique) var id: String
+    var importedSessionID: UUID?
+    var sourceKindRawValue: String
+    var completedAt: Date
+
+    init(importedSessionID: UUID?, sourceKind: LiveMatchSessionLegacySourceKind) {
+        id = MatchDataStore.legacyLiveSessionReceiptID
+        self.importedSessionID = importedSessionID
+        sourceKindRawValue = sourceKind.rawValue
+        completedAt = .now
+    }
+}
+
 // MARK: - Data boundary
 
 struct MatchDataSnapshot {
@@ -327,6 +404,14 @@ enum MatchDataPersistenceError: LocalizedError {
     case historyRecordConflict(id: UUID)
     case historyRecordReadbackFailed(id: UUID)
     case invalidStoredGoalTeam(id: UUID, value: String)
+    case liveSessionConflict(UUID)
+    case liveSessionImportConflict(UUID)
+    case liveSessionReadbackFailed(UUID)
+    case liveSessionQuarantineOccupied(UUID)
+    case liveSessionMissing(UUID)
+    case liveSessionLegacySourceUnavailable(String)
+    case liveSessionHistoryConflict(UUID)
+    case liveSessionImportReceiptReadbackFailed
 
     var errorDescription: String? {
         switch self {
@@ -346,6 +431,22 @@ enum MatchDataPersistenceError: LocalizedError {
             return "Il record storico \(id) non è stato confermato dopo la scrittura. La sessione live è stata conservata per un nuovo tentativo."
         case let .invalidStoredGoalTeam(id, value):
             return "L'evento \(id) contiene un tipo squadra non riconosciuto ('\(value)')."
+        case let .liveSessionConflict(id):
+            return "Esiste già una sessione live diversa (\(id)); non è stata sovrascritta."
+        case let .liveSessionImportConflict(id):
+            return "La sessione JSON con identificativo \(id) è diversa dalla sessione già presente in SwiftData; l'importazione è stata interrotta."
+        case let .liveSessionReadbackFailed(id):
+            return "La sessione live \(id) non è stata confermata dopo il salvataggio. Il dato precedente è stato conservato."
+        case let .liveSessionQuarantineOccupied(id):
+            return "La sessione \(id) contiene già un documento in quarantena; non verrà sostituito automaticamente."
+        case let .liveSessionMissing(id):
+            return "La sessione live \(id) non è presente nello store e non può essere finalizzata in sicurezza."
+        case let .liveSessionLegacySourceUnavailable(reason):
+            return "Il salvataggio live legacy esiste ma non è recuperabile. Nessuna sessione vuota è stata avviata. Dettaglio: \(reason)"
+        case let .liveSessionHistoryConflict(id):
+            return "Esiste già un record storico diverso con l'identificativo della sessione \(id)."
+        case .liveSessionImportReceiptReadbackFailed:
+            return "La ricevuta di importazione della sessione live non è stata confermata; l'operazione può essere ripetuta in sicurezza."
         }
     }
 }
@@ -357,6 +458,7 @@ enum MatchDataPersistenceError: LocalizedError {
 @MainActor
 final class MatchDataStore {
     static let legacyReceiptID = "user-defaults-v1-import-complete"
+    static let legacyLiveSessionReceiptID = "application-support-live-session-json-v1-import-complete"
 
     let container: ModelContainer
     private let userDefaults: UserDefaults
@@ -367,7 +469,7 @@ final class MatchDataStore {
     }
 
     static func makePersistentContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV1.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC",
             schema: schema,
@@ -381,7 +483,7 @@ final class MatchDataStore {
     }
 
     static func makeInMemoryContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV1.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC-InMemory",
             schema: schema,
@@ -396,7 +498,7 @@ final class MatchDataStore {
     }
 
     static func makeContainer(at url: URL, allowsSave: Bool = true) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV1.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC-Test",
             schema: schema,
@@ -650,7 +752,7 @@ final class MatchDataStore {
         return MatchDataSnapshot(roster: roster, schedule: schedule, history: history)
     }
 
-    private func makeContext() -> ModelContext {
+    func makeContext() -> ModelContext {
         let context = ModelContext(container)
         context.autosaveEnabled = false
         return context
@@ -668,7 +770,7 @@ final class MatchDataStore {
         }
     }
 
-    private func validateHistoryIdentifiers(_ history: [MatchRecord]) throws {
+    func validateHistoryIdentifiers(_ history: [MatchRecord]) throws {
         try ensureUnique(history.map(\.id), collection: "history")
         for record in history {
             try ensureUnique(record.players.map(\.id), collection: "history participants in \(record.id)")
@@ -678,7 +780,7 @@ final class MatchDataStore {
         }
     }
 
-    private func recordsAreEquivalent(_ lhs: MatchRecord, _ rhs: MatchRecord) -> Bool {
+    func recordsAreEquivalent(_ lhs: MatchRecord, _ rhs: MatchRecord) -> Bool {
         guard lhs.id == rhs.id,
               lhs.date == rhs.date,
               lhs.duration == rhs.duration,

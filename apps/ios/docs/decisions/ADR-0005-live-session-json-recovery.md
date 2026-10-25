@@ -1,7 +1,9 @@
 # ADR-0005 — Persistenza JSON e recovery dell’unica sessione live
 
-- **Stato:** ACCETTATO — 24 ottobre 2026
+- **Stato:** SUPERSEDED da ADR-0006 — 25 ottobre 2026 (mantenuto come storico)
 - **Ambito:** una sessione live locale; rosa, calendario e storico restano in SwiftData
+
+> **Nota di stato:** questa ADR descrive fedelmente la scelta e l'implementazione del checkpoint C3. Non è più la decisione corrente: su direttiva del proprietario la sessione live è ora persistita operativamente in SwiftData V2. L'envelope JSON resta solo un formato interno e i file creati dalla versione precedente sono sorgenti d'importazione in sola lettura. Vedere [ADR-0006](ADR-0006-swiftdata-live-session.md).
 
 ## Contesto
 

@@ -1,49 +1,29 @@
 import CryptoKit
 import Foundation
 
-#if canImport(Darwin)
-import Darwin
-#endif
-
 @MainActor
 protocol LiveMatchSessionRepository {
     func load() -> LiveMatchSessionLoadResult
     func save(_ snapshot: LiveMatchSessionSnapshot) throws
     func restoreBackup() throws -> LiveMatchSessionSnapshot
-    func removeFinalized(sessionID: UUID) throws
+    /// Commits history and removes the live aggregate in one SwiftData context transaction.
+    func finalize(_ snapshot: LiveMatchSessionSnapshot) throws
 }
 
 @MainActor
-protocol LiveMatchSessionFileSystem {
+protocol LegacyLiveMatchSessionFileAccess {
     func fileExists(at url: URL) -> Bool
     func readData(at url: URL) throws -> Data
-    func writeAtomically(_ data: Data, to url: URL) throws
-    func createDirectory(at url: URL) throws
-    func removeItem(at url: URL) throws
 }
 
 @MainActor
-struct FoundationLiveMatchSessionFileSystem: LiveMatchSessionFileSystem {
+struct FoundationLegacyLiveMatchSessionFileAccess: LegacyLiveMatchSessionFileAccess {
     func fileExists(at url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.path)
     }
 
     func readData(at url: URL) throws -> Data {
         try Data(contentsOf: url)
-    }
-
-    func writeAtomically(_ data: Data, to url: URL) throws {
-        try createDirectory(at: url.deletingLastPathComponent())
-        try data.write(to: url, options: .atomic)
-    }
-
-    func createDirectory(at url: URL) throws {
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    }
-
-    func removeItem(at url: URL) throws {
-        guard fileExists(at: url) else { return }
-        try FileManager.default.removeItem(at: url)
     }
 }
 
@@ -54,24 +34,27 @@ enum LiveMatchSessionLoadResult {
     case unavailable(message: String)
 }
 
+enum LiveMatchSessionLegacySourceKind: String {
+    case none
+    case primary
+    case backup
+}
+
 enum LiveMatchSessionPersistenceError: LocalizedError {
-    case unreadableExistingSession(String)
     case anotherSessionExists(UUID)
     case sessionMustBeRecoveredBeforeOverwrite
     case invalidStatusTransition(from: LiveMatchSessionStatus, to: LiveMatchSessionStatus)
     case noUsableBackup
     case validPrimaryCannotBeReplaced
-    case sessionNotFinalized(UUID)
     case unsupportedEnvelopeVersion(Int)
     case checksumMismatch
     case invalidPayload(String)
     case finalRecordMissing
+    case sessionNotFound(UUID)
     case historyConflict(UUID)
 
     var errorDescription: String? {
         switch self {
-        case let .unreadableExistingSession(reason):
-            return "Il salvataggio esistente non è leggibile e non è stato sovrascritto. Dettaglio: \(reason)"
         case let .anotherSessionExists(id):
             return "Esiste già una sessione live non finalizzata (\(id)); non è stata sovrascritta."
         case .sessionMustBeRecoveredBeforeOverwrite:
@@ -79,11 +62,9 @@ enum LiveMatchSessionPersistenceError: LocalizedError {
         case let .invalidStatusTransition(from, to):
             return "Transizione di stato della sessione non valida: \(from.rawValue) → \(to.rawValue)."
         case .noUsableBackup:
-            return "Non è disponibile una copia di recupero valida. I file esistenti sono stati conservati."
+            return "Non è disponibile una copia di recupero valida. I dati esistenti sono stati conservati."
         case .validPrimaryCannotBeReplaced:
-            return "Il salvataggio principale è valido e non può essere sostituito con la copia precedente."
-        case let .sessionNotFinalized(id):
-            return "La sessione \(id) non risulta finalizzata; il salvataggio non è stato rimosso."
+            return "La sessione principale è valida e non può essere sostituita con una copia precedente."
         case let .unsupportedEnvelopeVersion(version):
             return "Versione del contenitore della sessione non supportata: \(version)."
         case .checksumMismatch:
@@ -92,6 +73,8 @@ enum LiveMatchSessionPersistenceError: LocalizedError {
             return "Il contenuto della sessione live non è valido: \(reason)"
         case .finalRecordMissing:
             return "La sessione non contiene il record necessario alla finalizzazione."
+        case let .sessionNotFound(id):
+            return "La sessione live \(id) non è presente nello store."
         case let .historyConflict(id):
             return "Esiste già un record storico diverso con l'identificativo della sessione \(id)."
         }
@@ -105,174 +88,9 @@ private struct LiveMatchSessionEnvelope: Codable {
     let sha256: String
 }
 
-/// A two-generation, single-document store. The active file is replaced atomically;
-/// the previous verified generation is retained until the next successful save.
-/// Legacy UserDefaults keys and the SwiftData business-data store are not touched here.
-@MainActor
-final class LiveMatchSessionStore: LiveMatchSessionRepository {
-    static let fileName = "live-match-session.json"
-    static let backupFileName = "live-match-session.backup.json"
-
-    let directoryURL: URL
-    let primaryURL: URL
-    let backupURL: URL
-    private let fileSystem: any LiveMatchSessionFileSystem
-
-    init(
-        directoryURL: URL,
-        fileSystem: (any LiveMatchSessionFileSystem)? = nil
-    ) {
-        self.directoryURL = directoryURL
-        self.primaryURL = directoryURL.appendingPathComponent(Self.fileName)
-        self.backupURL = directoryURL.appendingPathComponent(Self.backupFileName)
-        self.fileSystem = fileSystem ?? FoundationLiveMatchSessionFileSystem()
-    }
-
-    static func applicationSupportStore(fileManager: FileManager = .default) throws -> LiveMatchSessionStore {
-        let applicationSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let directory = applicationSupport
-            .appendingPathComponent("AURINFORMATC", isDirectory: true)
-            .appendingPathComponent("LiveMatchSession", isDirectory: true)
-        return LiveMatchSessionStore(directoryURL: directory)
-    }
-
-    func load() -> LiveMatchSessionLoadResult {
-        if fileSystem.fileExists(at: primaryURL) {
-            do {
-                return .primary(try decode(fileSystem.readData(at: primaryURL)))
-            } catch {
-                let primaryFailure = error.localizedDescription
-                guard fileSystem.fileExists(at: backupURL) else {
-                    return .unavailable(message: "Il salvataggio live principale non è leggibile. \(primaryFailure) Il file è stato conservato.")
-                }
-                do {
-                    let backup = try decode(fileSystem.readData(at: backupURL))
-                    return .backupAvailable(
-                        snapshot: backup,
-                        reason: "Il salvataggio principale non è leggibile; è disponibile la generazione precedente. \(primaryFailure)"
-                    )
-                } catch {
-                    return .unavailable(message: "Il salvataggio principale e la copia di recupero non sono leggibili. Nessun file è stato rimosso. Dettaglio: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        guard fileSystem.fileExists(at: backupURL) else { return .none }
-        do {
-            return .backupAvailable(
-                snapshot: try decode(fileSystem.readData(at: backupURL)),
-                reason: "Il salvataggio principale non è presente; è disponibile la generazione precedente."
-            )
-        } catch {
-            return .unavailable(message: "La copia di recupero non è leggibile. Il file è stato conservato. Dettaglio: \(error.localizedDescription)")
-        }
-    }
-
-    func save(_ snapshot: LiveMatchSessionSnapshot) throws {
+enum LiveMatchSessionDocumentCodec {
+    static func encode(_ snapshot: LiveMatchSessionSnapshot) throws -> Data {
         try snapshot.validate()
-        try fileSystem.createDirectory(at: directoryURL)
-
-        if fileSystem.fileExists(at: primaryURL) {
-            let currentData: Data
-            let currentSnapshot: LiveMatchSessionSnapshot
-            do {
-                currentData = try fileSystem.readData(at: primaryURL)
-                currentSnapshot = try decode(currentData)
-            } catch {
-                throw LiveMatchSessionPersistenceError.unreadableExistingSession(error.localizedDescription)
-            }
-            guard currentSnapshot.sessionID == snapshot.sessionID else {
-                throw LiveMatchSessionPersistenceError.anotherSessionExists(currentSnapshot.sessionID)
-            }
-            try validateStatusTransition(from: currentSnapshot.status, to: snapshot.status)
-            try fileSystem.writeAtomically(currentData, to: backupURL)
-        } else if fileSystem.fileExists(at: backupURL) {
-            throw LiveMatchSessionPersistenceError.sessionMustBeRecoveredBeforeOverwrite
-        }
-
-        try fileSystem.writeAtomically(try encode(snapshot), to: primaryURL)
-        let written = try decode(fileSystem.readData(at: primaryURL))
-        guard written.sessionID == snapshot.sessionID,
-              written.status == snapshot.status else {
-            throw LiveMatchSessionPersistenceError.invalidPayload("la verifica dopo la scrittura non coincide")
-        }
-    }
-
-    func restoreBackup() throws -> LiveMatchSessionSnapshot {
-        guard fileSystem.fileExists(at: backupURL) else {
-            throw LiveMatchSessionPersistenceError.noUsableBackup
-        }
-        let backupData = try fileSystem.readData(at: backupURL)
-        let backupSnapshot: LiveMatchSessionSnapshot
-        do {
-            backupSnapshot = try decode(backupData)
-        } catch {
-            throw LiveMatchSessionPersistenceError.noUsableBackup
-        }
-
-        if fileSystem.fileExists(at: primaryURL) {
-            let primaryData = try fileSystem.readData(at: primaryURL)
-            if (try? decode(primaryData)) != nil {
-                throw LiveMatchSessionPersistenceError.validPrimaryCannotBeReplaced
-            }
-
-            // Any decode/validation failure makes this primary generation unusable,
-            // including typed persistence errors such as a checksum mismatch or a
-            // future envelope version. Preserve its exact bytes before promotion.
-            let quarantine = directoryURL.appendingPathComponent("live-match-session-corrupt-\(UUID().uuidString).json")
-            try fileSystem.writeAtomically(primaryData, to: quarantine)
-        }
-
-        try fileSystem.writeAtomically(backupData, to: primaryURL)
-        let promoted = try decode(fileSystem.readData(at: primaryURL))
-        guard promoted.sessionID == backupSnapshot.sessionID else {
-            throw LiveMatchSessionPersistenceError.invalidPayload("la copia promossa non coincide")
-        }
-        return promoted
-    }
-
-    func removeFinalized(sessionID: UUID) throws {
-        let candidateURL = fileSystem.fileExists(at: primaryURL) ? primaryURL : backupURL
-        guard fileSystem.fileExists(at: candidateURL) else {
-            throw LiveMatchSessionPersistenceError.sessionNotFinalized(sessionID)
-        }
-        let snapshot: LiveMatchSessionSnapshot
-        do {
-            snapshot = try decode(fileSystem.readData(at: candidateURL))
-        } catch {
-            throw LiveMatchSessionPersistenceError.unreadableExistingSession(error.localizedDescription)
-        }
-        guard snapshot.sessionID == sessionID, snapshot.status == .finalized else {
-            throw LiveMatchSessionPersistenceError.sessionNotFinalized(sessionID)
-        }
-
-        // Remove the older copy first. If interrupted, the finalized primary remains
-        // sufficient to prove that history was committed before the session is cleaned up.
-        try fileSystem.removeItem(at: backupURL)
-        try fileSystem.removeItem(at: primaryURL)
-    }
-
-    private func validateStatusTransition(from old: LiveMatchSessionStatus, to new: LiveMatchSessionStatus) throws {
-        let allowed: Bool
-        switch old {
-        case .active:
-            allowed = new == .active || new == .finalizing
-        case .finalizing:
-            allowed = new == .finalizing || new == .finalized
-        case .finalized:
-            allowed = new == .finalized
-        }
-        guard allowed else {
-            throw LiveMatchSessionPersistenceError.invalidStatusTransition(from: old, to: new)
-        }
-    }
-
-    private func encode(_ snapshot: LiveMatchSessionSnapshot) throws -> Data {
         let payloadEncoder = JSONEncoder()
         payloadEncoder.dateEncodingStrategy = .millisecondsSince1970
         payloadEncoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -288,8 +106,8 @@ final class LiveMatchSessionStore: LiveMatchSessionRepository {
         return try envelopeEncoder.encode(envelope)
     }
 
-    private func decode(_ data: Data) throws -> LiveMatchSessionSnapshot {
-        let envelope = try JSONDecoder().decode(LiveMatchSessionEnvelope.self, from: data)
+    static func decode(_ document: Data) throws -> LiveMatchSessionSnapshot {
+        let envelope = try JSONDecoder().decode(LiveMatchSessionEnvelope.self, from: document)
         guard envelope.formatVersion == LiveMatchSessionEnvelope.currentVersion else {
             throw LiveMatchSessionPersistenceError.unsupportedEnvelopeVersion(envelope.formatVersion)
         }
@@ -302,6 +120,67 @@ final class LiveMatchSessionStore: LiveMatchSessionRepository {
         let snapshot = try decoder.decode(LiveMatchSessionSnapshot.self, from: envelope.payload)
         try snapshot.validate()
         return snapshot
+    }
+}
+
+/// Read-only compatibility source for the JSON files written by the previous
+/// C3 build. It is used only by the one-time importer; live writes go to SwiftData.
+@MainActor
+struct LegacyLiveMatchSessionJSONSource {
+    static let directoryName = "LiveMatchSession"
+    static let fileName = "live-match-session.json"
+    static let backupFileName = "live-match-session.backup.json"
+
+    let directoryURL: URL
+    private let fileAccess: any LegacyLiveMatchSessionFileAccess
+
+    var primaryURL: URL { directoryURL.appendingPathComponent(Self.fileName) }
+    var backupURL: URL { directoryURL.appendingPathComponent(Self.backupFileName) }
+
+    init(directoryURL: URL, fileAccess: (any LegacyLiveMatchSessionFileAccess)? = nil) {
+        self.directoryURL = directoryURL
+        self.fileAccess = fileAccess ?? FoundationLegacyLiveMatchSessionFileAccess()
+    }
+
+    static func applicationSupportSource(fileManager: FileManager = .default) throws -> LegacyLiveMatchSessionJSONSource {
+        guard let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let directory = applicationSupport
+            .appendingPathComponent("AURINFORMATC", isDirectory: true)
+            .appendingPathComponent(directoryName, isDirectory: true)
+        return LegacyLiveMatchSessionJSONSource(directoryURL: directory)
+    }
+
+    func load() -> LiveMatchSessionLoadResult {
+        if fileAccess.fileExists(at: primaryURL) {
+            do {
+                return .primary(try LiveMatchSessionDocumentCodec.decode(fileAccess.readData(at: primaryURL)))
+            } catch {
+                let primaryFailure = error.localizedDescription
+                guard fileAccess.fileExists(at: backupURL) else {
+                    return .unavailable(message: "Il salvataggio live legacy non è leggibile. \(primaryFailure) Il file originale è stato conservato.")
+                }
+                do {
+                    return .backupAvailable(
+                        snapshot: try LiveMatchSessionDocumentCodec.decode(fileAccess.readData(at: backupURL)),
+                        reason: "Il salvataggio principale legacy non è leggibile; è disponibile la generazione precedente. \(primaryFailure)"
+                    )
+                } catch {
+                    return .unavailable(message: "I salvataggi live legacy principale e di recupero non sono leggibili. Nessun file è stato rimosso. Dettaglio: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        guard fileAccess.fileExists(at: backupURL) else { return .none }
+        do {
+            return .backupAvailable(
+                snapshot: try LiveMatchSessionDocumentCodec.decode(fileAccess.readData(at: backupURL)),
+                reason: "Il salvataggio principale legacy non è presente; è disponibile la generazione precedente."
+            )
+        } catch {
+            return .unavailable(message: "La copia legacy di recupero non è leggibile. Il file originale è stato conservato. Dettaglio: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -329,11 +208,7 @@ enum LiveMatchSessionStartupFactory {
                 let decision = try LiveMatchRecoveryPolicy.decide(snapshot: snapshot, now: now)
                 switch decision.kind {
                 case .automatic:
-                    return .resume(
-                        snapshot: snapshot,
-                        elapsedNanoseconds: decision.elapsedNanoseconds,
-                        clockAdjustmentDetected: decision.clockAdjustmentDetected
-                    )
+                    return .resume(snapshot: snapshot, elapsedNanoseconds: decision.elapsedNanoseconds, clockAdjustmentDetected: decision.clockAdjustmentDetected)
                 case let .reviewRequired(reason):
                     return .review(
                         snapshot: snapshot,
@@ -352,15 +227,9 @@ enum LiveMatchSessionStartupFactory {
             }
             do {
                 let decision = try LiveMatchRecoveryPolicy.decide(snapshot: snapshot, now: now)
-                let suggested: Int64
-                if case .automatic = decision.kind {
-                    suggested = decision.elapsedNanoseconds
-                } else {
-                    suggested = decision.elapsedNanoseconds
-                }
                 return .review(
                     snapshot: snapshot,
-                    suggestedElapsedNanoseconds: suggested,
+                    suggestedElapsedNanoseconds: decision.elapsedNanoseconds,
                     maximumElapsedNanoseconds: MatchTiming.maximumRecoverableElapsedNanoseconds(for: snapshot.timing),
                     reason: reason,
                     restoreBackupFirst: true
@@ -377,36 +246,44 @@ enum LiveMatchSessionStartupFactory {
 @MainActor
 final class LiveMatchFinalizationCoordinator {
     private let sessionRepository: any LiveMatchSessionRepository
-    private let dataStore: MatchDataStore
 
-    init(sessionRepository: any LiveMatchSessionRepository, dataStore: MatchDataStore) {
+    init(sessionRepository: any LiveMatchSessionRepository) {
         self.sessionRepository = sessionRepository
-        self.dataStore = dataStore
     }
 
-    /// The live snapshot is made durable before history is inserted. History is keyed by
-    /// the stable session UUID; retries compare the existing record and never duplicate it.
-    /// The session is marked finalized and removed only after the history write/readback succeeds.
+    /// The repository commits the history record and session removal atomically.
+    /// A failed transaction leaves the saved session available for an explicit retry.
     func finalize(_ input: LiveMatchSessionSnapshot) throws {
         var snapshot = input
-        guard let record = snapshot.finalRecord else {
+        guard snapshot.finalRecord != nil else {
             throw LiveMatchSessionPersistenceError.finalRecordMissing
         }
         if snapshot.status == .active {
             snapshot.status = .finalizing
         }
         try snapshot.validate()
-        try sessionRepository.save(snapshot)
-        // Before the history side effect, ensure both retained generations carry the
-        // stable final record. If the newest file is later corrupted after history
-        // commits, the previous generation can still resume finalization idempotently.
-        try sessionRepository.save(snapshot)
-        try dataStore.insertHistoryRecordIfAbsent(record)
 
-        if snapshot.status != .finalized {
-            snapshot.status = .finalized
-            try sessionRepository.save(snapshot)
+        // Persist the finalization intent before the terminal transaction. This
+        // keeps the exact finished snapshot available for retry after a failure;
+        // history insertion and session removal still happen atomically below.
+        switch sessionRepository.load() {
+        case .none:
+            // A completed retry may already have removed the session. The store
+            // will accept it only when the matching history record is present.
+            break
+        case let .primary(current):
+            guard current.sessionID == snapshot.sessionID else {
+                throw LiveMatchSessionPersistenceError.anotherSessionExists(current.sessionID)
+            }
+            if current.status == .active {
+                try sessionRepository.save(snapshot)
+            }
+        case .backupAvailable:
+            throw LiveMatchSessionPersistenceError.sessionMustBeRecoveredBeforeOverwrite
+        case let .unavailable(message):
+            throw LiveMatchSessionPersistenceError.invalidPayload(message)
         }
-        try sessionRepository.removeFinalized(sessionID: snapshot.sessionID)
+
+        try sessionRepository.finalize(snapshot)
     }
 }

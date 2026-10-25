@@ -24,8 +24,8 @@ Questo documento distingue funzionalità effettive, decisioni confermate e lavor
 - Presenze in campo/panchina, cambi manuali, suggerimenti di rotazione, pesi Handicap e Superpower.
 - Gol, assist e altri eventi; punteggi, cronologia, modifica e cancellazione dei record storici.
 
-### Persistenza locale (C3.1)
-- SwiftData V1 è l'archivio operativo locale per rosa, calendario e storico.
+### Persistenza locale (C3.1 e C3.2-R1)
+- SwiftData V2 è l'archivio operativo locale per rosa, calendario, storico e sessione live; lo schema V1 resta immutato e viene migrato con uno stage testato.
 - Primo avvio: import idempotente dalle chiavi `FutsalRosterV1`, `FutsalScheduleV1`, `FutsalMatchHistoryV1`; preserva UUID, campi opzionali, ordine ove applicabile e snapshot storico di nomi/statistiche/eventi.
 - Le chiavi UserDefaults legacy non vengono cancellate o aggiornate dopo la migrazione; sono sorgente di recupero pre-migrazione, non un archivio operativo parallelo.
 - Lo storico rimane consultabile anche dopo la rimozione di un giocatore dalla rosa; cancellare una partita programmata non elimina lo storico.
@@ -40,15 +40,16 @@ Questo documento distingue funzionalità effettive, decisioni confermate e lavor
 
 ## Ancora da implementare / verificare
 
-- **Recovery live end-to-end:** il codice C3 e i test deterministici sono presenti; manca ancora la prova manuale di terminazione/rilancio su simulatore. La sessione usa JSON, non SwiftData.
+- **Recovery live end-to-end:** repository e recovery sono coperti da XCTest; manca la prova manuale UI di terminazione/rilancio su simulatore. Il Mac era bloccato durante C3.2-R1, quindi non è stata tentata. I JSON creati dal C3 precedente restano solo sorgenti d'importazione in sola lettura.
 - Backup/esportazione e rollback applicativo dopo che SwiftData abbia ricevuto modifiche successive alla migrazione.
 - Validazione dell'importazione su payload reali già presenti su un dispositivo; in C3.1 sono state usate solo fixture sintetiche.
 - Backend, autenticazione, sincronizzazione, CloudKit, multi-squadra e PWA.
 
 
-## Persistenza e recovery della partita live (C3)
+## Persistenza e recovery della partita live (C3; storage riallineato in C3.2-R1)
 
-- La sessione live viene salvata come aggregate JSON locale versionato, con copia primaria e generazione precedente verificabile. La conferma formazione viene salvata prima di mostrare il live; avvio, pause/riprese, sostituzioni, eventi, assist, timeout e transizioni rilevanti vengono persistiti senza usare i tick grafici come fonte temporale.
-- Al cold start il motore ricostruisce un nuovo anchor monotono e considera il tempo trascorso solo secondo la politica di recovery; quando i clock discordano o è possibile un riavvio, richiede revisione e limita il tempo accreditabile. Non avvia automaticamente periodi successivi.
-- La finalizzazione usa l’UUID della sessione come identità stabile del record storico e può essere ritentata senza duplicare un record equivalente. Una sessione viene rimossa solo dopo verifica dell’inserimento storico e del marcatore finale.
-- I test verificano deterministici restore e interruzioni simulate; non è stata svolta una prova manuale di kill/relaunch dell’app, né una verifica su dati reali del dispositivo. Lo stato di validazione resta PARTIAL fino alla prova end-to-end raccomandata in `STATUS.md`.
+- La sessione live è un aggregate Codable salvato operativamente in SwiftData V2. Lo store conserva una generazione precedente e un payload in quarantine per il recovery; JSON è il formato interno del payload, non uno store esterno operativo.
+- I file JSON primary/backup creati dal precedente C3 sono letti in sola lettura una volta, validati, importati con readback e ricevuta durevole; i file originali restano intatti. Un backup legacy richiede conferma esplicita. Dati non leggibili non producono uno stato vuoto o una ricevuta di successo.
+- La formazione, gli eventi, i cambi, i timer e le transizioni persistono attraverso il repository SwiftData. `MatchTiming` continua a usare i clock monotoni e la policy C3 crea nuovi anchor al ripristino; questa correzione non modifica la semantica temporale C2.
+- La finalizzazione confronta/inserisce il record storico e rimuove la sessione nello stesso store e transazione. Retry dopo commit non crea un duplicato; un fallimento lascia la sessione recuperabile.
+- C3.2-R1 ha superato 86 XCTest sintetici, inclusa migrazione V1→V2, riapertura, import legacy, backup, failure e finalizzazione. La prova UI kill/relaunch, la validazione su dati reali e il reboot reale non sono stati eseguiti; consultare `STATUS.md` e `TESTING.md`.
