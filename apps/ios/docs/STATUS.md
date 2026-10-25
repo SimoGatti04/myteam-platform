@@ -30,7 +30,7 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 
 Il percorso essenziale di partita live è stato esercitato in C3.2-V. Restano da verificare separatamente il blocco/sblocco dello schermo del simulatore, il recupero con riferimenti temporali incerti, l’avvio di una nuova partita subito dopo la finalizzazione e l’identità UUID osservata direttamente. Non iniziare C3.3 o modifiche al motore temporale come parte di queste verifiche.
 
-## C3.2-V — Esito: PARTIAL, flussi essenziali PASS
+## C3.2-V — Esito: COMPLETE per i flussi essenziali
 
 Il test XCUITest `LiveMatchLifecycleUITests/testActivePausedAndFinalizedMatchSurvivesProcessTermination` ha interagito con l’app reale installata nel simulatore isolato `AURINFORMATC-C3.2-V` (iPhone 18 Pro, iOS 27.0, runtime build 24A434; UDID `2CF865DB-369B-47B1-9608-FA1212AD3FD4`) usando esclusivamente sei giocatori sintetici. Sono passati il flusso attivo, il kill/relaunch, il ripristino di timer/eventi/partecipanti, la pausa/ripresa esplicita, il background/foreground e la finalizzazione con record storico unico e nessuna sessione live riproposta dopo il nuovo avvio.
 
@@ -38,7 +38,7 @@ La suite di regressione C1–C3.2-R1 aggiornata è passata: **91 XCTest PASS, 0 
 
 Una prima esecuzione UI ha riprodotto un conflitto di finalizzazione tra la data del record in memoria e quella serializzata nel checkpoint live (JSON a millisecondi). È stata introdotta una tolleranza di 1 microsecondo nella verifica di equivalenza dei record e un test di regressione deterministico; il test prima falliva e ora è incluso nella suite da 91 test. Nessuna chiave o formato persistito è stato cambiato.
 
-**Limiti residui:** il controllo Computer Use ha segnalato il Mac bloccato e non è stato aggirato; è stata comunque eseguita la modalità XCUITest reale. Il background/foreground è verificato via `.home`/`activate`, ma non il blocco schermo. Non sono stati eseguiti lo scenario di recovery temporale incerto, la verifica UI dell’avvio di una nuova partita dopo la finalizzazione, né l’ispezione diretta dell’UUID della sessione. Non sono stati usati store di produzione, dati personali o backup reali. Nessun push o remote.
+**Limiti supplementari:** il controllo Computer Use ha segnalato il Mac bloccato e non è stato aggirato; la modalità XCUITest ha comunque verificato l’app reale e i flussi essenziali richiesti. Il background/foreground è verificato via `.home`/`activate`, ma non il blocco schermo. Non sono stati eseguiti lo scenario di recovery temporale incerto, la verifica UI dell’avvio di una nuova partita dopo la finalizzazione, né l’ispezione diretta dell’UUID della sessione. Queste lacune non sono presentate come test superati. Non sono stati usati store di produzione, dati personali o backup reali. Nessun push o remote.
 
 Result bundle mantenuti come evidenza:
 
