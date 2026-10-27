@@ -6,6 +6,23 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		000000000000000260000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000100000000;
+			remoteInfo = APP;
+		};
+		000000000000000360000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000100000000;
+			remoteInfo = APP;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* APP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = APP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000121 /* APPTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = APPTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -134,36 +151,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXContainerItemProxy section */
-		000000000000000260000000 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 000000000000000000000000 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 000000000000000100000000;
-			remoteInfo = APP;
-		};
-		000000000000000360000000 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 000000000000000000000000 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 000000000000000100000000;
-			remoteInfo = APP;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		000000000000000250000000 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 000000000000000100000000 /* APP */;
-			targetProxy = 000000000000000260000000 /* PBXContainerItemProxy */;
-		};
-		000000000000000350000000 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 000000000000000100000000 /* APP */;
-			targetProxy = 000000000000000360000000 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		000000000000000000000000 /* Project object */ = {
 			isa = PBXProject;
@@ -242,41 +229,20 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		000000000000000250000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000100000000 /* APP */;
+			targetProxy = 000000000000000260000000 /* PBXContainerItemProxy */;
+		};
+		000000000000000350000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000100000000 /* APP */;
+			targetProxy = 000000000000000360000000 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
-		000000000000000211000000 /* Debug configuration for PBXNativeTarget "APPTests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aurorabellinipersonalteam.APPTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APP.app/APP";
-			};
-			name = Debug;
-		};
-		000000000000000212000000 /* Release configuration for PBXNativeTarget "APPTests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aurorabellinipersonalteam.APPTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APP.app/APP";
-			};
-			name = Release;
-		};
 		000000000000000011000000 /* Debug configuration for PBXProject "APP" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -485,6 +451,40 @@
 			};
 			name = Release;
 		};
+		000000000000000211000000 /* Debug configuration for PBXNativeTarget "APPTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aurorabellinipersonalteam.APPTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APP.app/APP";
+			};
+			name = Debug;
+		};
+		000000000000000212000000 /* Release configuration for PBXNativeTarget "APPTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aurorabellinipersonalteam.APPTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/APP.app/APP";
+			};
+			name = Release;
+		};
 		000000000000000311000000 /* Debug configuration for PBXNativeTarget "APPUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -494,10 +494,10 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
-				TEST_TARGET_NAME = APP;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = APP;
 			};
 			name = Debug;
 		};
@@ -510,34 +510,16 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
-				TEST_TARGET_NAME = APP;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = APP;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
-		000000000000000310000000 /* Build configuration list for PBXNativeTarget "APPUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				000000000000000311000000 /* Debug configuration for PBXNativeTarget "APPUITests" */,
-				000000000000000312000000 /* Release configuration for PBXNativeTarget "APPUITests" */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* Begin XCConfigurationList section */
-		000000000000000210000000 /* Build configuration list for PBXNativeTarget "APPTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				000000000000000211000000 /* Debug configuration for PBXNativeTarget "APPTests" */,
-				000000000000000212000000 /* Release configuration for PBXNativeTarget "APPTests" */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		000000000000000010000000 /* Build configuration list for PBXProject "APP" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -551,6 +533,22 @@
 			buildConfigurations = (
 				000000000000000111000000 /* Debug configuration for PBXNativeTarget "APP" */,
 				000000000000000112000000 /* Release configuration for PBXNativeTarget "APP" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		000000000000000210000000 /* Build configuration list for PBXNativeTarget "APPTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000211000000 /* Debug configuration for PBXNativeTarget "APPTests" */,
+				000000000000000212000000 /* Release configuration for PBXNativeTarget "APPTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		000000000000000310000000 /* Build configuration list for PBXNativeTarget "APPUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000311000000 /* Debug configuration for PBXNativeTarget "APPUITests" */,
+				000000000000000312000000 /* Release configuration for PBXNativeTarget "APPUITests" */,
 			);
 			defaultConfigurationName = Release;
 		};

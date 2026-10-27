@@ -32,7 +32,21 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
             scorerID: LiveSessionTestData.id(1),
             scorerName: "Player 1"
         )
-        let snapshot = LiveSessionTestData.replacing(base, events: [goal], pendingAssist: pendingAssist)
+        let correctedGoal = GoalEvent(id: goal.id, team: .opponent, matchSecond: 10)
+        let correctionMetadata = LiveMatchCorrectionMetadata(
+            lastEventUndo: LiveMatchEventCorrectionUndo(
+                id: LiveSessionTestData.id(701),
+                previousEvents: [goal],
+                previousPendingAssist: pendingAssist,
+                recordedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+        )
+        let snapshot = LiveSessionTestData.replacing(
+            base,
+            events: [correctedGoal],
+            pendingAssist: nil,
+            correctionMetadata: correctionMetadata
+        )
 
         try store.save(snapshot)
 
@@ -44,8 +58,12 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
         XCTAssertEqual(loaded.startingPlayerIDs, snapshot.startingPlayerIDs)
         XCTAssertEqual(loaded.players, snapshot.players)
         XCTAssertEqual(loaded.events.map(\.id), [goal.id])
+        XCTAssertEqual(loaded.events.first?.team, .opponent)
         XCTAssertNil(loaded.events.first?.assistID)
-        XCTAssertEqual(loaded.pendingAssist, pendingAssist)
+        XCTAssertNil(loaded.pendingAssist)
+        XCTAssertEqual(loaded.correctionMetadata, correctionMetadata)
+        XCTAssertEqual(loaded.correctionMetadata?.lastEventUndo?.previousEvents, [goal])
+        XCTAssertEqual(loaded.correctionMetadata?.lastEventUndo?.previousPendingAssist, pendingAssist)
         XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 1)
     }
 
@@ -420,6 +438,11 @@ final class SwiftDataLiveSessionPersistenceTests: XCTestCase {
             let result = try reopenedStore.loadSnapshot()
             XCTAssertEqual(result.history.count, 1)
             XCTAssertEqual(result.history.first?.id, snapshot.sessionID)
+            XCTAssertEqual(
+                result.history.first?.correctionMetadata,
+                snapshot.finalRecord?.correctionMetadata,
+                "Finalization must preserve the history-correction payload across the SwiftData round-trip"
+            )
             XCTAssertEqual(try sessionCount(in: try XCTUnwrap(environment.container)), 0)
         }
         environment.close()
@@ -762,6 +785,14 @@ private enum LiveSessionTestData {
                 assists: 0
             )
         }
+        var historyCorrectionMetadata = timing.correctionMetadata
+        if historyCorrectionMetadata.participationTimeline != nil {
+            historyCorrectionMetadata.historicalAttendance = MatchHistoricalAttendance(
+                periodDurationNanoseconds: timing.configuration.periodDurationNanoseconds,
+                firstHalfEndNanoseconds: timing.firstHalfElapsedNanoseconds,
+                secondHalfEndNanoseconds: timing.secondHalfElapsedNanoseconds
+            )
+        }
         let record = MatchRecord(
             id: active.sessionID,
             date: active.capturedAt,
@@ -772,7 +803,8 @@ private enum LiveSessionTestData {
             events: [],
             scheduledMatchID: nil,
             opponentName: nil,
-            isHome: nil
+            isHome: nil,
+            correctionMetadata: historyCorrectionMetadata
         )
         let snapshot = LiveMatchSessionSnapshot(
             schemaVersion: active.schemaVersion,
@@ -797,7 +829,8 @@ private enum LiveSessionTestData {
     static func replacing(
         _ snapshot: LiveMatchSessionSnapshot,
         events: [GoalEvent],
-        pendingAssist: LiveMatchPendingAssistSnapshot
+        pendingAssist: LiveMatchPendingAssistSnapshot?,
+        correctionMetadata: LiveMatchCorrectionMetadata? = nil
     ) -> LiveMatchSessionSnapshot {
         LiveMatchSessionSnapshot(
             schemaVersion: snapshot.schemaVersion,
@@ -813,7 +846,8 @@ private enum LiveSessionTestData {
             opponentName: snapshot.opponentName,
             isHome: snapshot.isHome,
             continuousTimeNanoseconds: snapshot.continuousTimeNanoseconds,
-            finalRecord: snapshot.finalRecord
+            finalRecord: snapshot.finalRecord,
+            correctionMetadata: correctionMetadata
         )
     }
 

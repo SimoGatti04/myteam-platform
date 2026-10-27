@@ -285,6 +285,163 @@ final class MatchDataPersistenceTests: XCTestCase {
     }
 
 
+    func testVersionTwoStoreMigratesToVersionThreeWithoutLosingMatchData() throws {
+        let environment = try makeEnvironment(persistent: true, openImmediately: false)
+        defer { environment.cleanup() }
+
+        let roster = [RosterPlayer(id: fixedID(301), name: "Fixture Keeper", isGoalkeeper: true)]
+        let schedule = [makeSchedule(id: fixedID(302), date: 1_800_000_000)]
+        let history = [makeFullMatchRecord(id: fixedID(303), rosterPlayerID: fixedID(301), scheduledMatchID: fixedID(302))]
+        try seedVersionTwoStore(at: environment.storeURL, roster: roster, schedule: schedule, history: history)
+
+        let migratedContainer = try MatchDataStore.makeContainer(at: environment.storeURL)
+        environment.retain(container: migratedContainer)
+        let migrated = try environment.store.loadSnapshot()
+
+        XCTAssertEqual(migrated.roster, roster)
+        XCTAssertEqual(migrated.schedule, schedule)
+        XCTAssertEqual(migrated.history, history)
+
+        var correctedRecord = try XCTUnwrap(migrated.history.first)
+        correctedRecord.correctionMetadata = MatchCorrectionMetadata(
+            historicalAttendance: MatchHistoricalAttendance(
+                periodDurationNanoseconds: 20 * 60 * 1_000_000_000,
+                firstHalfEndNanoseconds: 20 * 60 * 1_000_000_000,
+                secondHalfEndNanoseconds: 7 * 60 * 1_000_000_000
+            )
+        )
+        try environment.store.updateHistoryRecord(correctedRecord)
+        XCTAssertEqual(try environment.store.loadSnapshot().history, [correctedRecord])
+    }
+
+    func testHistoryCorrectionPreviewPersistsMetadataAndSupportsUndo() throws {
+        let environment = try makeEnvironment(persistent: true)
+        defer { environment.cleanup() }
+        _ = try environment.store.bootstrap()
+        let original = makeFullMatchRecord()
+        try environment.store.replaceHistory([original])
+
+        var proposed = original
+        proposed.players[0].secondsPlayed = 1_100
+        var event = try XCTUnwrap(proposed.events?.first)
+        event.matchSecond = 500
+        proposed.events = [event]
+        let preview = try MatchRecordCorrectionEngine.preview(from: original, proposing: proposed)
+        XCTAssertEqual(preview.affectedPlayerIDs, [original.players[0].id])
+        XCTAssertEqual(preview.affectedEventIDs, [event.id])
+        XCTAssertEqual(preview.previousScore.ours, 2)
+        let confirmed = try MatchRecordCorrectionEngine.confirmedRecord(from: preview)
+        XCTAssertEqual(confirmed.events?.first?.id, original.events?.first?.id)
+        XCTAssertEqual(confirmed.correctionMetadata?.lastUndo?.scope, .historyRecord)
+
+        try environment.store.updateHistoryRecord(confirmed)
+        let persisted = try XCTUnwrap(environment.store.loadSnapshot().history.first)
+        XCTAssertTrue(environment.store.recordsAreEquivalent(persisted, confirmed))
+        XCTAssertEqual(persisted.correctionMetadata?.lastUndo?.previousStatePayload, confirmed.correctionMetadata?.lastUndo?.previousStatePayload)
+
+        let restored = try MatchRecordCorrectionEngine.undo(persisted)
+        try environment.store.updateHistoryRecord(restored)
+        let afterUndo = try XCTUnwrap(environment.store.loadSnapshot().history.first)
+        XCTAssertTrue(environment.store.recordsAreEquivalent(afterUndo, original))
+    }
+
+    func testHistoryDurationCorrectionRecalculatesTrustedAttendanceAndPreservesManualOffset() throws {
+        let playerID = fixedID(91)
+        var record = makeFullMatchRecord(rosterPlayerID: playerID)
+        record.duration = 100
+        record.players[0].secondsPlayed = 100
+        record.events = []
+        record.ourScore = 0
+        record.opponentScore = 0
+        record.players[0].goals = 0
+        record.players[0].assists = 0
+
+        var timeline = try MatchParticipationTimelineSnapshot.complete(
+            participants: [MatchTimingParticipantSnapshot(id: playerID, accumulatedNanoseconds: 0, inField: true)],
+            starters: [playerID]
+        )
+        _ = try timeline.record(
+            playerID: playerID,
+            period: .firstHalf,
+            elapsedNanoseconds: 0,
+            transition: .leftField,
+            origin: .manualCorrection
+        )
+        _ = try timeline.record(
+            playerID: playerID,
+            period: .firstHalf,
+            elapsedNanoseconds: 10_000_000_000,
+            transition: .enteredField,
+            origin: .manualCorrection
+        )
+        record.correctionMetadata = MatchCorrectionMetadata(
+            participationTimeline: timeline,
+            minuteAdjustments: [MatchTimingMinuteAdjustment(playerID: playerID, adjustmentNanoseconds: 10_000_000_000)],
+            historicalAttendance: MatchHistoricalAttendance(
+                periodDurationNanoseconds: 1_200_000_000_000,
+                firstHalfEndNanoseconds: 100_000_000_000,
+                secondHalfEndNanoseconds: 0
+            )
+        )
+
+        var proposed = record
+        proposed.duration = 80
+        let preview = try MatchRecordCorrectionEngine.preview(from: record, proposing: proposed)
+        XCTAssertEqual(preview.proposed.players[0].secondsPlayed, 80)
+        XCTAssertEqual(preview.automaticallyRecalculatedPlayerIDs, [playerID])
+        XCTAssertEqual(preview.proposed.correctionMetadata?.minuteAdjustments.first?.adjustmentNanoseconds, 10_000_000_000)
+        XCTAssertEqual(preview.proposed.correctionMetadata?.historicalAttendance?.firstHalfEndNanoseconds, 80_000_000_000)
+    }
+
+    func testHistoryEventCorrectionRecomputesScoreAndNameBasedLegacyStatisticsPreservingEventID() throws {
+        let playerID = fixedID(92)
+        var record = makeFullMatchRecord(rosterPlayerID: playerID)
+        let eventID = fixedID(93)
+        record.events = [GoalEvent(
+            id: eventID,
+            team: .ours,
+            matchSecond: 420,
+            scorerName: "Player One"
+        )]
+        record.duration = 2_400
+        record.ourScore = 1
+        record.opponentScore = 0
+        record.players[0].goals = 1
+        record.players[0].assists = 0
+
+        var proposed = record
+        var event = try XCTUnwrap(proposed.events?.first)
+        event.matchSecond = 300
+        proposed.events = [event]
+        let preview = try MatchRecordCorrectionEngine.preview(from: record, proposing: proposed)
+        XCTAssertEqual(preview.proposed.events?.first?.id, eventID)
+        XCTAssertEqual(preview.proposed.ourScore, 1)
+        XCTAssertEqual(preview.proposed.opponentScore, 0)
+        XCTAssertEqual(preview.proposed.players[0].goals, 1)
+
+        event.team = .opponent
+        event.scorerName = nil
+        proposed.events = [event]
+        let movedToOpponent = try MatchRecordCorrectionEngine.preview(from: record, proposing: proposed)
+        XCTAssertEqual(movedToOpponent.proposed.events?.first?.id, eventID)
+        XCTAssertEqual(movedToOpponent.proposed.ourScore, 0)
+        XCTAssertEqual(movedToOpponent.proposed.opponentScore, 1)
+        XCTAssertEqual(movedToOpponent.proposed.players[0].goals, 0)
+    }
+
+    func testHistoryCorrectionRejectsInvalidEventAndPlayerTimes() throws {
+        let original = makeFullMatchRecord()
+        var invalidPlayer = original
+        invalidPlayer.players[0].secondsPlayed = original.duration + 1
+        XCTAssertThrowsError(try MatchRecordCorrectionEngine.preview(from: original, proposing: invalidPlayer))
+
+        var invalidEvent = original
+        var event = try XCTUnwrap(invalidEvent.events?.first)
+        event.matchSecond = original.duration + 1
+        invalidEvent.events = [event]
+        XCTAssertThrowsError(try MatchRecordCorrectionEngine.preview(from: original, proposing: invalidEvent))
+    }
+
     func testMigrationConflictDoesNotOverwriteExistingData() throws {
         let environment = try makeEnvironment()
         defer { environment.cleanup() }
@@ -405,6 +562,37 @@ final class MatchDataPersistenceTests: XCTestCase {
             }
         }
         return TestEnvironment(suite: suite, defaults: defaults, storeURL: storeURL, container: container)
+    }
+
+    private func seedVersionTwoStore(
+        at storeURL: URL,
+        roster: [RosterPlayer],
+        schedule: [ScheduledMatch],
+        history: [MatchRecord]
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: storeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
+        let configuration = ModelConfiguration(
+            "AURINFORMATC-V2-Migration-Fixture",
+            schema: schema,
+            url: storeURL,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = ModelContext(container)
+        for (position, player) in roster.enumerated() {
+            context.insert(StoredRosterPlayer(player, position: position))
+        }
+        for (position, match) in schedule.enumerated() {
+            context.insert(StoredScheduledMatch(match, position: position))
+        }
+        for (position, record) in history.enumerated() {
+            context.insert(StoredMatchRecord(record, position: position))
+        }
+        try context.save()
     }
 
     private func receiptCount(in container: ModelContainer) throws -> Int {

@@ -197,9 +197,17 @@ extension MatchDataStore: LiveMatchSessionRepository {
                 }
 
                 let records = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+                let correctionMetadata = try context.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+                let correctionMetadataByRecordID = Dictionary(
+                    correctionMetadata.map { ($0.recordID, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
                 let existingRecord = records.first { $0.id == record.id }
                 if let existingRecord {
-                    guard recordsAreEquivalent(try existingRecord.domainValue(), record) else {
+                    guard recordsAreEquivalent(
+                        try domainValue(existingRecord, correctionMetadata: correctionMetadataByRecordID[record.id]),
+                        record
+                    ) else {
                         throw MatchDataPersistenceError.liveSessionHistoryConflict(record.id)
                     }
                 } else if sessions.isEmpty {
@@ -227,6 +235,11 @@ extension MatchDataStore: LiveMatchSessionRepository {
                     for item in records { item.position += 1 }
                     context.insert(StoredMatchRecord(record, position: 0))
                 }
+                try synchronizeCorrectionMetadata(
+                    for: record,
+                    existing: correctionMetadataByRecordID[record.id],
+                    context: context
+                )
                 if let session = sessions.first {
                     context.delete(session)
                 }
@@ -238,8 +251,16 @@ extension MatchDataStore: LiveMatchSessionRepository {
 
         let verificationContext = makeContext()
         let history = try verificationContext.fetch(FetchDescriptor<StoredMatchRecord>())
+        let storedCorrectionMetadata = try verificationContext.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+        let storedCorrectionMetadataByRecordID = Dictionary(
+            storedCorrectionMetadata.map { ($0.recordID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         guard let stored = history.first(where: { $0.id == record.id }),
-              recordsAreEquivalent(try stored.domainValue(), record) else {
+              recordsAreEquivalent(
+                try domainValue(stored, correctionMetadata: storedCorrectionMetadataByRecordID[record.id]),
+                record
+              ) else {
             throw MatchDataPersistenceError.historyRecordReadbackFailed(id: record.id)
         }
         let remainingSessions = try verificationContext.fetch(FetchDescriptor<StoredLiveMatchSession>())

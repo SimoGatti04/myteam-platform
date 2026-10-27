@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class LiveMatchSessionTests: XCTestCase {
+    func testC2VersionOnePayloadMigratesToC3PartialAttendanceTimeline() throws {
+        let current = makeActiveSnapshot(advancedSeconds: 10)
+        let encoded = try JSONEncoder().encode(current)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["schemaVersion"] = LiveMatchSessionSnapshot.legacySchemaVersion
+        var timing = try XCTUnwrap(object["timing"] as? [String: Any])
+        timing["schemaVersion"] = MatchTimingSnapshot.legacySchemaVersion
+        timing.removeValue(forKey: "correctionMetadata")
+        object["timing"] = timing
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let legacy = try JSONDecoder().decode(LiveMatchSessionSnapshot.self, from: legacyData)
+        XCTAssertEqual(legacy.schemaVersion, LiveMatchSessionSnapshot.legacySchemaVersion)
+        XCTAssertNil(legacy.timing.correctionMetadata)
+        XCTAssertNoThrow(try legacy.validate())
+
+        let restored = try LiveMatchSessionRestorer.restore(snapshot: legacy, elapsedNanoseconds: 0)
+        XCTAssertEqual(restored.snapshot.schemaVersion, LiveMatchSessionSnapshot.currentSchemaVersion)
+        XCTAssertEqual(restored.snapshot.timing.schemaVersion, MatchTimingSnapshot.currentSchemaVersion)
+        XCTAssertFalse(try XCTUnwrap(restored.timing.correctionMetadata.participationTimeline).isCompleteFromStart)
+        XCTAssertEqual(restored.timing.participantSecondsPlayed[current.startingPlayerIDs[0]], 10)
+    }
+
     func testRecoveryAutomaticallyUsesAlignedContinuousClock() throws {
         let snapshot = makeActiveSnapshot(advancedSeconds: 10)
         let now = LiveMatchRecoveryReading(

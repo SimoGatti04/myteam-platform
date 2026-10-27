@@ -91,6 +91,34 @@ enum MatchTimingToggleResult: Equatable {
     case unavailable
 }
 
+enum MatchTimingCorrectionError: LocalizedError, Equatable {
+    case unavailable
+    case outOfRange
+    case incompleteTimeline
+    case timelineConflict
+    case invalidPlayer
+    case invalidMinutes
+    case correctionRequiresPause
+    case stalePreview
+    case undoUnavailable
+    case snapshotEncodingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "Il tempo non può essere corretto nello stato attuale della partita."
+        case .outOfRange: return "Il tempo corretto supera i limiti del periodo."
+        case .incompleteTimeline: return "La cronologia non consente di ricalcolare questo tempo senza inventare presenze."
+        case .timelineConflict: return "La correzione attraversa uno o più cambi che richiedono una riconciliazione esplicita."
+        case .invalidPlayer: return "Il giocatore selezionato non appartiene alla partita."
+        case .invalidMinutes: return "I minuti indicati non sono validi."
+        case .correctionRequiresPause: return "Metti in pausa la partita prima di applicare una correzione."
+        case .stalePreview: return "La partita è cambiata dopo l'anteprima. Ricalcola la correzione."
+        case .undoUnavailable: return "Non è disponibile una correzione da annullare."
+        case .snapshotEncodingFailed: return "La correzione non può essere preparata per il salvataggio."
+        }
+    }
+}
+
 struct MatchTimingParticipantSnapshot: Codable, Equatable {
     let id: UUID
     var accumulatedNanoseconds: Int64
@@ -100,7 +128,8 @@ struct MatchTimingParticipantSnapshot: Codable, Equatable {
 /// Serializable timing state for a future persistence adapter.
 /// `capturedAt` is a durable wall-clock checkpoint; the engine's live clock anchor is deliberately omitted.
 struct MatchTimingSnapshot: Codable, Equatable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
+    static let legacySchemaVersion = 1
 
     let schemaVersion: Int
     let configuration: MatchTimingConfiguration
@@ -119,10 +148,28 @@ struct MatchTimingSnapshot: Codable, Equatable {
     let opponentTimeoutsUsed: Int
     let participants: [MatchTimingParticipantSnapshot]
     let capturedAt: Date
+    /// Optional additions remain decodable from C2 snapshots that predate C3.3.
+    var correctionMetadata: MatchCorrectionMetadata? = nil
 
     var totalMatchElapsedSeconds: Int {
         Int((firstHalfElapsedNanoseconds + secondHalfElapsedNanoseconds) / 1_000_000_000)
     }
+}
+
+struct MatchTimingCorrectionChange: Equatable, Identifiable {
+    let playerID: UUID
+    let beforeSeconds: Int
+    let afterSeconds: Int
+
+    var id: UUID { playerID }
+}
+
+struct MatchTimingCorrectionPreview: Equatable, Identifiable {
+    let id: UUID
+    let summary: String
+    let before: MatchTimingSnapshot
+    let after: MatchTimingSnapshot
+    let affectedPlayers: [MatchTimingCorrectionChange]
 }
 
 enum MatchTimingRestoreError: LocalizedError, Equatable {
@@ -166,6 +213,7 @@ struct MatchTiming {
     private(set) var ourTimeoutsUsed = 0
     private(set) var opponentTimeoutsUsed = 0
     private(set) var participants: [MatchTimingParticipantSnapshot] = []
+    private(set) var correctionMetadata = MatchCorrectionMetadata()
 
     private var attendanceIDs: Set<UUID> = []
     private var segmentAnchorNanoseconds: Int64?
@@ -207,6 +255,29 @@ struct MatchTiming {
         timing.opponentTimeoutsUsed = snapshot.opponentTimeoutsUsed
         timing.participants = snapshot.participants
         timing.attendanceIDs = Set(snapshot.participants.map(\.id))
+        var restoredCorrectionMetadata = snapshot.correctionMetadata ?? MatchCorrectionMetadata()
+        if restoredCorrectionMetadata.schemaVersion == MatchCorrectionMetadata.legacySchemaVersion {
+            restoredCorrectionMetadata.schemaVersion = MatchCorrectionMetadata.currentSchemaVersion
+        }
+        timing.correctionMetadata = restoredCorrectionMetadata
+        if timing.correctionMetadata.participationTimeline == nil,
+           snapshot.lineupConfirmed,
+           snapshot.hasStarted {
+            timing.correctionMetadata.participationTimeline = try MatchParticipationTimelineSnapshot.partialRecoveryBaseline(
+                participants: snapshot.participants,
+                phase: snapshot.phase,
+                firstHalfElapsedNanoseconds: snapshot.firstHalfElapsedNanoseconds,
+                secondHalfElapsedNanoseconds: snapshot.secondHalfElapsedNanoseconds,
+                periodDurationNanoseconds: Int64(snapshot.configuration.periodDurationSeconds) * Self.nanosecondsPerSecond
+            )
+        } else if timing.correctionMetadata.participationTimeline == nil,
+                  snapshot.lineupConfirmed,
+                  !snapshot.hasStarted {
+            timing.correctionMetadata.participationTimeline = try MatchParticipationTimelineSnapshot.complete(
+                participants: snapshot.participants,
+                starters: Set(snapshot.participants.filter(\.inField).map(\.id))
+            )
+        }
 
         if timing.hasActiveSegment {
             timing.segmentAnchorNanoseconds = clock.nowNanoseconds()
@@ -221,7 +292,8 @@ struct MatchTiming {
     }
 
     static func validate(_ snapshot: MatchTimingSnapshot) throws {
-        guard snapshot.schemaVersion == MatchTimingSnapshot.currentSchemaVersion else {
+        guard snapshot.schemaVersion == MatchTimingSnapshot.legacySchemaVersion ||
+              snapshot.schemaVersion == MatchTimingSnapshot.currentSchemaVersion else {
             throw MatchTimingRestoreError.unsupportedSchema(snapshot.schemaVersion)
         }
 
@@ -272,10 +344,11 @@ struct MatchTiming {
             throw MatchTimingRestoreError.invalidSnapshot("distinta, formazione e stato di avvio non coincidono")
         }
 
-        let totalPlayed = firstHalf + secondHalf
-        guard snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds <= totalPlayed }),
-              snapshot.hasStarted || snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds == 0 }) else {
-            throw MatchTimingRestoreError.invalidSnapshot("il minutaggio individuale supera il tempo di gara")
+        let maximumMatchNanoseconds = periodDuration * 2
+        guard snapshot.participants.allSatisfy({
+            $0.accumulatedNanoseconds <= maximumMatchNanoseconds
+        }), snapshot.hasStarted || snapshot.participants.allSatisfy({ $0.accumulatedNanoseconds == 0 }) else {
+            throw MatchTimingRestoreError.invalidSnapshot("il minutaggio individuale supera la durata massima della gara")
         }
         if !snapshot.hasStarted && !snapshot.participants.isEmpty && fieldCount != configuration.requiredStartingPlayers {
             throw MatchTimingRestoreError.invalidSnapshot("la formazione iniziale non contiene il numero richiesto di giocatori")
@@ -336,6 +409,76 @@ struct MatchTiming {
 
         if snapshot.phase == .finished && snapshot.activity != .stopped {
             throw MatchTimingRestoreError.invalidSnapshot("partita conclusa ma cronometro ancora attivo")
+        }
+
+        if let metadata = snapshot.correctionMetadata {
+            guard metadata.schemaVersion == MatchCorrectionMetadata.legacySchemaVersion ||
+                  metadata.schemaVersion == MatchCorrectionMetadata.currentSchemaVersion else {
+                throw MatchTimingRestoreError.invalidSnapshot("versione dei metadati di correzione non supportata")
+            }
+            let participantIDs = Set(identifiers)
+            let adjustmentIDs = metadata.minuteAdjustments.map(\.playerID)
+            let correctionIDs = metadata.minuteCorrections.map(\.playerID)
+            guard adjustmentIDs.count == Set(adjustmentIDs).count,
+                  correctionIDs.count == Set(correctionIDs).count,
+                  adjustmentIDs.allSatisfy(participantIDs.contains),
+                  correctionIDs.allSatisfy(participantIDs.contains),
+                  metadata.minuteCorrections.allSatisfy({ $0.adjustedSeconds >= 0 && $0.adjustedSeconds <= configuration.periodDurationSeconds * 2 }) else {
+                throw MatchTimingRestoreError.invalidSnapshot("metadati dei minutaggi non validi")
+            }
+            if let timeline = metadata.participationTimeline {
+                do {
+                    try timeline.validate(
+                        participantIDs: participantIDs,
+                        periodDurationNanoseconds: periodDuration,
+                        firstHalfEndNanoseconds: firstHalf,
+                        secondHalfEndNanoseconds: secondHalf
+                    )
+                    let calculated = try timeline.nanosecondsPlayed(
+                        participantIDs: participantIDs,
+                        firstHalfEndNanoseconds: firstHalf,
+                        secondHalfEndNanoseconds: secondHalf
+                    )
+                    let adjustments = Dictionary(uniqueKeysWithValues: metadata.minuteAdjustments.map {
+                        ($0.playerID, $0.adjustmentNanoseconds)
+                    })
+                    for participant in snapshot.participants {
+                        let (value, overflow) = calculated[participant.id, default: 0]
+                            .addingReportingOverflow(adjustments[participant.id, default: 0])
+                        let expected = overflow ? Int64.max : max(0, value)
+                        guard participant.accumulatedNanoseconds == expected else {
+                            throw MatchTimingRestoreError.invalidSnapshot("i minutaggi non coincidono con la cronologia delle presenze")
+                        }
+                    }
+                    let expectedField: Set<UUID>
+                    switch snapshot.phase {
+                    case .firstHalf, .halftime:
+                        expectedField = try timeline.fieldPlayerIDs(
+                            participantIDs: participantIDs,
+                            period: .firstHalf,
+                            through: firstHalf
+                        )
+                    case .secondHalf:
+                        expectedField = try timeline.fieldPlayerIDs(
+                            participantIDs: participantIDs,
+                            period: .secondHalf,
+                            through: secondHalf
+                        )
+                    case .finished:
+                        expectedField = Set(snapshot.participants.filter(\.inField).map(\.id))
+                    }
+                    if snapshot.phase != .finished,
+                       expectedField != Set(snapshot.participants.filter(\.inField).map(\.id)) {
+                        throw MatchTimingRestoreError.invalidSnapshot("lo stato in campo non coincide con la cronologia")
+                    }
+                } catch let error as MatchTimingRestoreError {
+                    throw error
+                } catch {
+                    throw MatchTimingRestoreError.invalidSnapshot(error.localizedDescription)
+                }
+            } else if !metadata.minuteAdjustments.isEmpty {
+                throw MatchTimingRestoreError.invalidSnapshot("rettifiche minuti senza cronologia o base osservata")
+            }
         }
     }
 
@@ -430,6 +573,7 @@ struct MatchTiming {
             attendanceConfirmed = false
             lineupConfirmed = false
             participants = []
+            correctionMetadata = MatchCorrectionMetadata()
             return false
         }
 
@@ -437,6 +581,7 @@ struct MatchTiming {
         attendanceConfirmed = true
         lineupConfirmed = false
         participants = []
+        correctionMetadata = MatchCorrectionMetadata()
         return true
     }
 
@@ -451,6 +596,7 @@ struct MatchTiming {
         else {
             lineupConfirmed = false
             participants = []
+            correctionMetadata = MatchCorrectionMetadata()
             return false
         }
 
@@ -464,6 +610,19 @@ struct MatchTiming {
                 )
             }
         lineupConfirmed = true
+        do {
+            correctionMetadata.participationTimeline = try MatchParticipationTimelineSnapshot.complete(
+                participants: participants,
+                starters: fieldPlayerIDs
+            )
+            correctionMetadata.minuteAdjustments = []
+            correctionMetadata.minuteCorrections = []
+        } catch {
+            lineupConfirmed = false
+            participants = []
+            correctionMetadata.participationTimeline = nil
+            return false
+        }
         return true
     }
 
@@ -485,6 +644,7 @@ struct MatchTiming {
             guard activity == .stopped else {
                 return .unavailable
             }
+            invalidateTimingUndo()
             activity = .halftimeCountdown
             segmentAnchorNanoseconds = clock.nowNanoseconds()
             return .halftimeStarted
@@ -504,11 +664,13 @@ struct MatchTiming {
                 guard canStartFirstPeriod else {
                     return .requiresConfirmedStartingLineup
                 }
+                invalidateTimingUndo()
                 hasStarted = true
                 activity = .playing
                 segmentAnchorNanoseconds = clock.nowNanoseconds()
                 return .started
             }
+            invalidateTimingUndo()
             activity = .playing
             resumeAfterTimeout = false
             segmentAnchorNanoseconds = clock.nowNanoseconds()
@@ -521,6 +683,7 @@ struct MatchTiming {
         guard phase == .halftime, activity != .timeout else {
             return
         }
+        invalidateTimingUndo()
         beginSecondHalf()
     }
 
@@ -534,6 +697,7 @@ struct MatchTiming {
             return false
         }
 
+        invalidateTimingUndo()
         switch owner {
         case .ours:
             guard ourTimeoutsUsed < configuration.timeoutsPerTeamPerHalf else {
@@ -560,6 +724,7 @@ struct MatchTiming {
         guard activity == .timeout else {
             return
         }
+        invalidateTimingUndo()
         finishTimeout()
     }
 
@@ -571,7 +736,30 @@ struct MatchTiming {
         guard participants[index].inField != inField else {
             return true
         }
+        invalidateTimingUndo()
+        if hasStarted, phase == .firstHalf || phase == .secondHalf {
+            let period = phase == .firstHalf ? MatchPeriod.firstHalf : .secondHalf
+            let elapsed = phase == .firstHalf ? firstHalfElapsedNanoseconds : secondHalfElapsedNanoseconds
+            guard recordPresenceBoundary(
+                playerID: id,
+                period: period,
+                elapsedNanoseconds: elapsed,
+                transition: inField ? .enteredField : .leftField,
+                origin: .manualCorrection
+            ) else { return false }
+        }
         participants[index].inField = inField
+        if !hasStarted {
+            do {
+                correctionMetadata.participationTimeline = try MatchParticipationTimelineSnapshot.complete(
+                    participants: participants,
+                    starters: Set(participants.filter(\.inField).map(\.id))
+                )
+            } catch {
+                return false
+            }
+        }
+        refreshParticipantTimesFromTimeline()
         return true
     }
 
@@ -586,18 +774,389 @@ struct MatchTiming {
             return false
         }
 
+        invalidateTimingUndo()
+        if hasStarted, phase == .firstHalf || phase == .secondHalf {
+            let period = phase == .firstHalf ? MatchPeriod.firstHalf : .secondHalf
+            let elapsed = phase == .firstHalf ? firstHalfElapsedNanoseconds : secondHalfElapsedNanoseconds
+            guard var timeline = correctionMetadata.participationTimeline else { return false }
+            let substitutionID = UUID()
+            do {
+                _ = try timeline.record(
+                    playerID: outgoingID,
+                    period: period,
+                    elapsedNanoseconds: elapsed,
+                    transition: .leftField,
+                    origin: .substitution,
+                    substitutionID: substitutionID
+                )
+                _ = try timeline.record(
+                    playerID: incomingID,
+                    period: period,
+                    elapsedNanoseconds: elapsed,
+                    transition: .enteredField,
+                    origin: .substitution,
+                    substitutionID: substitutionID
+                )
+            } catch {
+                return false
+            }
+            correctionMetadata.participationTimeline = timeline
+        }
         participants[outgoingIndex].inField = false
         participants[incomingIndex].inField = true
+        if !hasStarted {
+            do {
+                correctionMetadata.participationTimeline = try MatchParticipationTimelineSnapshot.complete(
+                    participants: participants,
+                    starters: Set(participants.filter(\.inField).map(\.id))
+                )
+            } catch {
+                return false
+            }
+        }
+        refreshParticipantTimesFromTimeline()
         return true
+    }
+
+    /// Changes only the current playing period. Callers must resolve any later
+    /// substitution or goal conflicts before applying this operation.
+    mutating func correctCurrentPeriodElapsed(toSeconds seconds: Int) throws {
+        synchronize()
+        var proposed = self
+        try proposed.applyCurrentPeriodElapsedCorrection(toSeconds: seconds)
+        self = proposed
+    }
+
+    private mutating func applyCurrentPeriodElapsedCorrection(toSeconds seconds: Int) throws {
+        invalidateTimingUndo()
+        guard phase == .firstHalf || phase == .secondHalf,
+              activity != .timeout,
+              activity != .halftimeCountdown,
+              activity != .stopped || hasStarted else {
+            throw MatchTimingCorrectionError.unavailable
+        }
+        guard seconds >= 0, seconds <= configuration.periodDurationSeconds else {
+            throw MatchTimingCorrectionError.outOfRange
+        }
+        guard let timeline = correctionMetadata.participationTimeline else {
+            throw MatchTimingCorrectionError.incompleteTimeline
+        }
+        let target = Int64(seconds) * Self.nanosecondsPerSecond
+        let period = phase == .firstHalf ? MatchPeriod.firstHalf : .secondHalf
+        guard target >= timeline.coverageStart(for: period) else {
+            throw MatchTimingCorrectionError.incompleteTimeline
+        }
+        guard !timeline.boundaries.contains(where: {
+            $0.period == period && $0.elapsedNanoseconds > target
+        }) else {
+            throw MatchTimingCorrectionError.timelineConflict
+        }
+
+        if phase == .firstHalf {
+            firstHalfElapsedNanoseconds = target
+        } else {
+            secondHalfElapsedNanoseconds = target
+        }
+        if target == configuration.periodDurationNanoseconds {
+            completeCurrentPeriod()
+            try refreshParticipantTimesFromTimeline(throwing: true)
+            try validateParticipantMinutesAgainstElapsedMatchTime()
+            return
+        }
+        let ids = Set(participants.map(\.id))
+        let newField = try timeline.fieldPlayerIDs(
+            participantIDs: ids,
+            period: period,
+            through: target
+        )
+        for index in participants.indices {
+            participants[index].inField = newField.contains(participants[index].id)
+        }
+        try refreshParticipantTimesFromTimeline(throwing: true)
+        try validateParticipantMinutesAgainstElapsedMatchTime()
+        segmentAnchorNanoseconds = hasActiveSegment ? clock.nowNanoseconds() : nil
+    }
+
+    /// Sets a persistent per-player offset from attendance-derived time. Later
+    /// playing time accrues normally and cannot erase this explicit correction.
+    mutating func correctParticipantMinutes(
+        playerID: UUID,
+        toSeconds seconds: Int,
+        reason: String? = nil,
+        correctedAt: Date = Date()
+    ) throws {
+        synchronize()
+        guard seconds >= 0,
+              seconds <= configuration.periodDurationSeconds * 2,
+              seconds <= totalMatchElapsedSeconds else {
+            throw MatchTimingCorrectionError.invalidMinutes
+        }
+        guard let index = participants.firstIndex(where: { $0.id == playerID }) else {
+            throw MatchTimingCorrectionError.invalidPlayer
+        }
+        let raw = try rawParticipantNanoseconds(playerID: playerID)
+        let requested = Int64(seconds) * Self.nanosecondsPerSecond
+        let (offset, overflow) = requested.subtractingReportingOverflow(raw)
+        guard !overflow else { throw MatchTimingCorrectionError.invalidMinutes }
+        var adjustments = correctionMetadata.minuteAdjustments
+        if let adjustmentIndex = adjustments.firstIndex(where: { $0.playerID == playerID }) {
+            adjustments[adjustmentIndex].adjustmentNanoseconds = offset
+        } else {
+            adjustments.append(MatchTimingMinuteAdjustment(playerID: playerID, adjustmentNanoseconds: offset))
+        }
+        correctionMetadata.minuteAdjustments = adjustments.sorted { $0.playerID.uuidString < $1.playerID.uuidString }
+        var corrections = correctionMetadata.minuteCorrections
+        let trimmedReason = reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = MatchPlayerMinuteCorrection(
+            playerID: playerID,
+            adjustedSeconds: seconds,
+            reason: trimmedReason?.isEmpty == true ? nil : trimmedReason,
+            correctedAt: correctedAt
+        )
+        if let correctionIndex = corrections.firstIndex(where: { $0.playerID == playerID }) {
+            corrections[correctionIndex] = detail
+        } else {
+            corrections.append(detail)
+        }
+        correctionMetadata.minuteCorrections = corrections.sorted { $0.playerID.uuidString < $1.playerID.uuidString }
+        participants[index].accumulatedNanoseconds = requested
+        invalidateTimingUndo()
+    }
+
+    mutating func correctRecordedSubstitution(
+        id substitutionID: UUID,
+        outgoingID: UUID,
+        incomingID: UUID,
+        toSeconds seconds: Int
+    ) throws {
+        synchronize()
+        guard activity == .stopped,
+              phase == .firstHalf || phase == .halftime || phase == .secondHalf else {
+            throw MatchTimingCorrectionError.correctionRequiresPause
+        }
+        var proposed = self
+        try proposed.applyRecordedSubstitutionCorrection(
+            id: substitutionID,
+            outgoingID: outgoingID,
+            incomingID: incomingID,
+            toSeconds: seconds
+        )
+        self = proposed
+    }
+
+    mutating func previewRecordedSubstitutionCorrection(
+        id substitutionID: UUID,
+        outgoingID: UUID,
+        incomingID: UUID,
+        toSeconds seconds: Int
+    ) throws -> MatchTimingCorrectionPreview {
+        synchronize()
+        guard activity == .stopped,
+              phase == .firstHalf || phase == .halftime || phase == .secondHalf else {
+            throw MatchTimingCorrectionError.correctionRequiresPause
+        }
+        let capturedAt = Date()
+        let before = snapshot(capturedAt: capturedAt)
+        var proposed = self
+        try proposed.applyRecordedSubstitutionCorrection(
+            id: substitutionID,
+            outgoingID: outgoingID,
+            incomingID: incomingID,
+            toSeconds: seconds
+        )
+        let after = proposed.snapshot(capturedAt: capturedAt)
+        return MatchTimingCorrectionPreview(
+            id: UUID(),
+            summary: "Correzione di una sostituzione",
+            before: before,
+            after: after,
+            affectedPlayers: Self.changedParticipants(from: before, to: after)
+        )
+    }
+
+    private mutating func applyRecordedSubstitutionCorrection(
+        id substitutionID: UUID,
+        outgoingID: UUID,
+        incomingID: UUID,
+        toSeconds seconds: Int
+    ) throws {
+        guard seconds >= 0,
+              seconds <= configuration.periodDurationSeconds,
+              var timeline = correctionMetadata.participationTimeline,
+              let substitution = timeline.substitutions.first(where: { $0.id == substitutionID }),
+              participants.contains(where: { $0.id == outgoingID }),
+              participants.contains(where: { $0.id == incomingID }) else {
+            throw MatchTimingCorrectionError.incompleteTimeline
+        }
+        guard substitution.period == .firstHalf
+                ? Int64(seconds) * Self.nanosecondsPerSecond <= firstHalfElapsedNanoseconds
+                : Int64(seconds) * Self.nanosecondsPerSecond <= secondHalfElapsedNanoseconds else {
+            throw MatchTimingCorrectionError.timelineConflict
+        }
+
+        try timeline.correctSubstitution(
+            id: substitutionID,
+            outgoingID: outgoingID,
+            incomingID: incomingID,
+            elapsedNanoseconds: Int64(seconds) * Self.nanosecondsPerSecond
+        )
+        try timeline.validate(
+            participantIDs: Set(participants.map(\.id)),
+            periodDurationNanoseconds: configuration.periodDurationNanoseconds,
+            firstHalfEndNanoseconds: firstHalfElapsedNanoseconds,
+            secondHalfEndNanoseconds: secondHalfElapsedNanoseconds
+        )
+        invalidateTimingUndo()
+        correctionMetadata.participationTimeline = timeline
+
+        let currentPeriod: MatchPeriod?
+        switch phase {
+        case .firstHalf, .halftime: currentPeriod = .firstHalf
+        case .secondHalf: currentPeriod = .secondHalf
+        case .finished: currentPeriod = nil
+        }
+        if let currentPeriod {
+            let currentElapsed = elapsedNanoseconds(in: currentPeriod)
+            let field = try timeline.fieldPlayerIDs(
+                participantIDs: Set(participants.map(\.id)),
+                period: currentPeriod,
+                through: currentElapsed
+            )
+            for index in participants.indices {
+                participants[index].inField = field.contains(participants[index].id)
+            }
+        }
+        try refreshParticipantTimesFromTimeline(throwing: true)
+        try validateParticipantMinutesAgainstElapsedMatchTime()
+    }
+
+    mutating func previewCurrentPeriodElapsed(toSeconds seconds: Int) throws -> MatchTimingCorrectionPreview {
+        synchronize()
+        guard activity != .playing && activity != .timeout && activity != .halftimeCountdown else {
+            throw MatchTimingCorrectionError.correctionRequiresPause
+        }
+        let capturedAt = Date()
+        let before = snapshot(capturedAt: capturedAt)
+        var proposed = self
+        try proposed.correctCurrentPeriodElapsed(toSeconds: seconds)
+        let after = proposed.snapshot(capturedAt: capturedAt)
+        return MatchTimingCorrectionPreview(
+            id: UUID(),
+            summary: "Correzione del cronometro a \(seconds / 60):\(String(format: "%02d", seconds % 60))",
+            before: before,
+            after: after,
+            affectedPlayers: Self.changedParticipants(from: before, to: after)
+        )
+    }
+
+    mutating func previewParticipantMinutes(
+        playerID: UUID,
+        toSeconds seconds: Int,
+        reason: String? = nil,
+        correctedAt: Date = Date()
+    ) throws -> MatchTimingCorrectionPreview {
+        synchronize()
+        guard activity != .playing && activity != .timeout && activity != .halftimeCountdown else {
+            throw MatchTimingCorrectionError.correctionRequiresPause
+        }
+        let capturedAt = correctedAt
+        let before = snapshot(capturedAt: capturedAt)
+        var proposed = self
+        try proposed.correctParticipantMinutes(
+            playerID: playerID,
+            toSeconds: seconds,
+            reason: reason,
+            correctedAt: correctedAt
+        )
+        let after = proposed.snapshot(capturedAt: capturedAt)
+        return MatchTimingCorrectionPreview(
+            id: UUID(),
+            summary: "Correzione minutaggio giocatore",
+            before: before,
+            after: after,
+            affectedPlayers: Self.changedParticipants(from: before, to: after)
+        )
+    }
+
+    mutating func confirmCorrection(_ preview: MatchTimingCorrectionPreview) throws {
+        guard activity != .playing && activity != .timeout && activity != .halftimeCountdown else {
+            throw MatchTimingCorrectionError.correctionRequiresPause
+        }
+        let current = snapshot(capturedAt: preview.before.capturedAt)
+        guard current == preview.before else { throw MatchTimingCorrectionError.stalePreview }
+
+        var previous = preview.before
+        var previousMetadata = previous.correctionMetadata ?? MatchCorrectionMetadata()
+        previousMetadata.lastUndo = nil
+        previous.correctionMetadata = previousMetadata
+        guard let payload = try? JSONEncoder().encode(previous) else {
+            throw MatchTimingCorrectionError.snapshotEncodingFailed
+        }
+
+        var corrected = preview.after
+        var metadata = corrected.correctionMetadata ?? MatchCorrectionMetadata()
+        metadata.lastUndo = MatchCorrectionUndoRecord(
+            id: preview.id,
+            scope: .timing,
+            summary: preview.summary,
+            previousStatePayload: payload,
+            recordedAt: Date()
+        )
+        corrected.correctionMetadata = metadata
+        let restored = try Self.restoring(from: corrected, clock: clock)
+        self = restored
+    }
+
+    mutating func undoLastCorrection() throws {
+        guard activity != .playing && activity != .timeout && activity != .halftimeCountdown,
+              let undo = correctionMetadata.lastUndo,
+              undo.scope == .timing else {
+            throw MatchTimingCorrectionError.undoUnavailable
+        }
+        guard var previous = try? JSONDecoder().decode(MatchTimingSnapshot.self, from: undo.previousStatePayload) else {
+            throw MatchTimingCorrectionError.snapshotEncodingFailed
+        }
+        var metadata = previous.correctionMetadata ?? MatchCorrectionMetadata()
+        metadata.lastUndo = nil
+        previous.correctionMetadata = metadata
+        let restored = try Self.restoring(from: previous, clock: clock)
+        self = restored
+    }
+
+    private static func changedParticipants(
+        from before: MatchTimingSnapshot,
+        to after: MatchTimingSnapshot
+    ) -> [MatchTimingCorrectionChange] {
+        let old = Dictionary(uniqueKeysWithValues: before.participants.map { ($0.id, Int($0.accumulatedNanoseconds / 1_000_000_000)) })
+        let new = Dictionary(uniqueKeysWithValues: after.participants.map { ($0.id, Int($0.accumulatedNanoseconds / 1_000_000_000)) })
+        return Set(old.keys).union(new.keys).sorted { $0.uuidString < $1.uuidString }.compactMap { id in
+            let oldValue = old[id, default: 0]
+            let newValue = new[id, default: 0]
+            guard oldValue != newValue else { return nil }
+            return MatchTimingCorrectionChange(playerID: id, beforeSeconds: oldValue, afterSeconds: newValue)
+        }
     }
 
     mutating func finish() {
         synchronize()
+        invalidateTimingUndo()
+        closeCurrentPresence(origin: .periodBoundary)
         phase = .finished
         stopActiveSegment()
         timeoutRemainingNanoseconds = 0
         timeoutOwner = nil
         resumeAfterTimeout = false
+    }
+
+    private func validateParticipantMinutesAgainstElapsedMatchTime() throws {
+        let elapsed = firstHalfElapsedNanoseconds + secondHalfElapsedNanoseconds
+        guard participants.allSatisfy({ $0.accumulatedNanoseconds >= 0 && $0.accumulatedNanoseconds <= elapsed }) else {
+            throw MatchTimingCorrectionError.invalidMinutes
+        }
+    }
+
+    private mutating func invalidateTimingUndo() {
+        correctionMetadata.lastUndo = nil
     }
 
     mutating func reset() {
@@ -615,6 +1174,7 @@ struct MatchTiming {
         ourTimeoutsUsed = 0
         opponentTimeoutsUsed = 0
         participants = []
+        correctionMetadata = MatchCorrectionMetadata()
         attendanceIDs = []
         segmentAnchorNanoseconds = nil
     }
@@ -654,8 +1214,116 @@ struct MatchTiming {
             ourTimeoutsUsed: ourTimeoutsUsed,
             opponentTimeoutsUsed: opponentTimeoutsUsed,
             participants: participants,
-            capturedAt: capturedAt
+            capturedAt: capturedAt,
+            correctionMetadata: correctionMetadata
         )
+    }
+
+    private var currentMatchPeriod: MatchPeriod? {
+        switch phase {
+        case .firstHalf: .firstHalf
+        case .secondHalf: .secondHalf
+        case .halftime, .finished: nil
+        }
+    }
+
+    private func elapsedNanoseconds(in period: MatchPeriod) -> Int64 {
+        period == .firstHalf ? firstHalfElapsedNanoseconds : secondHalfElapsedNanoseconds
+    }
+
+    private func rawParticipantNanoseconds(playerID: UUID) throws -> Int64 {
+        if let timeline = correctionMetadata.participationTimeline {
+            let totals = try timeline.nanosecondsPlayed(
+                participantIDs: Set(participants.map(\.id)),
+                firstHalfEndNanoseconds: firstHalfElapsedNanoseconds,
+                secondHalfEndNanoseconds: secondHalfElapsedNanoseconds
+            )
+            return totals[playerID, default: 0]
+        }
+        guard let participant = participants.first(where: { $0.id == playerID }) else {
+            throw MatchTimingCorrectionError.invalidPlayer
+        }
+        return participant.accumulatedNanoseconds
+    }
+
+    private mutating func refreshParticipantTimesFromTimeline(throwing: Bool) throws {
+        guard let timeline = correctionMetadata.participationTimeline else { return }
+        let ids = Set(participants.map(\.id))
+        let rawTotals: [UUID: Int64]
+        do {
+            rawTotals = try timeline.nanosecondsPlayed(
+                participantIDs: ids,
+                firstHalfEndNanoseconds: firstHalfElapsedNanoseconds,
+                secondHalfEndNanoseconds: secondHalfElapsedNanoseconds
+            )
+        } catch {
+            if throwing { throw error }
+            return
+        }
+        let adjustments = Dictionary(uniqueKeysWithValues: correctionMetadata.minuteAdjustments.map {
+            ($0.playerID, $0.adjustmentNanoseconds)
+        })
+        for index in participants.indices {
+            let (adjusted, overflow) = rawTotals[participants[index].id, default: 0]
+                .addingReportingOverflow(adjustments[participants[index].id, default: 0])
+            guard !overflow else {
+                if throwing { throw MatchTimingCorrectionError.invalidMinutes }
+                continue
+            }
+            participants[index].accumulatedNanoseconds = max(0, adjusted)
+        }
+    }
+
+    private mutating func refreshParticipantTimesFromTimeline() {
+        try? refreshParticipantTimesFromTimeline(throwing: false)
+    }
+
+    @discardableResult
+    private mutating func recordPresenceBoundary(
+        playerID: UUID,
+        period: MatchPeriod,
+        elapsedNanoseconds: Int64,
+        transition: MatchParticipationTransition,
+        origin: MatchParticipationOrigin,
+        substitutionID: UUID? = nil
+    ) -> Bool {
+        guard var timeline = correctionMetadata.participationTimeline else { return false }
+        do {
+            _ = try timeline.record(
+                playerID: playerID,
+                period: period,
+                elapsedNanoseconds: elapsedNanoseconds,
+                transition: transition,
+                origin: origin,
+                substitutionID: substitutionID
+            )
+            correctionMetadata.participationTimeline = timeline
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private mutating func closeCurrentPresence(origin: MatchParticipationOrigin) {
+        guard let period = currentMatchPeriod else { return }
+        let elapsed = elapsedNanoseconds(in: period)
+        guard var timeline = correctionMetadata.participationTimeline else { return }
+        do {
+            for participant in participants where participant.inField {
+                _ = try timeline.record(
+                    playerID: participant.id,
+                    period: period,
+                    elapsedNanoseconds: elapsed,
+                    transition: .leftField,
+                    origin: origin
+                )
+            }
+            correctionMetadata.participationTimeline = timeline
+            refreshParticipantTimesFromTimeline()
+        } catch {
+            // The open interval remains reconstructible through the period endpoint.
+            // No partial boundary batch is committed.
+        }
     }
 
     private mutating func consume(_ elapsedNanoseconds: Int64) {
@@ -680,14 +1348,12 @@ struct MatchTiming {
                 } else {
                     secondHalfElapsedNanoseconds += consumed
                 }
-                for index in participants.indices where participants[index].inField {
-                    participants[index].accumulatedNanoseconds += consumed
-                }
                 remaining -= consumed
                 if consumed == periodRemaining {
                     completeCurrentPeriod()
                     return
                 }
+                refreshParticipantTimesFromTimeline()
 
             case .halftimeCountdown:
                 let halftimeRemaining = max(
@@ -733,12 +1399,17 @@ struct MatchTiming {
 
     private mutating func completeCurrentPeriod() {
         if phase == .firstHalf {
+            // Keep the selected on-field lineup through halftime. Its playing
+            // interval is naturally capped by firstHalfEnd during calculation;
+            // second-half kickoff records fresh entries at period-local time 0.
             firstHalfElapsedNanoseconds = configuration.periodDurationNanoseconds
             phase = .halftime
             halftimeElapsedNanoseconds = 0
             activity = .stopped
             resumeAfterTimeout = false
+            refreshParticipantTimesFromTimeline()
         } else if phase == .secondHalf {
+            closeCurrentPresence(origin: .periodBoundary)
             secondHalfElapsedNanoseconds = configuration.periodDurationNanoseconds
             phase = .finished
             activity = .stopped
@@ -759,6 +1430,18 @@ struct MatchTiming {
         ourTimeoutsUsed = 0
         opponentTimeoutsUsed = 0
         segmentAnchorNanoseconds = nil
+        if correctionMetadata.participationTimeline != nil {
+            for participant in participants where participant.inField {
+                _ = recordPresenceBoundary(
+                    playerID: participant.id,
+                    period: .secondHalf,
+                    elapsedNanoseconds: 0,
+                    transition: .enteredField,
+                    origin: .halftimeRestart
+                )
+            }
+            refreshParticipantTimesFromTimeline()
+        }
     }
 
     private mutating func finishTimeout() {

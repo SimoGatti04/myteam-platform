@@ -34,14 +34,25 @@ enum MatchManagerSchemaV2: VersionedSchema {
     }
 }
 
+/// Schema V3 adds correction provenance for historical matches without altering
+/// the released V1/V2 entities or the Codable live-session aggregate.
+enum MatchManagerSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        MatchManagerSchemaV2.models + [StoredMatchCorrectionMetadata.self]
+    }
+}
+
 enum MatchManagerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [MatchManagerSchemaV1.self, MatchManagerSchemaV2.self]
+        [MatchManagerSchemaV1.self, MatchManagerSchemaV2.self, MatchManagerSchemaV3.self]
     }
 
     static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: MatchManagerSchemaV1.self, toVersion: MatchManagerSchemaV2.self)
+            .lightweight(fromVersion: MatchManagerSchemaV1.self, toVersion: MatchManagerSchemaV2.self),
+            .lightweight(fromVersion: MatchManagerSchemaV2.self, toVersion: MatchManagerSchemaV3.self)
         ]
     }
 }
@@ -381,6 +392,17 @@ final class StoredLiveSessionImportReceipt {
     }
 }
 
+@Model
+final class StoredMatchCorrectionMetadata {
+    @Attribute(.unique) var recordID: UUID
+    var payload: Data
+
+    init(recordID: UUID, payload: Data) {
+        self.recordID = recordID
+        self.payload = payload
+    }
+}
+
 // MARK: - Data boundary
 
 struct MatchDataSnapshot {
@@ -402,7 +424,9 @@ enum MatchDataPersistenceError: LocalizedError {
     case migrationConflict(collection: String, id: UUID)
     case migrationReadbackFailed(collection: String, id: UUID)
     case historyRecordConflict(id: UUID)
+    case historyRecordMissing(id: UUID)
     case historyRecordReadbackFailed(id: UUID)
+    case historyCorrectionMetadataInvalid(id: UUID, reason: String)
     case invalidStoredGoalTeam(id: UUID, value: String)
     case liveSessionConflict(UUID)
     case liveSessionImportConflict(UUID)
@@ -427,8 +451,12 @@ enum MatchDataPersistenceError: LocalizedError {
             return "La verifica di rilettura non ha trovato un elemento '\(collection)' atteso (\(id)). La migrazione non è stata marcata come completata."
         case let .historyRecordConflict(id):
             return "Esiste già un record storico diverso con l'identificativo di finalizzazione \(id). Il record esistente non è stato modificato."
+        case let .historyRecordMissing(id):
+            return "Il record storico \(id) non esiste e non può essere corretto."
         case let .historyRecordReadbackFailed(id):
             return "Il record storico \(id) non è stato confermato dopo la scrittura. La sessione live è stata conservata per un nuovo tentativo."
+        case let .historyCorrectionMetadataInvalid(id, reason):
+            return "I metadati di correzione del record storico \(id) non sono validi: \(reason). Il record non è stato confermato come aggiornato."
         case let .invalidStoredGoalTeam(id, value):
             return "L'evento \(id) contiene un tipo squadra non riconosciuto ('\(value)')."
         case let .liveSessionConflict(id):
@@ -458,7 +486,7 @@ enum MatchDataPersistenceError: LocalizedError {
 @MainActor
 final class MatchDataStore {
     static let legacyReceiptID = "user-defaults-v1-import-complete"
-    static let legacyLiveSessionReceiptID = "application-support-live-session-json-v1-import-complete"
+    nonisolated static let legacyLiveSessionReceiptID = "application-support-live-session-json-v1-import-complete"
 
     let container: ModelContainer
     private let userDefaults: UserDefaults
@@ -469,7 +497,7 @@ final class MatchDataStore {
     }
 
     static func makePersistentContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV3.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC",
             schema: schema,
@@ -482,8 +510,30 @@ final class MatchDataStore {
         )
     }
 
+    /// Creates a persistent store at an explicit URL. This is used by the
+    /// debug-only UI-test harness so process-relaunch tests never touch the
+    /// user's normal SwiftData store.
+    static func makePersistentContainer(storeURL: URL) throws -> ModelContainer {
+        try FileManager.default.createDirectory(
+            at: storeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let schema = Schema(versionedSchema: MatchManagerSchemaV3.self)
+        let configuration = ModelConfiguration(
+            "AURINFORMATC-UI-Test",
+            schema: schema,
+            url: storeURL,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(
+            for: schema,
+            migrationPlan: MatchManagerMigrationPlan.self,
+            configurations: [configuration]
+        )
+    }
+
     static func makeInMemoryContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV3.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC-InMemory",
             schema: schema,
@@ -498,7 +548,7 @@ final class MatchDataStore {
     }
 
     static func makeContainer(at url: URL, allowsSave: Bool = true) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: MatchManagerSchemaV2.self)
+        let schema = Schema(versionedSchema: MatchManagerSchemaV3.self)
         let configuration = ModelConfiguration(
             "AURINFORMATC-Test",
             schema: schema,
@@ -571,8 +621,11 @@ final class MatchDataStore {
         let context = makeContext()
         do {
             let current = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+            let storedMetadata = try context.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+            let metadataByRecordID = Dictionary(storedMetadata.map { ($0.recordID, $0) }, uniquingKeysWith: { first, _ in first })
             let incomingIDs = Set(history.map(\.id))
             for record in current where !incomingIDs.contains(record.id) { context.delete(record) }
+            for metadata in storedMetadata where !incomingIDs.contains(metadata.recordID) { context.delete(metadata) }
             let existing = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for (position, record) in history.enumerated() {
                 if let stored = existing[record.id] {
@@ -580,6 +633,7 @@ final class MatchDataStore {
                 } else {
                     context.insert(StoredMatchRecord(record, position: position))
                 }
+                try synchronizeCorrectionMetadata(for: record, existing: metadataByRecordID[record.id], context: context)
             }
             try context.save()
         } catch {
@@ -597,8 +651,11 @@ final class MatchDataStore {
         let context = makeContext()
         do {
             let current = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+            let storedMetadata = try context.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+            let metadata = storedMetadata.first(where: { $0.recordID == record.id })
             if let existing = current.first(where: { $0.id == record.id }) {
-                guard recordsAreEquivalent(try existing.domainValue(), record) else {
+                let existingDomain = try domainValue(existing, correctionMetadata: metadata)
+                guard recordsAreEquivalent(existingDomain, record) else {
                     throw MatchDataPersistenceError.historyRecordConflict(id: record.id)
                 }
                 return false
@@ -608,6 +665,7 @@ final class MatchDataStore {
                 existing.position += 1
             }
             context.insert(StoredMatchRecord(record, position: 0))
+            try synchronizeCorrectionMetadata(for: record, existing: metadata, context: context)
             try context.save()
         } catch {
             context.rollback()
@@ -619,6 +677,39 @@ final class MatchDataStore {
             throw MatchDataPersistenceError.historyRecordReadbackFailed(id: record.id)
         }
         return true
+    }
+
+    /// Updates one history aggregate and its correction metadata in the same
+    /// ModelContext save, then verifies the saved record through a fresh context.
+    func updateHistoryRecord(_ record: MatchRecord) throws {
+        try validateHistoryIdentifiers([record])
+        let context = makeContext()
+        do {
+            guard let stored = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+                .first(where: { $0.id == record.id }) else {
+                throw MatchDataPersistenceError.historyRecordMissing(id: record.id)
+            }
+            let metadata = try context.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+                .first(where: { $0.recordID == record.id })
+            stored.update(from: record, position: stored.position, context: context)
+            try synchronizeCorrectionMetadata(for: record, existing: metadata, context: context)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+
+        let verificationContext = makeContext()
+        guard let stored = try verificationContext.fetch(FetchDescriptor<StoredMatchRecord>())
+            .first(where: { $0.id == record.id }) else {
+            throw MatchDataPersistenceError.historyRecordReadbackFailed(id: record.id)
+        }
+        let metadata = try verificationContext.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+            .first(where: { $0.recordID == record.id })
+        let readback = try domainValue(stored, correctionMetadata: metadata)
+        guard recordsAreEquivalent(readback, record) else {
+            throw MatchDataPersistenceError.historyRecordReadbackFailed(id: record.id)
+        }
     }
 
     private func migrateLegacyDataIfNeeded() throws {
@@ -735,6 +826,46 @@ final class MatchDataStore {
         }
     }
 
+    func synchronizeCorrectionMetadata(
+        for record: MatchRecord,
+        existing: StoredMatchCorrectionMetadata?,
+        context: ModelContext
+    ) throws {
+        guard let metadata = record.correctionMetadata else {
+            if let existing { context.delete(existing) }
+            return
+        }
+        guard metadata.schemaVersion == MatchCorrectionMetadata.currentSchemaVersion else {
+            throw MatchDataPersistenceError.historyCorrectionMetadataInvalid(
+                id: record.id,
+                reason: "versione \(metadata.schemaVersion) non supportata"
+            )
+        }
+        let payload = try JSONEncoder().encode(metadata)
+        if let existing {
+            existing.payload = payload
+        } else {
+            context.insert(StoredMatchCorrectionMetadata(recordID: record.id, payload: payload))
+        }
+    }
+
+    func domainValue(
+        _ stored: StoredMatchRecord,
+        correctionMetadata: StoredMatchCorrectionMetadata?
+    ) throws -> MatchRecord {
+        var record = try stored.domainValue()
+        guard let correctionMetadata else { return record }
+        do {
+            record.correctionMetadata = try JSONDecoder().decode(MatchCorrectionMetadata.self, from: correctionMetadata.payload)
+            return record
+        } catch {
+            throw MatchDataPersistenceError.historyCorrectionMetadataInvalid(
+                id: record.id,
+                reason: error.localizedDescription
+            )
+        }
+    }
+
     private func readSnapshot(using context: ModelContext) throws -> MatchDataSnapshot {
         let roster = try context.fetch(FetchDescriptor<StoredRosterPlayer>())
             .sorted { $0.position < $1.position }
@@ -746,9 +877,18 @@ final class MatchDataStore {
                     : $0.date < $1.date
             }
             .map(\.domainValue)
-        let history = try context.fetch(FetchDescriptor<StoredMatchRecord>())
+        let storedHistory = try context.fetch(FetchDescriptor<StoredMatchRecord>())
             .sorted { $0.position < $1.position }
-            .map { try $0.domainValue() }
+        let storedMetadata = try context.fetch(FetchDescriptor<StoredMatchCorrectionMetadata>())
+        let metadataByRecordID = Dictionary(storedMetadata.map { ($0.recordID, $0) }, uniquingKeysWith: { first, _ in first })
+        let historyIDs = Set(storedHistory.map(\.id))
+        if let orphan = storedMetadata.first(where: { !historyIDs.contains($0.recordID) }) {
+            throw MatchDataPersistenceError.historyCorrectionMetadataInvalid(
+                id: orphan.recordID,
+                reason: "metadati senza record storico associato"
+            )
+        }
+        let history = try storedHistory.map { try domainValue($0, correctionMetadata: metadataByRecordID[$0.id]) }
         return MatchDataSnapshot(roster: roster, schedule: schedule, history: history)
     }
 
@@ -797,6 +937,7 @@ final class MatchDataStore {
               lhs.scheduledMatchID == rhs.scheduledMatchID,
               lhs.opponentName == rhs.opponentName,
               lhs.isHome == rhs.isHome,
+              lhs.correctionMetadata == rhs.correctionMetadata,
               lhs.players.count == rhs.players.count else { return false }
 
         for (left, right) in zip(lhs.players, rhs.players) {

@@ -7,7 +7,7 @@ final class LiveMatchLifecycleUITests: XCTestCase {
 
     @MainActor
     func testActivePausedAndFinalizedMatchSurvivesProcessTermination() throws {
-        let app = XCUIApplication()
+        let app = makeIsolatedApp()
         app.launch()
 
         XCTAssertTrue(app.buttons["ENTRA"].waitForExistence(timeout: 10))
@@ -134,6 +134,45 @@ final class LiveMatchLifecycleUITests: XCTestCase {
         XCTAssertEqual(clock.label, clockAfterPausedRelaunch, "Paused game time advanced across termination")
         XCTAssertEqual(playerSixTime.label, pausedPlayerTime, "Paused individual time advanced across termination")
 
+        // Apply an explicit individual-minute correction while paused, then
+        // terminate and relaunch again to verify that the corrected value is durable.
+        let previousPlayerSeconds = seconds(from: playerSixTime.label)
+        let minuteCorrection = app.buttons["live.player-minute-correction.Synthetic Player 6"]
+        bringIntoView(minuteCorrection, in: app)
+        XCTAssertTrue(minuteCorrection.waitForExistence(timeout: 5))
+        minuteCorrection.tap()
+        let decreaseMinute = app.buttons["live.minutes-correction.decrement"]
+        XCTAssertTrue(decreaseMinute.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(previousPlayerSeconds, 0)
+        decreaseMinute.tap()
+        let adjustedMinuteTime = app.staticTexts["live.minutes-correction.adjusted-time"]
+        let expectedAdjustedLabel = String(format: "%02d:%02d", (previousPlayerSeconds - 1) / 60, (previousPlayerSeconds - 1) % 60)
+        let minuteAdjustmentApplied = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", expectedAdjustedLabel),
+            object: adjustedMinuteTime
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [minuteAdjustmentApplied], timeout: 3), .completed,
+                       "The decrement action did not update the proposed individual time")
+        app.buttons["Calcola anteprima"].tap()
+        XCTAssertTrue(app.staticTexts["Prima"].waitForExistence(timeout: 5))
+        app.buttons["Conferma"].tap()
+        let correctedPlayerSeconds = previousPlayerSeconds - 1
+        XCTAssertEqual(seconds(from: playerSixTime.label), correctedPlayerSeconds)
+
+        app.terminate()
+        Thread.sleep(forTimeInterval: 1.0)
+        app.launch()
+        dismissRecoveryNoticeIfPresent(in: app)
+        XCTAssertTrue(clock.waitForExistence(timeout: 10), "Corrected paused session was not restored")
+        XCTAssertTrue(app.buttons["RIPRENDI"].waitForExistence(timeout: 5))
+        XCTAssertEqual(seconds(from: playerSixTime.label), correctedPlayerSeconds, "Manual minute correction was lost during recovery")
+        let undoCorrection = app.buttons["live.clock-correction.undo"]
+        XCTAssertTrue(undoCorrection.waitForExistence(timeout: 5))
+        bringIntoView(undoCorrection, in: app)
+        XCTAssertTrue(undoCorrection.isHittable, "The timing-correction undo control is not visible")
+        undoCorrection.tap()
+        XCTAssertEqual(seconds(from: playerSixTime.label), previousPlayerSeconds, "Persisted undo did not restore the previous minute value")
+
         app.buttons["RIPRENDI"].tap()
         XCTAssertTrue(app.buttons["PAUSA"].waitForExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 1.5)
@@ -201,7 +240,7 @@ final class LiveMatchLifecycleUITests: XCTestCase {
 
     @MainActor
     func testTemporallyUncertainRecoveryCanBeCorrectedAndSurvivesRelaunch() throws {
-        let app = XCUIApplication()
+        let app = makeIsolatedApp(seedTemporalUncertainty: true)
         app.launch()
 
         let recoveryHeading = app.staticTexts["PARTITA DA RIPRISTINARE"]
@@ -276,6 +315,113 @@ final class LiveMatchLifecycleUITests: XCTestCase {
         XCTAssertEqual(starterTime.label, pausedStarterTime, "Player time changed after the recovery decision was saved")
         XCTAssertTrue(scorerStats.label.contains("⚽ 1"), "The recovery decision did not preserve the goal after relaunch")
         XCTAssertTrue(assistStats.label.contains("A 1"), "The recovery decision did not preserve the assist after relaunch")
+        cleanupIsolatedApp(app)
+    }
+
+    @MainActor
+    func testLiveEventCorrectionPersistsAcrossProcessTermination() throws {
+        let app = makeIsolatedApp()
+        app.launch()
+
+        XCTAssertTrue(app.buttons["ENTRA"].waitForExistence(timeout: 10))
+        app.buttons["ENTRA"].tap()
+        XCTAssertTrue(app.buttons["Rosa"].waitForExistence(timeout: 10))
+        app.buttons["Rosa"].tap()
+
+        let nameField = app.textFields["Nome giocatore"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        for index in 1...6 {
+            nameField.tap()
+            nameField.typeText("Synthetic Correction Player \(index)\n")
+        }
+        app.buttons["Indietro"].tap()
+        let setupFormation = app.buttons["IMPOSTA FORMAZIONE"]
+        XCTAssertTrue(setupFormation.waitForExistence(timeout: 10))
+        setupFormation.tap()
+        let selectAll = app.buttons["Seleziona tutti"]
+        XCTAssertTrue(selectAll.waitForExistence(timeout: 10))
+        selectAll.tap()
+        app.buttons["Avanti"].tap()
+        for index in 1...5 {
+            let player = app.buttons["lineup.player.Synthetic Correction Player \(index)"]
+            XCTAssertTrue(player.waitForExistence(timeout: 5))
+            player.tap()
+        }
+        app.buttons["Avanti"].tap()
+
+        XCTAssertTrue(app.staticTexts["live.match-clock"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["AVVIA"].waitForExistence(timeout: 5))
+        app.buttons["AVVIA"].tap()
+
+        let goal = app.buttons.matching(identifier: "⚽ GOL").firstMatch
+        XCTAssertTrue(goal.waitForExistence(timeout: 5))
+        bringIntoView(goal, in: app)
+        goal.tap()
+        let assist = app.buttons["Synthetic Correction Player 2"]
+        XCTAssertTrue(assist.waitForExistence(timeout: 5))
+        assist.tap()
+
+        let eventRow = app.buttons["live.event-row.1"]
+        XCTAssertTrue(eventRow.waitForExistence(timeout: 5))
+        for _ in 0..<8 where !eventRow.isHittable {
+            app.swipeDown()
+        }
+        XCTAssertTrue(eventRow.isHittable)
+        eventRow.tap()
+        let opponentSegment = app.buttons["Avversari"]
+        XCTAssertTrue(opponentSegment.waitForExistence(timeout: 5))
+        opponentSegment.tap()
+        let save = app.buttons["live.event-correction.save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        let confirmation = app.buttons["Conferma"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        confirmation.tap()
+        XCTAssertTrue(eventRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(eventRow.label.contains("Gol avversari"), "The confirmed event correction did not update the live score description")
+        let undo = app.buttons["live.event-correction.undo"]
+        bringIntoView(undo, in: app)
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "A confirmed event correction did not expose its undo action before termination")
+
+        app.terminate()
+        app.launch()
+        dismissRecoveryNoticeIfPresent(in: app)
+        let restoredEvent = app.buttons["live.event-row.1"]
+        XCTAssertTrue(restoredEvent.waitForExistence(timeout: 10), "The corrected event was not restored after process termination")
+        XCTAssertTrue(restoredEvent.label.contains("Gol avversari"), "The corrected event state was not durable")
+
+        let restoredUndo = app.buttons["live.event-correction.undo"]
+        bringIntoView(restoredUndo, in: app)
+        XCTAssertTrue(restoredUndo.waitForExistence(timeout: 5), "The event-correction undo state was not restored after process termination")
+        restoredUndo.tap()
+        let undoAction = app.buttons["Annulla correzione"]
+        XCTAssertTrue(undoAction.waitForExistence(timeout: 5))
+        undoAction.tap()
+        XCTAssertTrue(restoredEvent.waitForExistence(timeout: 5))
+        XCTAssertTrue(restoredEvent.label.contains("Synthetic Correction Player 1"), "Undo did not restore the original scorer/event")
+
+        cleanupIsolatedApp(app)
+    }
+
+    @MainActor
+    private func makeIsolatedApp(seedTemporalUncertainty: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["AURINFORMATC_UI_TEST_STORE_ID"] = UUID().uuidString
+        if seedTemporalUncertainty {
+            app.launchEnvironment["AURINFORMATC_UI_TEST_SEED"] = "temporal-uncertainty"
+        }
+        return app
+    }
+
+    @MainActor
+    private func cleanupIsolatedApp(_ app: XCUIApplication) {
+        app.terminate()
+        app.launchEnvironment["AURINFORMATC_UI_TEST_CLEANUP_STORE"] = "1"
+        app.launch()
+        XCTAssertTrue(
+            app.staticTexts["Archivio sintetico UI test rimosso."].waitForExistence(timeout: 10),
+            "The isolated SwiftData UI-test store was not cleaned up"
+        )
         app.terminate()
     }
 

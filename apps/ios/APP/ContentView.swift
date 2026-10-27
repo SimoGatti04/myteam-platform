@@ -626,7 +626,8 @@ enum GoalTeam:
 
 struct GoalEvent:
     Identifiable,
-    Codable {
+    Codable,
+    Equatable {
 
     let id: UUID
 
@@ -679,7 +680,8 @@ struct PendingAssist:
 
 struct PlayerMatchSummary:
     Identifiable,
-    Codable {
+    Codable,
+    Equatable {
 
     let id: UUID
 
@@ -738,7 +740,8 @@ struct PlayerMatchSummary:
 
 struct MatchRecord:
     Identifiable,
-    Codable {
+    Codable,
+    Equatable {
 
     let id: UUID
 
@@ -765,6 +768,9 @@ struct MatchRecord:
     var isHome:
         Bool?
 
+    /// Optional C3.3 provenance keeps legacy history decodable without invented minutes.
+    var correctionMetadata: MatchCorrectionMetadata? = nil
+
     init(
         id: UUID = UUID(),
         date: Date = Date(),
@@ -775,7 +781,8 @@ struct MatchRecord:
         events: [GoalEvent],
         scheduledMatchID: UUID? = nil,
         opponentName: String? = nil,
-        isHome: Bool? = nil
+        isHome: Bool? = nil,
+        correctionMetadata: MatchCorrectionMetadata? = nil
     ) {
 
         self.id = id
@@ -788,6 +795,7 @@ struct MatchRecord:
         self.scheduledMatchID = scheduledMatchID
         self.opponentName = opponentName
         self.isHome = isHome
+        self.correctionMetadata = correctionMetadata
     }
 }
 
@@ -1472,6 +1480,7 @@ struct ContentView:
                 _screen = State(initialValue: .live)
                 _players = State(initialValue: restored.players)
                 _matchEvents = State(initialValue: restored.snapshot.events)
+                _liveCorrectionMetadata = State(initialValue: restored.snapshot.correctionMetadata)
                 _selectedPresentIDs = State(initialValue: Set(restored.snapshot.players.map(\.rosterPlayerID)))
                 _selectedStarterIDs = State(initialValue: Set(restored.snapshot.startingPlayerIDs))
                 _startingPlayerIDs = State(initialValue: restored.snapshot.startingPlayerIDs)
@@ -1502,15 +1511,15 @@ struct ContentView:
     }
 
     private var halfDuration: Int {
-        FutsalMatchRules.timing.periodDurationSeconds
+        timing.configuration.periodDurationSeconds
     }
 
     private var timeoutsPerTeamPerHalf: Int {
-        FutsalMatchRules.timing.timeoutsPerTeamPerHalf
+        timing.configuration.timeoutsPerTeamPerHalf
     }
 
     private var maxPlayersOnField: Int {
-        FutsalMatchRules.timing.requiredStartingPlayers
+        timing.configuration.requiredStartingPlayers
     }
 
     private let swapThreshold =
@@ -1656,6 +1665,20 @@ struct ContentView:
 
     @State private var pendingFinishedMatchRecord:
         MatchRecord?
+
+    @State private var showClockCorrection = false
+
+    @State private var selectedMinuteCorrectionPlayer: MatchPlayer?
+
+    @State private var selectedLiveEvent: GoalEvent?
+
+    @State private var showLiveEventCorrection = false
+
+    @State private var selectedLiveSubstitution: MatchRecordedSubstitution?
+
+    @State private var liveCorrectionMetadata: LiveMatchCorrectionMetadata?
+
+    @State private var showEventCorrectionUndoConfirmation = false
 
     @State private var showFinishConfirmation =
         false
@@ -1825,6 +1848,41 @@ struct ContentView:
                 }
             )
         }
+        .sheet(isPresented: $showClockCorrection) {
+            LiveClockCorrectionView(
+                timing: timing,
+                currentSeconds: phase == .secondHalf ? secondHalfElapsed : firstHalfElapsed,
+                maximumSeconds: timing.configuration.periodDurationSeconds,
+                playerNames: Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0.name) }),
+                onConfirm: applyLiveTimingCorrection
+            )
+        }
+        .sheet(item: $selectedMinuteCorrectionPlayer) { player in
+            LivePlayerMinutesCorrectionView(
+                timing: timing,
+                playerID: player.id,
+                playerName: player.name,
+                currentSeconds: player.timePlayed,
+                maximumSeconds: timing.configuration.periodDurationSeconds * 2,
+                onConfirm: applyLiveTimingCorrection
+            )
+        }
+        .sheet(isPresented: $showLiveEventCorrection) {
+            LiveGoalEventCorrectionView(
+                event: selectedLiveEvent,
+                players: players,
+                maximumSecond: totalMatchTime,
+                onConfirm: applyLiveEventCorrection
+            )
+        }
+        .sheet(item: $selectedLiveSubstitution) { substitution in
+            LiveSubstitutionCorrectionView(
+                timing: timing,
+                substitution: substitution,
+                players: players,
+                onConfirm: applyLiveTimingCorrection
+            )
+        }
         .alert(
             "Terminare la partita?",
             isPresented:
@@ -1875,6 +1933,18 @@ struct ContentView:
             Button("OK", role: .cancel) { liveRestoreNotice = nil }
         } message: {
             Text(liveRestoreNotice ?? "La partita è stata ripristinata.")
+        }
+        .confirmationDialog(
+            "Annullare l'ultima correzione degli eventi?",
+            isPresented: $showEventCorrectionUndoConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Annulla correzione", role: .destructive) {
+                undoLiveEventCorrection()
+            }
+            Button("Mantieni modifica", role: .cancel) {}
+        } message: {
+            Text("Verranno ripristinati gli eventi e l'associazione assist precedente.")
         }
         .onReceive(
             timer
@@ -2181,6 +2251,10 @@ struct ContentView:
                     onSave:
                         updateHistoryRecord,
 
+                    onUndoCorrection: {
+                        undoHistoryCorrection(id)
+                    },
+
                     onDelete: {
 
                         deleteHistoryRecord(
@@ -2315,6 +2389,7 @@ struct ContentView:
             )
 
             timerControlButtons
+            liveCorrectionControls
         }
         .mapiCard(
             accent:
@@ -3174,6 +3249,14 @@ struct ContentView:
                 !canRecordMatchEvent
             )
 
+            Button("Aggiungi evento") {
+                selectedLiveEvent = nil
+                showLiveEventCorrection = true
+            }
+            .accessibilityIdentifier("live.event.add")
+            .buttonStyle(MapiCompactButtonStyle(filled: false))
+            .disabled(!canRecordMatchEvent || !liveSessionActionsEnabled)
+
             if !matchEvents.isEmpty {
 
                 Button(
@@ -3206,15 +3289,20 @@ struct ContentView:
                         index,
                         event in
 
-                        Text(
-                            describeEvent(
-                                event,
-                                index:
-                                    index,
-                                events:
-                                    matchEvents
+                        Button {
+                            selectedLiveEvent = event
+                            showLiveEventCorrection = true
+                        } label: {
+                            Text(
+                                describeEvent(
+                                    event,
+                                    index: index,
+                                    events: matchEvents
+                                )
                             )
-                        )
+                        }
+                        .accessibilityIdentifier("live.event-row.\(index + 1)")
+                        .buttonStyle(.plain)
                         .font(
                             .system(
                                 size: 12,
@@ -3232,6 +3320,32 @@ struct ContentView:
                     alignment:
                         .leading
                 )
+            }
+
+            let recordedSubstitutions = timing.correctionMetadata.participationTimeline?.substitutions ?? []
+            if !recordedSubstitutions.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("SOSTITUZIONI REGISTRATE")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(1)
+                        .foregroundStyle(MapiTheme.mauve)
+                    ForEach(Array(recordedSubstitutions.enumerated()), id: \.element.id) { index, substitution in
+                        let outgoingName = players.first(where: { $0.id == substitution.outgoingPlayerID })?.name ?? "Giocatore"
+                        let incomingName = players.first(where: { $0.id == substitution.incomingPlayerID })?.name ?? "Giocatore"
+                        let periodName = substitution.period == .firstHalf ? "1T" : "2T"
+                        Button {
+                            selectedLiveSubstitution = substitution
+                        } label: {
+                            Text("\(periodName) · \(formatTime(Int(substitution.elapsedNanoseconds / 1_000_000_000))) · \(outgoingName) → \(incomingName)")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .accessibilityIdentifier("live.substitution-correction.open.\(index + 1)")
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(MapiTheme.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .mapiCard(
@@ -3286,6 +3400,7 @@ struct ContentView:
             )
 
             timerControlButtons
+            liveCorrectionControls
         }
         .mapiCard(
             accent:
@@ -3293,6 +3408,32 @@ struct ContentView:
         )
     }
 
+    @ViewBuilder
+    private var liveCorrectionControls: some View {
+        if matchClockHasStarted, phase == .firstHalf || phase == .secondHalf {
+            Button("CORREGGI CRONOMETRO") {
+                showClockCorrection = true
+            }
+            .buttonStyle(MapiCompactButtonStyle(filled: false))
+            .disabled(timing.activity != .stopped)
+
+            if timing.correctionMetadata.lastUndo?.scope == .timing {
+                Button("ANNULLA ULTIMA CORREZIONE") {
+                    undoLiveTimingCorrection()
+                }
+                .accessibilityIdentifier("live.clock-correction.undo")
+                .buttonStyle(MapiCompactButtonStyle(filled: false))
+            }
+        }
+
+        if liveCorrectionMetadata?.lastEventUndo != nil {
+            Button("ANNULLA ULTIMA CORREZIONE EVENTI") {
+                showEventCorrectionUndoConfirmation = true
+            }
+            .accessibilityIdentifier("live.event-correction.undo")
+            .buttonStyle(MapiCompactButtonStyle(filled: false))
+        }
+    }
 
     private var timeoutSection:
         some View {
@@ -3637,6 +3778,13 @@ struct ContentView:
                     .foregroundStyle(
                         MapiTheme.textSecondary
                     )
+
+                    Button("Modifica minuti") {
+                        selectedMinuteCorrectionPlayer = player
+                    }
+                    .accessibilityIdentifier("live.player-minute-correction.\(player.name)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .disabled(timing.activity != .stopped || !matchClockHasStarted)
                 }
             }
 
@@ -4116,6 +4264,7 @@ struct ContentView:
             timing = restored.timing
             players = restored.players
             matchEvents = restored.snapshot.events
+            liveCorrectionMetadata = restored.snapshot.correctionMetadata
             if let pending = restored.snapshot.pendingAssist {
                 pendingAssist = PendingAssist(
                     goalEventID: pending.goalEventID,
@@ -4226,7 +4375,8 @@ struct ContentView:
             opponentName: activeOpponentName,
             isHome: activeIsHome,
             continuousTimeNanoseconds: continuousTime,
-            finalRecord: finalRecord
+            finalRecord: finalRecord,
+            correctionMetadata: liveCorrectionMetadata
         )
         try snapshot.validate()
         return snapshot
@@ -4739,6 +4889,139 @@ struct ContentView:
     }
 
 
+    private func applyLiveTimingCorrection(_ preview: MatchTimingCorrectionPreview) -> Bool {
+        guard matchEvents.allSatisfy({ $0.matchSecond <= preview.after.totalMatchElapsedSeconds }) else {
+            persistenceErrorMessage = "La correzione del cronometro porterebbe uno o più eventi oltre il tempo partita. Correggi prima gli eventi interessati."
+            return false
+        }
+
+        let previousTiming = timing
+        let previousPlayers = players
+        do {
+            try timing.confirmCorrection(preview)
+            syncPlayerTimesFromTiming()
+            guard persistLiveSession() else {
+                timing = previousTiming
+                players = previousPlayers
+                return false
+            }
+            persistenceErrorMessage = nil
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func undoLiveTimingCorrection() {
+        let previousTiming = timing
+        let previousPlayers = players
+        do {
+            try timing.undoLastCorrection()
+            syncPlayerTimesFromTiming()
+            guard persistLiveSession() else {
+                timing = previousTiming
+                players = previousPlayers
+                return
+            }
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyLiveEventCorrection(_ corrected: GoalEvent?) -> Bool {
+        guard liveSessionActionsEnabled,
+              selectedLiveEvent != nil || corrected != nil else {
+            return false
+        }
+
+        let previousEvents = matchEvents
+        let previousPendingAssist = pendingAssist
+        let previousMetadata = liveCorrectionMetadata
+        let pendingSnapshot = pendingAssist.map {
+            LiveMatchPendingAssistSnapshot(
+                goalEventID: $0.goalEventID,
+                scorerID: $0.scorerID,
+                scorerName: $0.scorerName
+            )
+        }
+
+        do {
+            let correctedState = try LiveMatchEventCorrectionEngine.apply(
+                corrected,
+                replacing: selectedLiveEvent?.id,
+                to: matchEvents,
+                pendingAssist: pendingSnapshot,
+                metadata: liveCorrectionMetadata ?? LiveMatchCorrectionMetadata(),
+                maximumSecond: totalMatchTime
+            )
+            matchEvents = correctedState.events
+            liveCorrectionMetadata = correctedState.metadata
+            pendingAssist = correctedState.pendingAssist.map {
+                PendingAssist(
+                    goalEventID: $0.goalEventID,
+                    scorerID: $0.scorerID,
+                    scorerName: $0.scorerName
+                )
+            }
+            guard persistLiveSession() else {
+                matchEvents = previousEvents
+                pendingAssist = previousPendingAssist
+                liveCorrectionMetadata = previousMetadata
+                return false
+            }
+            persistenceErrorMessage = nil
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func undoLiveEventCorrection() {
+        let previousEvents = matchEvents
+        let previousPendingAssist = pendingAssist
+        let previousMetadata = liveCorrectionMetadata
+        guard let metadata = liveCorrectionMetadata else {
+            persistenceErrorMessage = LiveMatchEventCorrectionError.undoUnavailable.localizedDescription
+            return
+        }
+        let pendingSnapshot = pendingAssist.map {
+            LiveMatchPendingAssistSnapshot(
+                goalEventID: $0.goalEventID,
+                scorerID: $0.scorerID,
+                scorerName: $0.scorerName
+            )
+        }
+
+        do {
+            let restoredState = try LiveMatchEventCorrectionEngine.undo(
+                events: matchEvents,
+                pendingAssist: pendingSnapshot,
+                metadata: metadata,
+                maximumSecond: totalMatchTime
+            )
+            matchEvents = restoredState.events
+            liveCorrectionMetadata = restoredState.metadata
+            pendingAssist = restoredState.pendingAssist.map {
+                PendingAssist(
+                    goalEventID: $0.goalEventID,
+                    scorerID: $0.scorerID,
+                    scorerName: $0.scorerName
+                )
+            }
+            guard persistLiveSession() else {
+                matchEvents = previousEvents
+                pendingAssist = previousPendingAssist
+                liveCorrectionMetadata = previousMetadata
+                return
+            }
+            persistenceErrorMessage = nil
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+        }
+    }
+
     private func addOurGoal(for playerID: UUID) {
         synchronizeMatchTiming()
         guard phase != .finished,
@@ -4748,6 +5031,9 @@ struct ContentView:
               let player = player(withID: playerID),
               player.inField else { return }
 
+        let previousEvents = matchEvents
+        let previousPendingAssist = pendingAssist
+        let previousCorrectionMetadata = liveCorrectionMetadata
         let event = GoalEvent(
             team: .ours,
             matchSecond: totalMatchTime,
@@ -4760,9 +5046,11 @@ struct ContentView:
             scorerID: player.id,
             scorerName: player.name
         )
+        liveCorrectionMetadata?.lastEventUndo = nil
         if !persistLiveSession() {
-            matchEvents.removeAll { $0.id == event.id }
-            pendingAssist = nil
+            matchEvents = previousEvents
+            pendingAssist = previousPendingAssist
+            liveCorrectionMetadata = previousCorrectionMetadata
         }
     }
 
@@ -4792,9 +5080,12 @@ struct ContentView:
               liveSessionActionsEnabled,
               persistLiveSession() else { return }
         let previousEvents = matchEvents
+        let previousCorrectionMetadata = liveCorrectionMetadata
         matchEvents.append(GoalEvent(team: .opponent, matchSecond: totalMatchTime))
+        liveCorrectionMetadata?.lastEventUndo = nil
         if !persistLiveSession() {
             matchEvents = previousEvents
+            liveCorrectionMetadata = previousCorrectionMetadata
         }
     }
 
@@ -4802,13 +5093,16 @@ struct ContentView:
         guard liveSessionActionsEnabled, persistLiveSession(), !matchEvents.isEmpty else { return }
         let previousEvents = matchEvents
         let previousPendingAssist = pendingAssist
+        let previousCorrectionMetadata = liveCorrectionMetadata
         let removed = matchEvents.removeLast()
         if pendingAssist?.goalEventID == removed.id {
             pendingAssist = nil
         }
+        liveCorrectionMetadata?.lastEventUndo = nil
         if !persistLiveSession() {
             matchEvents = previousEvents
             pendingAssist = previousPendingAssist
+            liveCorrectionMetadata = previousCorrectionMetadata
         }
     }
 
@@ -5117,6 +5411,14 @@ struct ContentView:
                     assists: assists(for: player.id)
                 )
             }
+            var historyCorrectionMetadata = timing.correctionMetadata
+            if historyCorrectionMetadata.participationTimeline != nil {
+                historyCorrectionMetadata.historicalAttendance = MatchHistoricalAttendance(
+                    periodDurationNanoseconds: timing.configuration.periodDurationNanoseconds,
+                    firstHalfEndNanoseconds: timing.firstHalfElapsedNanoseconds,
+                    secondHalfEndNanoseconds: timing.secondHalfElapsedNanoseconds
+                )
+            }
             record = MatchRecord(
                 id: sessionID,
                 date: liveScheduledMatchDate ?? activeScheduledMatch?.date ?? Date(),
@@ -5127,7 +5429,8 @@ struct ContentView:
                 events: matchEvents,
                 scheduledMatchID: activeScheduledMatchID,
                 opponentName: activeOpponentName,
-                isHome: activeIsHome
+                isHome: activeIsHome,
+                correctionMetadata: historyCorrectionMetadata
             )
             pendingFinishedMatchRecord = record
         }
@@ -5193,6 +5496,9 @@ struct ContentView:
         // Reset eventi
         matchEvents
             .removeAll()
+        liveCorrectionMetadata = nil
+        selectedLiveEvent = nil
+        selectedLiveSubstitution = nil
 
         pendingAssist =
             nil
@@ -5237,30 +5543,38 @@ struct ContentView:
 
 
     private func updateHistoryRecord(
-        _ updatedRecord:
-            MatchRecord
-    ) {
-
-        guard let index =
-            history.firstIndex(
-                where: {
-                    $0.id ==
-                        updatedRecord.id
-                }
-            )
-        else {
-
-            return
+        _ preview: MatchRecordCorrectionPreview
+    ) -> Bool {
+        guard let index = history.firstIndex(where: { $0.id == preview.before.id }),
+              history[index] == preview.before else {
+            persistenceErrorMessage = "Il record storico è cambiato dopo l'anteprima. Riapri la modifica e riprova."
+            return false
         }
-
-        var updatedHistory = history
-        updatedHistory[index] = updatedRecord
-        guard persistData({
-            try dataStore.replaceHistory(updatedHistory)
-        }) else { return }
-        history = updatedHistory
+        do {
+            let confirmed = try MatchRecordCorrectionEngine.confirmedRecord(from: preview)
+            try dataStore.updateHistoryRecord(confirmed)
+            history[index] = confirmed
+            persistenceErrorMessage = nil
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
+        }
     }
 
+    private func undoHistoryCorrection(_ id: UUID) -> Bool {
+        guard let index = history.firstIndex(where: { $0.id == id }) else { return false }
+        do {
+            let restored = try MatchRecordCorrectionEngine.undo(history[index])
+            try dataStore.updateHistoryRecord(restored)
+            history[index] = restored
+            persistenceErrorMessage = nil
+            return true
+        } catch {
+            persistenceErrorMessage = error.localizedDescription
+            return false
+        }
+    }
 
     private func deleteHistoryRecord(
         _ id:
@@ -8860,7 +9174,10 @@ struct HistoryDetailView:
         () -> Void
 
     let onSave:
-        (MatchRecord) -> Void
+        (MatchRecordCorrectionPreview) -> Bool
+
+    let onUndoCorrection:
+        () -> Bool
 
     let onDelete:
         () -> Void
@@ -8869,6 +9186,9 @@ struct HistoryDetailView:
         false
 
     @State private var showDeleteConfirmation =
+        false
+
+    @State private var showUndoCorrectionConfirmation =
         false
 
 
@@ -8883,6 +9203,12 @@ struct HistoryDetailView:
             )
 
             Section {
+
+                if record.correctionMetadata?.lastUndo?.scope == .historyRecord {
+                    Button("Annulla ultima correzione") {
+                        showUndoCorrectionConfirmation = true
+                    }
+                }
 
                 Button(
                     "Elimina partita",
@@ -8950,6 +9276,14 @@ struct HistoryDetailView:
                     onSave
             )
         }
+        .alert("Annullare la correzione?", isPresented: $showUndoCorrectionConfirmation) {
+            Button("Mantieni modifica", role: .cancel) {}
+            Button("Annulla correzione", role: .destructive) {
+                _ = onUndoCorrection()
+            }
+        } message: {
+            Text("Verrà ripristinata la versione precedente del record storico.")
+        }
         .alert(
             "Eliminare questa partita?",
             isPresented:
@@ -8975,6 +9309,163 @@ struct HistoryDetailView:
 }
 
 
+struct HistoryRecordCorrectionPreviewView: View {
+    let preview: MatchRecordCorrectionPreview
+    let onConfirm: () -> Bool
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Partita") {
+                    LabeledContent("Durata", value: "\(preview.before.duration) s → \(preview.proposed.duration) s")
+                    LabeledContent("Risultato", value: "\(preview.previousScore.ours ?? 0)–\(preview.previousScore.opponent ?? 0) → \(preview.proposedScore.ours ?? 0)–\(preview.proposedScore.opponent ?? 0)")
+                }
+
+                if !preview.affectedPlayerIDs.isEmpty {
+                    Section("Giocatori e statistiche") {
+                        ForEach(preview.affectedPlayerIDs, id: \.self) { id in
+                            let before = preview.before.players.first(where: { $0.id == id })
+                            let after = preview.proposed.players.first(where: { $0.id == id })
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(after?.playerName ?? before?.playerName ?? "Giocatore")
+                                    .font(.headline)
+                                if let before, let after {
+                                    Text("Minuti: \(before.secondsPlayed) → \(after.secondsPlayed) s · Gol: \(before.goals) → \(after.goals) · Assist: \(before.assists) → \(after.assists)")
+                                        .font(.footnote)
+                                        .foregroundStyle(MapiTheme.textSecondary)
+                                } else {
+                                    Text(after == nil ? "Il partecipante verrà rimosso dal record." : "Il partecipante verrà aggiunto al record.")
+                                        .font(.footnote)
+                                        .foregroundStyle(MapiTheme.textSecondary)
+                                }
+                                let stableParticipantID = after?.rosterPlayerID ?? before?.rosterPlayerID ?? id
+                                if preview.automaticallyRecalculatedPlayerIDs.contains(stableParticipantID) {
+                                    Text("Minutaggio ricalcolato dalla cronologia attendibile.")
+                                        .font(.caption)
+                                } else if preview.preservedMinutePlayerIDs.contains(stableParticipantID) {
+                                    Text("Minutaggio conservato: la cronologia non consente un ricalcolo completo.")
+                                        .font(.caption)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !preview.affectedEventIDs.isEmpty {
+                    Section("Eventi") {
+                        Text("Eventi modificati: \(preview.affectedEventIDs.count). Gli identificativi esistenti restano invariati; punteggio e statistiche vengono ricalcolati dagli eventi.")
+                    }
+                }
+
+                Section {
+                    Text("La modifica sarà salvata prima di essere confermata. È disponibile un annullamento dell'ultima correzione.")
+                        .font(.footnote)
+                        .foregroundStyle(MapiTheme.textSecondary)
+                }
+            }
+            .navigationTitle("Anteprima correzione")
+            .mapiNavigationChrome()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Continua modifica") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Conferma") {
+                        if onConfirm() { dismiss() }
+                    }
+                    .accessibilityIdentifier("history.correction.confirm")
+                }
+            }
+        }
+    }
+}
+
+struct HistorySubstitutionCorrectionView: View {
+    let substitution: MatchRecordedSubstitution
+    let players: [MatchEventPlayerOption]
+    let periodDurationSeconds: Int
+    let onApply: (UUID, UUID, Int) -> String?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var outgoingPlayerID: UUID
+    @State private var incomingPlayerID: UUID
+    @State private var correctedSecond: Int
+    @State private var errorMessage: String?
+
+    init(
+        substitution: MatchRecordedSubstitution,
+        players: [MatchEventPlayerOption],
+        periodDurationSeconds: Int,
+        onApply: @escaping (UUID, UUID, Int) -> String?
+    ) {
+        self.substitution = substitution
+        self.players = players
+        self.periodDurationSeconds = max(0, periodDurationSeconds)
+        self.onApply = onApply
+        _outgoingPlayerID = State(initialValue: substitution.outgoingPlayerID)
+        _incomingPlayerID = State(initialValue: substitution.incomingPlayerID)
+        _correctedSecond = State(initialValue: Int((substitution.elapsedNanoseconds + 500_000_000) / 1_000_000_000))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(substitution.period == .firstHalf ? "Sostituzione · primo tempo" : "Sostituzione · secondo tempo") {
+                    Picker("Esce", selection: $outgoingPlayerID) {
+                        ForEach(optionsIncludingCurrent(outgoingPlayerID)) { player in
+                            Text(player.name).tag(player.id)
+                        }
+                    }
+                    Picker("Entra", selection: $incomingPlayerID) {
+                        ForEach(optionsIncludingCurrent(incomingPlayerID)) { player in
+                            Text(player.name).tag(player.id)
+                        }
+                    }
+                    TextField("Secondo nel periodo", value: $correctedSecond, format: .number)
+                        .keyboardType(.numberPad)
+                        .accessibilityIdentifier("history.substitution-correction.second")
+                    Text("Gli effetti sui minutaggi saranno calcolati e mostrati nell'anteprima complessiva prima del salvataggio.")
+                        .font(.footnote)
+                        .foregroundStyle(MapiTheme.textSecondary)
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Correggi sostituzione")
+            .mapiNavigationChrome()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Applica alla bozza") {
+                        guard outgoingPlayerID != incomingPlayerID,
+                              correctedSecond >= 0,
+                              correctedSecond <= periodDurationSeconds else {
+                            errorMessage = "Scegli due giocatori diversi e un secondo valido nel periodo."
+                            return
+                        }
+                        if let message = onApply(outgoingPlayerID, incomingPlayerID, correctedSecond) {
+                            errorMessage = message
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .accessibilityIdentifier("history.substitution-correction.apply")
+                }
+            }
+        }
+    }
+
+    private func optionsIncludingCurrent(_ id: UUID) -> [MatchEventPlayerOption] {
+        guard !players.contains(where: { $0.id == id }) else { return players }
+        return players + [MatchEventPlayerOption(id: id, name: "Giocatore storico")]
+    }
+}
+
 // MARK: - HISTORY EDITOR
 
 struct HistoryEditorView:
@@ -8995,6 +9486,14 @@ struct HistoryEditorView:
     @State private var newHistoricalPlayerID:
         UUID?
 
+    @State private var correctionPreview: MatchRecordCorrectionPreview?
+
+    @State private var selectedSubstitution: MatchRecordedSubstitution?
+
+    @State private var correctionError: String?
+
+    let originalRecord: MatchRecord
+
     let roster:
         [RosterPlayer]
 
@@ -9002,7 +9501,7 @@ struct HistoryEditorView:
         [ScheduledMatch]
 
     let onSave:
-        (MatchRecord) -> Void
+        (MatchRecordCorrectionPreview) -> Bool
 
     @Environment(
         \.dismiss
@@ -9019,9 +9518,10 @@ struct HistoryEditorView:
             [ScheduledMatch],
         onSave:
             @escaping
-            (MatchRecord) -> Void
+            (MatchRecordCorrectionPreview) -> Bool
     ) {
 
+        self.originalRecord = record
         var copy =
             record
 
@@ -9312,6 +9812,10 @@ struct HistoryEditorView:
                                     $events[
                                         index
                                     ],
+                                playerOptions: draft.players.compactMap { player in
+                                    guard let id = player.rosterPlayerID else { return nil }
+                                    return MatchEventPlayerOption(id: id, name: player.playerName)
+                                },
                                 onDelete: {
 
                                     events.removeAll {
@@ -9339,6 +9843,21 @@ struct HistoryEditorView:
                                     )
                             )
                         )
+                    }
+                }
+
+                if !recordedSubstitutions.isEmpty {
+                    Section("Sostituzioni registrate") {
+                        ForEach(Array(recordedSubstitutions.enumerated()), id: \.element.id) { index, substitution in
+                            Button {
+                                selectedSubstitution = substitution
+                            } label: {
+                                Text(substitutionDescription(substitution))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .accessibilityIdentifier("history.substitution-correction.open.\(index + 1)")
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
@@ -9573,9 +10092,92 @@ struct HistoryEditorView:
                     }
                 }
             }
+            .sheet(item: $correctionPreview) { preview in
+                HistoryRecordCorrectionPreviewView(preview: preview) {
+                    guard onSave(preview) else { return false }
+                    correctionPreview = nil
+                    dismiss()
+                    return true
+                }
+            }
+            .sheet(item: $selectedSubstitution) { substitution in
+                HistorySubstitutionCorrectionView(
+                    substitution: substitution,
+                    players: substitutionPlayerOptions,
+                    periodDurationSeconds: substitutionPeriodDurationSeconds,
+                    onApply: applyHistorySubstitutionCorrection
+                )
+            }
+            .alert(
+                "Correzione non valida",
+                isPresented: Binding(
+                    get: { correctionError != nil },
+                    set: { if !$0 { correctionError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { correctionError = nil }
+            } message: {
+                Text(correctionError ?? "La correzione non può essere applicata.")
+            }
         }
     }
 
+    private var recordedSubstitutions: [MatchRecordedSubstitution] {
+        draft.correctionMetadata?.participationTimeline?.substitutions ?? []
+    }
+
+    private var substitutionPlayerOptions: [MatchEventPlayerOption] {
+        draft.players.compactMap { player in
+            guard let id = player.rosterPlayerID else { return nil }
+            return MatchEventPlayerOption(id: id, name: player.playerName)
+        }
+    }
+
+    private var substitutionPeriodDurationSeconds: Int {
+        let duration = draft.correctionMetadata?.historicalAttendance?.periodDurationNanoseconds
+            ?? Int64(FutsalMatchRules.timing.periodDurationSeconds) * 1_000_000_000
+        return Int(max(0, duration / 1_000_000_000))
+    }
+
+    private func substitutionDescription(_ substitution: MatchRecordedSubstitution) -> String {
+        let outgoing = draft.players.first(where: { $0.rosterPlayerID == substitution.outgoingPlayerID })?.playerName ?? "Giocatore storico"
+        let incoming = draft.players.first(where: { $0.rosterPlayerID == substitution.incomingPlayerID })?.playerName ?? "Giocatore storico"
+        let second = Int((substitution.elapsedNanoseconds + 500_000_000) / 1_000_000_000)
+        let period = substitution.period == .firstHalf ? "1T" : "2T"
+        return "\(period) · \(String(format: "%02d:%02d", second / 60, second % 60)) · \(outgoing) → \(incoming)"
+    }
+
+    private func applyHistorySubstitutionCorrection(
+        _ outgoingID: UUID,
+        _ incomingID: UUID,
+        _ second: Int
+    ) -> String? {
+        guard var metadata = draft.correctionMetadata,
+              var timeline = metadata.participationTimeline,
+              let substitution = timeline.substitutions.first(where: { $0.id == selectedSubstitution?.id }) else {
+            return "La cronologia delle presenze non è disponibile per questa partita."
+        }
+        guard second >= 0,
+              second <= substitutionPeriodDurationSeconds else {
+            return "Il secondo indicato non rientra nella durata del periodo."
+        }
+        let (elapsedNanoseconds, overflow) = Int64(second).multipliedReportingOverflow(by: 1_000_000_000)
+        guard !overflow else { return "Il tempo indicato non è rappresentabile." }
+
+        do {
+            try timeline.correctSubstitution(
+                id: substitution.id,
+                outgoingID: outgoingID,
+                incomingID: incomingID,
+                elapsedNanoseconds: elapsedNanoseconds
+            )
+            metadata.participationTimeline = timeline
+            draft.correctionMetadata = metadata
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
 
     private var opponentBinding:
         Binding<String> {
@@ -10232,155 +10834,165 @@ struct HistoryEditorView:
             }
         }
 
-        onSave(
-            draft
-        )
-
-        dismiss()
+        do {
+            correctionPreview = try MatchRecordCorrectionEngine.preview(
+                from: originalRecord,
+                proposing: draft
+            )
+            correctionError = nil
+        } catch {
+            correctionPreview = nil
+            correctionError = error.localizedDescription
+        }
     }
 }
 
 
 // MARK: - EVENT EDITOR
 
-struct HistoryEventEditorRow:
-    View {
+struct MatchEventPlayerOption: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+}
 
-    @Binding var event:
-        GoalEvent
+struct HistoryEventEditorRow: View {
+    @Binding var event: GoalEvent
+    let playerOptions: [MatchEventPlayerOption]
+    let showDelete: Bool
+    let onDelete: () -> Void
 
-    let onDelete:
-        () -> Void
+    init(
+        event: Binding<GoalEvent>,
+        playerOptions: [MatchEventPlayerOption] = [],
+        showDelete: Bool = true,
+        onDelete: @escaping () -> Void
+    ) {
+        self._event = event
+        self.playerOptions = playerOptions
+        self.showDelete = showDelete
+        self.onDelete = onDelete
+    }
 
-
-    var body:
-        some View {
-
-        VStack(
-            alignment:
-                .leading,
-            spacing:
-                8
-        ) {
-
-            Picker(
-                "Squadra",
-                selection:
-                    $event.team
-            ) {
-
-                Text(
-                    "Noi"
-                )
-                .tag(
-                    GoalTeam.ours
-                )
-
-                Text(
-                    "Avversari"
-                )
-                .tag(
-                    GoalTeam.opponent
-                )
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Squadra", selection: teamBinding) {
+                Text("Noi").tag(GoalTeam.ours)
+                Text("Avversari").tag(GoalTeam.opponent)
             }
-            .pickerStyle(
-                .segmented
-            )
+            .pickerStyle(.segmented)
 
-            TextField(
-                "Secondo",
-                value:
-                    $event.matchSecond,
-                format:
-                    .number
-            )
+            TextField("Secondo", value: $event.matchSecond, format: .number)
+                .accessibilityIdentifier("event-editor.second")
 
-            if event.team ==
-                .ours {
+            if event.team == .ours {
+                if !playerOptions.isEmpty {
+                    Picker("Marcatore", selection: scorerIDBinding) {
+                        Text("Non assegnato").tag(UUID?.none)
+                        ForEach(playerOptions) { player in
+                            Text(player.name).tag(Optional(player.id))
+                        }
+                        if let currentID = event.scorerID,
+                           !playerOptions.contains(where: { $0.id == currentID }) {
+                            Text(event.scorerName ?? "Giocatore storico").tag(Optional(currentID))
+                        }
+                    }
+                    .accessibilityIdentifier("event-editor.scorer")
+                }
+                TextField("Nome marcatore", text: scorerBinding)
+                    .accessibilityIdentifier("event-editor.scorer-name")
 
-                TextField(
-                    "Marcatore",
-                    text:
-                        scorerBinding
-                )
-
-                TextField(
-                    "Assist",
-                    text:
-                        assistBinding
-                )
+                if !playerOptions.isEmpty {
+                    Picker("Assist", selection: assistIDBinding) {
+                        Text("Nessuno").tag(UUID?.none)
+                        ForEach(playerOptions) { player in
+                            Text(player.name).tag(Optional(player.id))
+                        }
+                        if let currentID = event.assistID,
+                           !playerOptions.contains(where: { $0.id == currentID }) {
+                            Text(event.assistName ?? "Giocatore storico").tag(Optional(currentID))
+                        }
+                    }
+                    .accessibilityIdentifier("event-editor.assist")
+                }
+                TextField("Nome assist", text: assistBinding)
+                    .accessibilityIdentifier("event-editor.assist-name")
             }
 
-            Button(
-                "Elimina evento",
-                role:
-                    .destructive
-            ) {
-
-                onDelete()
+            if showDelete {
+                Button("Elimina evento", role: .destructive, action: onDelete)
             }
         }
     }
 
-
-    private var scorerBinding:
-        Binding<String> {
-
+    private var teamBinding: Binding<GoalTeam> {
         Binding(
-            get: {
-
-                event.scorerName ??
-                    ""
-            },
-
-            set: {
-
-                let value =
-                    clean(
-                        $0
-                    )
-
-                event.scorerName =
-                    value.isEmpty
-                    ? nil
-                    : value
-
-                event.scorerID =
-                    nil
+            get: { event.team },
+            set: { team in
+                event.team = team
+                if team == .opponent {
+                    event.scorerID = nil
+                    event.scorerName = nil
+                    event.assistID = nil
+                    event.assistName = nil
+                }
             }
         )
     }
 
-
-    private var assistBinding:
-        Binding<String> {
-
+    private var scorerIDBinding: Binding<UUID?> {
         Binding(
-            get: {
+            get: { event.scorerID },
+            set: { newID in
+                let previousID = event.scorerID
+                event.scorerID = newID
+                if let newID {
+                    event.scorerName = playerOptions.first(where: { $0.id == newID })?.name
+                        ?? (newID == previousID ? event.scorerName : nil)
+                } else {
+                    event.scorerName = nil
+                }
+            }
+        )
+    }
 
-                event.assistName ??
-                    ""
-            },
+    private var assistIDBinding: Binding<UUID?> {
+        Binding(
+            get: { event.assistID },
+            set: { newID in
+                let previousID = event.assistID
+                event.assistID = newID
+                if let newID {
+                    event.assistName = playerOptions.first(where: { $0.id == newID })?.name
+                        ?? (newID == previousID ? event.assistName : nil)
+                } else {
+                    event.assistName = nil
+                }
+            }
+        )
+    }
 
-            set: {
+    private var scorerBinding: Binding<String> {
+        Binding(
+            get: { event.scorerName ?? "" },
+            set: { value in
+                let cleaned = clean(value)
+                if cleaned != (event.scorerName ?? "") { event.scorerID = nil }
+                event.scorerName = cleaned.isEmpty ? nil : cleaned
+            }
+        )
+    }
 
-                let value =
-                    clean(
-                        $0
-                    )
-
-                event.assistName =
-                    value.isEmpty
-                    ? nil
-                    : value
-
-                event.assistID =
-                    nil
+    private var assistBinding: Binding<String> {
+        Binding(
+            get: { event.assistName ?? "" },
+            set: { value in
+                let cleaned = clean(value)
+                if cleaned != (event.assistName ?? "") { event.assistID = nil }
+                event.assistName = cleaned.isEmpty ? nil : cleaned
             }
         )
     }
 }
-
 
 // MARK: - SUMMARY
 

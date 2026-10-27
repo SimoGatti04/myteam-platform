@@ -467,7 +467,7 @@ final class MatchTimingTests: XCTestCase {
         fixture.clock.advance(seconds: 19 * 60 + 50)
         let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
 
-        var restored = try MatchTiming.restoring(
+        let restored = try MatchTiming.restoring(
             from: snapshot,
             clock: ControllableMatchTimingClock(),
             recoveredElapsedNanoseconds: 30 * nanosecondsPerSecond
@@ -492,7 +492,7 @@ final class MatchTimingTests: XCTestCase {
         fixture.clock.advance(seconds: 30)
         let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000))
 
-        var restored = try MatchTiming.restoring(
+        let restored = try MatchTiming.restoring(
             from: snapshot,
             clock: ControllableMatchTimingClock(),
             recoveredElapsedNanoseconds: 10 * 60 * nanosecondsPerSecond
@@ -505,6 +505,38 @@ final class MatchTimingTests: XCTestCase {
         for id in fixture.starters {
             XCTAssertEqual(restored.participantSecondsPlayed[id], 20 * 60)
         }
+    }
+
+    func testC2HalftimeSnapshotCreatesOnlyAZeroDurationRecoveryBaseline() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 20 * 60)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.phase, .halftime)
+
+        var payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_000)))) as? [String: Any]
+        )
+        payload["schemaVersion"] = MatchTimingSnapshot.legacySchemaVersion
+        payload.removeValue(forKey: "correctionMetadata")
+        let legacyData = try JSONSerialization.data(withJSONObject: payload)
+        let legacySnapshot = try JSONDecoder().decode(MatchTimingSnapshot.self, from: legacyData)
+
+        var restored = try MatchTiming.restoring(from: legacySnapshot, clock: ControllableMatchTimingClock())
+        let timeline: MatchParticipationTimelineSnapshot = try XCTUnwrap(restored.correctionMetadata.participationTimeline)
+        XCTAssertFalse(timeline.isCompleteFromStart, "A legacy session must not invent its earlier substitutions")
+        XCTAssertEqual(
+            try timeline.fieldPlayerIDs(
+                participantIDs: Set(restored.participants.map(\.id)),
+                period: .firstHalf,
+                through: Int64(20 * 60) * nanosecondsPerSecond
+            ),
+            Set(fixture.starters)
+        )
+        for id in fixture.starters {
+            XCTAssertEqual(restored.participantSecondsPlayed[id], 20 * 60)
+        }
+        XCTAssertNoThrow(try MatchTiming.validate(restored.snapshot(capturedAt: legacySnapshot.capturedAt)))
     }
 
     func testRestoreTimeoutAppliesExpiryAndOnlyThenAuthorizedResumption() throws {
@@ -573,6 +605,281 @@ final class MatchTimingTests: XCTestCase {
             capturedAt: snapshot.capturedAt
         )
         XCTAssertThrowsError(try MatchTiming.restoring(from: unsupported, clock: ControllableMatchTimingClock()))
+    }
+
+    func testTimelineTracksStartingLineupAndSubstitutionIntervals() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 60)
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[0], incomingID: fixture.bench[0]))
+        fixture.clock.advance(seconds: 30)
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+        fixture.timing.synchronize()
+
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 60)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[0]], 30)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[1]], 90)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[1]], 0)
+        XCTAssertEqual(fixture.timing.correctionMetadata.participationTimeline?.boundaries.count, 7)
+        XCTAssertNoThrow(try MatchTiming.validate(fixture.timing.snapshot(capturedAt: Date())))
+    }
+
+    func testMultipleSubstitutionsAtSameSecondRemainOrderedAndReconstructable() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 20)
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[0], incomingID: fixture.bench[0]))
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[1], incomingID: fixture.starters[0]))
+
+        let timeline = try XCTUnwrap(fixture.timing.correctionMetadata.participationTimeline)
+        let sameSecond = timeline.orderedBoundaries.filter { $0.elapsedNanoseconds == 20 * nanosecondsPerSecond }
+        XCTAssertEqual(sameSecond.count, 4)
+        XCTAssertEqual(sameSecond.map(\.sequence), sameSecond.map(\.sequence).sorted())
+        XCTAssertEqual(Set(sameSecond.compactMap(\.substitutionID)).count, 2)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 20)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[1]], 20)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[0]], 0)
+        XCTAssertNoThrow(try MatchTiming.validate(fixture.timing.snapshot(capturedAt: Date())))
+    }
+
+    func testSubstitutionProjectionUsesBoundarySequenceForSameSecond() throws {
+        let ids = playerIDs(7)
+        let starters = Set(ids.prefix(FutsalMatchRules.timing.requiredStartingPlayers))
+        let participants = ids.map { id in
+            MatchTimingParticipantSnapshot(id: id, accumulatedNanoseconds: 0, inField: starters.contains(id))
+        }
+        var timeline = try MatchParticipationTimelineSnapshot.complete(
+            participants: participants,
+            starters: starters
+        )
+        let firstSubstitutionID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let secondSubstitutionID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let elapsed = 20 * nanosecondsPerSecond
+
+        _ = try timeline.record(
+            playerID: ids[0], period: .firstHalf, elapsedNanoseconds: elapsed,
+            transition: .leftField, origin: .substitution, substitutionID: firstSubstitutionID
+        )
+        _ = try timeline.record(
+            playerID: ids[5], period: .firstHalf, elapsedNanoseconds: elapsed,
+            transition: .enteredField, origin: .substitution, substitutionID: firstSubstitutionID
+        )
+        _ = try timeline.record(
+            playerID: ids[1], period: .firstHalf, elapsedNanoseconds: elapsed,
+            transition: .leftField, origin: .substitution, substitutionID: secondSubstitutionID
+        )
+        _ = try timeline.record(
+            playerID: ids[6], period: .firstHalf, elapsedNanoseconds: elapsed,
+            transition: .enteredField, origin: .substitution, substitutionID: secondSubstitutionID
+        )
+
+        XCTAssertEqual(timeline.substitutions.map(\.id), [firstSubstitutionID, secondSubstitutionID])
+    }
+
+    func testClockCorrectionRecalculatesCompleteTimelineAndKeepsFutureAccrual() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 100)
+        fixture.timing.synchronize()
+        try fixture.timing.correctCurrentPeriodElapsed(toSeconds: 50)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 50)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[0]], 0)
+
+        fixture.clock.advance(seconds: 20)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.firstHalfElapsedSeconds, 70)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 70)
+        XCTAssertNoThrow(try MatchTiming.validate(fixture.timing.snapshot(capturedAt: Date())))
+    }
+
+    func testClockCorrectionPreviewIsNonMutatingAndConfirmCanBeUndoneAfterRecovery() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 80)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+
+        let preview = try fixture.timing.previewCurrentPeriodElapsed(toSeconds: 40)
+        XCTAssertEqual(fixture.timing.firstHalfElapsedSeconds, 80)
+        XCTAssertEqual(preview.after.firstHalfElapsedNanoseconds, 40 * nanosecondsPerSecond)
+        XCTAssertEqual(preview.affectedPlayers.count, 5)
+        XCTAssertTrue(preview.affectedPlayers.allSatisfy { $0.beforeSeconds == 80 && $0.afterSeconds == 40 })
+
+        try fixture.timing.confirmCorrection(preview)
+        XCTAssertEqual(fixture.timing.firstHalfElapsedSeconds, 40)
+        XCTAssertNotNil(fixture.timing.correctionMetadata.lastUndo)
+        let persisted = try JSONDecoder().decode(
+            MatchTimingSnapshot.self,
+            from: JSONEncoder().encode(fixture.timing.snapshot(capturedAt: Date()))
+        )
+        var recovered = try MatchTiming.restoring(from: persisted, clock: fixture.clock)
+        try recovered.undoLastCorrection()
+        XCTAssertEqual(recovered.firstHalfElapsedSeconds, 80)
+        XCTAssertEqual(recovered.activity, .stopped)
+        XCTAssertNil(recovered.correctionMetadata.lastUndo)
+        for id in fixture.starters {
+            XCTAssertEqual(recovered.participantSecondsPlayed[id], 80)
+        }
+    }
+
+    func testMinuteCorrectionPreviewPersistsOffsetAndDoesNotTouchOtherPlayers() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 120)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+
+        let target = fixture.starters[0]
+        let preview = try fixture.timing.previewParticipantMinutes(playerID: target, toSeconds: 100, reason: "verifica manuale")
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[target], 120)
+        XCTAssertEqual(preview.affectedPlayers.map(\.playerID), [target])
+        try fixture.timing.confirmCorrection(preview)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[target], 100)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[1]], 120)
+
+        let snapshot = fixture.timing.snapshot(capturedAt: Date())
+        let restored = try MatchTiming.restoring(from: snapshot, clock: fixture.clock)
+        XCTAssertEqual(restored.participantSecondsPlayed[target], 100)
+        XCTAssertEqual(restored.correctionMetadata.minuteCorrections.first?.reason, "verifica manuale")
+    }
+
+    func testClockCorrectionPreviewRequiresPausedMatchAndReportsTimelineConflict() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        XCTAssertThrowsError(try fixture.timing.previewCurrentPeriodElapsed(toSeconds: 10)) {
+            XCTAssertEqual($0 as? MatchTimingCorrectionError, .correctionRequiresPause)
+        }
+        fixture.clock.advance(seconds: 60)
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[0], incomingID: fixture.bench[0]))
+        fixture.clock.advance(seconds: 20)
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+        XCTAssertThrowsError(try fixture.timing.previewCurrentPeriodElapsed(toSeconds: 30)) {
+            XCTAssertEqual($0 as? MatchTimingCorrectionError, .timelineConflict)
+        }
+        XCTAssertEqual(fixture.timing.firstHalfElapsedSeconds, 80)
+    }
+
+    func testParticipantMinuteCorrectionUndoSurvivesSnapshotRecovery() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 120)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+
+        let playerID = fixture.starters[0]
+        let preview = try fixture.timing.previewParticipantMinutes(
+            playerID: playerID,
+            toSeconds: 100,
+            reason: "Correzione sintetica",
+            correctedAt: Date(timeIntervalSince1970: 1_800_000_100)
+        )
+        try fixture.timing.confirmCorrection(preview)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[playerID], 100)
+        XCTAssertEqual(fixture.timing.correctionMetadata.lastUndo?.scope, .timing)
+
+        let encodedSnapshot = try JSONEncoder().encode(fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_101)))
+        let recoveredSnapshot = try JSONDecoder().decode(MatchTimingSnapshot.self, from: encodedSnapshot)
+        var recovered = try MatchTiming.restoring(from: recoveredSnapshot, clock: fixture.clock)
+        XCTAssertEqual(recovered.participantSecondsPlayed[playerID], 100)
+        XCTAssertNotNil(recovered.correctionMetadata.lastUndo)
+        try recovered.undoLastCorrection()
+        XCTAssertEqual(recovered.participantSecondsPlayed[playerID], 120)
+        XCTAssertNil(recovered.correctionMetadata.lastUndo)
+    }
+
+    func testClockCorrectionCannotSilentlyCrossRecordedSubstitution() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 60)
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[0], incomingID: fixture.bench[0]))
+        fixture.clock.advance(seconds: 30)
+        fixture.timing.synchronize()
+
+        XCTAssertThrowsError(try fixture.timing.correctCurrentPeriodElapsed(toSeconds: 30)) { error in
+            XCTAssertEqual(error as? MatchTimingCorrectionError, .timelineConflict)
+        }
+        XCTAssertEqual(fixture.timing.firstHalfElapsedSeconds, 90)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 60)
+    }
+
+    func testRecordedSubstitutionCanBeCorrectedWithoutChangingEventIdentity() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 60)
+        XCTAssertTrue(fixture.timing.substitute(outgoingID: fixture.starters[0], incomingID: fixture.bench[0]))
+        fixture.clock.advance(seconds: 30)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .paused)
+        let originalTimeline = try XCTUnwrap(fixture.timing.correctionMetadata.participationTimeline)
+        let substitutionID = try XCTUnwrap(originalTimeline.boundaries.first(where: { $0.origin == .substitution })?.substitutionID)
+        let originalBoundaryIDs = Set(originalTimeline.boundaries.filter { $0.substitutionID == substitutionID }.map(\.id))
+
+        let preview = try fixture.timing.previewRecordedSubstitutionCorrection(
+            id: substitutionID,
+            outgoingID: fixture.starters[0],
+            incomingID: fixture.bench[1],
+            toSeconds: 60
+        )
+        XCTAssertTrue(preview.affectedPlayers.contains { $0.playerID == fixture.bench[0] })
+        XCTAssertTrue(preview.affectedPlayers.contains { $0.playerID == fixture.bench[1] })
+
+        try fixture.timing.correctRecordedSubstitution(
+            id: substitutionID,
+            outgoingID: fixture.starters[0],
+            incomingID: fixture.bench[1],
+            toSeconds: 60
+        )
+
+        let corrected = try XCTUnwrap(fixture.timing.correctionMetadata.participationTimeline)
+        XCTAssertEqual(Set(corrected.boundaries.filter { $0.substitutionID == substitutionID }.map(\.id)), originalBoundaryIDs)
+        XCTAssertFalse(fixture.timing.participants.first(where: { $0.id == fixture.bench[0] })?.inField ?? true)
+        XCTAssertTrue(fixture.timing.participants.first(where: { $0.id == fixture.bench[1] })?.inField ?? false)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[0]], 0)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.bench[1]], 30)
+    }
+
+    func testManualMinuteCorrectionSurvivesFutureTicksAndSnapshotRestore() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: 100)
+        fixture.timing.synchronize()
+        try fixture.timing.correctParticipantMinutes(
+            playerID: fixture.starters[0],
+            toSeconds: 45,
+            reason: "Correzione sintetica",
+            correctedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        fixture.clock.advance(seconds: 20)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 65)
+
+        let snapshot = fixture.timing.snapshot(capturedAt: Date(timeIntervalSince1970: 1_800_000_120))
+        var restored = try MatchTiming.restoring(from: snapshot, clock: ControllableMatchTimingClock())
+        XCTAssertEqual(restored.participantSecondsPlayed[fixture.starters[0]], 65)
+        XCTAssertEqual(restored.correctionMetadata.minuteCorrections.first?.reason, "Correzione sintetica")
+        XCTAssertNoThrow(try MatchTiming.validate(restored.snapshot(capturedAt: snapshot.capturedAt)))
+    }
+
+    func testTimelineExcludesHalftimeAndCountsSecondHalfOnlyAfterExplicitPlay() throws {
+        var fixture = makeMatch()
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .started)
+        fixture.clock.advance(seconds: Int64(FutsalMatchRules.timing.periodDurationSeconds))
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.phase, .halftime)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 1_200)
+
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .halftimeStarted)
+        fixture.clock.advance(seconds: Int64(FutsalMatchRules.timing.halftimeDurationSeconds))
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.phase, .secondHalf)
+        XCTAssertEqual(fixture.timing.activity, .stopped)
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 1_200)
+
+        XCTAssertEqual(fixture.timing.toggleMainClock(), .resumed)
+        fixture.clock.advance(seconds: 15)
+        fixture.timing.synchronize()
+        XCTAssertEqual(fixture.timing.participantSecondsPlayed[fixture.starters[0]], 1_215)
+        XCTAssertNoThrow(try MatchTiming.validate(fixture.timing.snapshot(capturedAt: Date())))
     }
 
     private func makeMatch(presentCount: Int = 7) -> (

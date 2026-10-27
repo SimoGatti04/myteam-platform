@@ -26,8 +26,30 @@ struct LiveMatchPendingAssistSnapshot: Codable, Equatable {
     let scorerName: String
 }
 
-struct LiveMatchSessionSnapshot: Codable {
+/// Bounded, durable undo state for corrections to live goal events.
+struct LiveMatchEventCorrectionUndo: Codable, Equatable {
+    let id: UUID
+    let previousEvents: [GoalEvent]
+    let previousPendingAssist: LiveMatchPendingAssistSnapshot?
+    let recordedAt: Date
+}
+
+struct LiveMatchCorrectionMetadata: Codable, Equatable {
     static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    var lastEventUndo: LiveMatchEventCorrectionUndo?
+
+    init(schemaVersion: Int = Self.currentSchemaVersion, lastEventUndo: LiveMatchEventCorrectionUndo? = nil) {
+        self.schemaVersion = schemaVersion
+        self.lastEventUndo = lastEventUndo
+    }
+}
+
+struct LiveMatchSessionSnapshot: Codable {
+    static let currentSchemaVersion = 3
+    static let legacySchemaVersion = 1
+    static let previousSchemaVersion = 2
 
     let schemaVersion: Int
     let sessionID: UUID
@@ -45,6 +67,8 @@ struct LiveMatchSessionSnapshot: Codable {
     /// calculate the gap between processes; it is never fed back into MatchTiming's anchor.
     let continuousTimeNanoseconds: UInt64
     var finalRecord: MatchRecord?
+    /// Optional so C3.2 V1/V2 snapshots remain decodable unchanged.
+    var correctionMetadata: LiveMatchCorrectionMetadata? = nil
 
     init(
         schemaVersion: Int,
@@ -60,7 +84,8 @@ struct LiveMatchSessionSnapshot: Codable {
         opponentName: String?,
         isHome: Bool?,
         continuousTimeNanoseconds: UInt64,
-        finalRecord: MatchRecord?
+        finalRecord: MatchRecord?,
+        correctionMetadata: LiveMatchCorrectionMetadata? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.sessionID = sessionID
@@ -76,6 +101,7 @@ struct LiveMatchSessionSnapshot: Codable {
         self.isHome = isHome
         self.continuousTimeNanoseconds = continuousTimeNanoseconds
         self.finalRecord = finalRecord
+        self.correctionMetadata = correctionMetadata
     }
 
     var capturedAt: Date { timing.capturedAt }
@@ -98,7 +124,9 @@ struct LiveMatchSessionSnapshot: Codable {
     }
 
     func validate() throws {
-        guard schemaVersion == Self.currentSchemaVersion else {
+        guard schemaVersion == Self.legacySchemaVersion ||
+              schemaVersion == Self.previousSchemaVersion ||
+              schemaVersion == Self.currentSchemaVersion else {
             throw LiveMatchSessionValidationError.unsupportedSchema(schemaVersion)
         }
         try MatchTiming.validate(timing)
@@ -127,6 +155,19 @@ struct LiveMatchSessionSnapshot: Codable {
         }
 
         let playersByID = Dictionary(uniqueKeysWithValues: players.map { ($0.rosterPlayerID, $0) })
+        if let correctionMetadata {
+            guard correctionMetadata.schemaVersion == LiveMatchCorrectionMetadata.currentSchemaVersion else {
+                throw LiveMatchSessionValidationError.invalid("versione dei metadati di correzione live non supportata")
+            }
+            let undoEvents = correctionMetadata.lastEventUndo?.previousEvents ?? []
+            let undoEventIDs = undoEvents.map(\.id)
+            guard undoEventIDs.count == Set(undoEventIDs).count,
+                  undoEvents.allSatisfy({
+                    $0.matchSecond >= 0 && $0.matchSecond <= timing.configuration.periodDurationSeconds * 2
+                  }) else {
+                throw LiveMatchSessionValidationError.invalid("l'annullamento eventi contiene dati non validi")
+            }
+        }
         let eventIDs = events.map(\.id)
         guard eventIDs.count == Set(eventIDs).count,
               events.allSatisfy({ $0.matchSecond >= 0 && $0.matchSecond <= timing.totalMatchElapsedSeconds }) else {
@@ -251,7 +292,7 @@ enum LiveMatchSessionRestorer {
         let reading = recoveryClock.reading()
         let timingSnapshot = timing.snapshot(capturedAt: reading.wallClockDate)
         let rebasedSnapshot = LiveMatchSessionSnapshot(
-            schemaVersion: snapshot.schemaVersion,
+            schemaVersion: LiveMatchSessionSnapshot.currentSchemaVersion,
             sessionID: snapshot.sessionID,
             status: .active,
             timing: timingSnapshot,
@@ -264,7 +305,8 @@ enum LiveMatchSessionRestorer {
             opponentName: snapshot.opponentName,
             isHome: snapshot.isHome,
             continuousTimeNanoseconds: reading.continuousTimeNanoseconds,
-            finalRecord: nil
+            finalRecord: nil,
+            correctionMetadata: snapshot.correctionMetadata
         )
         try rebasedSnapshot.validate()
         return RestoredLiveMatchSession(snapshot: rebasedSnapshot, timing: timing)
