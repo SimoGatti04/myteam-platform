@@ -197,3 +197,32 @@ Il file è importato dal bootstrap tramite il reader legacy già esistente e poi
 Modifiche C3.2-V-SUPP: `app/APPUITests/LiveMatchLifecycleUITests.swift` (copertura UI aggiunta/estesa), `app/scripts/create_synthetic_recovery_fixture.py` (fixture riproducibile), `app/docs/TESTING.md` e `app/docs/STATUS.md`. Nessun file di produzione o progetto Xcode è stato cambiato. I bundle finali conservati sono `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Verified2.xcresult`, `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Lifecycle-Verified.xcresult` e `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Regression-Final.xcresult`; i bundle intermedi, inclusi i fallimenti dovuti alle prime asserzioni test-only, restano sotto `/private/tmp/AURINFORMATC-C3.2-V-SUPP-*.xcresult`. Sono conservati anche gli screenshot intermedi Recovery e `/private/tmp/AURINFORMATC-C3.2-V-SUPP-Recovery-Attachments/`, che registra le label `Increment`/`Decrement` e lo stato disabilitato dell’incremento. Il fixture sintetico usato è `/private/tmp/AURINFORMATC-C3.2-V-SUPP-RecoveryFixture.json`. Il DerivedData temporaneo è stato eliminato dopo il completamento dei test. I due simulatori supplementari contengono solo dati sintetici, sono stati spenti con `simctl shutdown` senza cancellarli e sono mantenuti per un retest riproducibile. Il simulatore C3.2-V preesistente non è stato modificato; nessun remote o push.
 
 **Conclusione:** C3.2-V-SUPP è `PARTIAL`: tutti i percorsi supplementari eseguibili sono passati; lock/unlock reale resta `NOT RUN` per indisponibilità di un’interfaccia pubblica adatta. Non dichiarare la persistenza live completamente validata prima del controllo pre-release del lock screen.
+
+## C3.3 — cronologia, correzioni e regressione finale (27 ottobre 2026)
+
+### Ambiente e comando
+
+- Xcode **27.0**, build **27A266a**; iOS Simulator **iPhone 18 Pro**, iOS **27.0**, runtime build **24A434**; macOS **27.0.1**.
+- Il primo tentativo nel contesto ristretto non ha trovato il device perché CoreSimulatorService non era raggiungibile (`Connection invalid`; device id non disponibile). Nessuna configurazione globale è stata cambiata. L'esecuzione successiva con accesso locale autorizzato al simulatore è terminata con `** TEST SUCCEEDED **`.
+- Comando: `xcodebuild test -project app/APP.xcodeproj -scheme APP -destination 'platform=iOS Simulator,id=94F3DA93-9BEA-4674-AAE8-CE127F97EBF7' -derivedDataPath /private/tmp/AURINFORMATC-C3.3-DerivedData -resultBundlePath /private/tmp/AURINFORMATC-C3.3-final-regression-20261027.xcresult -collect-test-diagnostics never`.
+- Test mirato aggiunto sul riordino stabile delle sostituzioni simultanee: 1 PASS, result bundle `/private/tmp/AURINFORMATC-C3.3-sequence-order-focused-20261027.xcresult`.
+- Result bundle finale: `/private/tmp/AURINFORMATC-C3.3-final-regression-20261027.xcresult`; log: `/private/tmp/AURINFORMATC-C3.3-final-regression-20261027.log`.
+
+### Esiti
+
+| Livello | Esito | Evidenza |
+|---|---|---|
+| Build app + APPTests + APPUITests | PASS | Scheme `APP` compreso nell'esecuzione `xcodebuild test`; dipendenze e target buildati. |
+| APPTests | PASS — 119 | Riepilogo `xcresulttool`; clock/timeline, correzioni, compatibilità snapshot, migrazioni e persistenza. |
+| XCUITest | PASS — 3 | `testActivePausedAndFinalizedMatchSurvivesProcessTermination`, `testTemporallyUncertainRecoveryCanBeCorrectedAndSurvivesRelaunch`, `testLiveEventCorrectionPersistsAcrossProcessTermination`. |
+| Totale regressione | PASS — **122**, 0 FAIL, 0 SKIPPED | `xcresulttool get test-results summary`; `result: Passed`. |
+| XCUITest su dispositivo fisico | NOT RUN | Non eseguito in questo checkpoint. |
+| Lock/unlock reale | NOT RUN | Il test con clock controllato esercita la semantica temporale; non simula controlli OS reali. |
+
+La correzione live verificata con XCUITest usa uno store isolato e giocatori/eventi sintetici; il test conferma una modifica, termina e rilancia realmente il processo dell'app nel simulatore e controlla il recupero. I test non usano il database personale né il clock globale per forzare scenari.
+
+### Warning e limiti
+
+Il result bundle finale contiene due runtime warning SwiftUI `Invalid frame dimension (negative or non-finite).`, durante `testActivePausedAndFinalizedMatchSurvivesProcessTermination` e `testLiveEventCorrectionPersistsAcrossProcessTermination`. Le rispettive prove terminano PASS; la causa del warning non è stata isolata e resta debito diagnostico, non un errore di asserzione dichiarato.
+
+Nessuna validazione con dati reali del dispositivo, dispositivo fisico o lock/unlock. La compatibilità è stata verificata con fixture sintetiche. L'accesso al result bundle è stato verificato tramite `xcresulttool`; il bundle e il log sono mantenuti fuori dal repository.

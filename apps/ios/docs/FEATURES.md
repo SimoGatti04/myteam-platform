@@ -53,3 +53,14 @@ Questo documento distingue funzionalità effettive, decisioni confermate e lavor
 - La formazione, gli eventi, i cambi, i timer e le transizioni persistono attraverso il repository SwiftData. `MatchTiming` continua a usare i clock monotoni e la policy C3 crea nuovi anchor al ripristino; questa correzione non modifica la semantica temporale C2.
 - La finalizzazione confronta/inserisce il record storico e rimuove la sessione nello stesso store e transazione. Retry dopo commit non crea un duplicato; un fallimento lascia la sessione recuperabile.
 - C3.2-R1 ha superato 86 XCTest sintetici, inclusa migrazione V1→V2, riapertura, import legacy, backup, failure e finalizzazione. La prova UI kill/relaunch, la validazione su dati reali e il reboot reale non sono stati eseguiti; consultare `STATUS.md` e `TESTING.md`.
+
+## C3.3 — cronologia e correzioni (implementato il 27 ottobre 2026)
+
+- Le presenze in campo sono registrate indipendentemente dai refresh UI, con periodo, coordinata di gioco, ordine stabile e origine (formazione, sostituzione, ripartenza o correzione).
+- Per le nuove partite la timeline può essere completa dall'avvio; per sessioni e record legacy la copertura è dichiarata parziale e i minuti preesistenti sono conservati come baseline, senza inventare sostituzioni.
+- Durante il live sono disponibili correzioni contestuali del cronometro, dei minuti individuali, delle sostituzioni e degli eventi (gol, marcatore e assist). Il tempo corretto viene ricalcolato dai periodi di presenza solo quando copertura e cronologia sono verificabili; gli aggiustamenti manuali restano distinti e persistenti.
+- Lo storico consente di modificare i dati partita supportati, partecipanti, presenze/sostituzioni, durata ed eventi. Le anteprime riportano le conseguenze sui punteggi e sulle statistiche; le modifiche preservano gli ID degli elementi modificati e hanno un undo limitato. I punteggi/contatori derivati dagli eventi sono ricalcolati dagli eventi stessi.
+- Se una correzione non può essere ricostruita con certezza o crea conflitti temporali, la proposta non viene applicata silenziosamente.
+- La correzione e il relativo stato di undo sono persistiti in SwiftData prima di essere presentati come confermati.
+
+La copertura di test C3.3 è sintetica, automatizzata e su iOS Simulator. Non costituisce una verifica con dati reali del dispositivo né una validazione su dispositivo fisico/lock.

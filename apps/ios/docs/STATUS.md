@@ -1,6 +1,10 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 25 ottobre 2026 — verifica supplementare C3.2-V-SUPP.
+**Aggiornato:** 27 ottobre 2026 — verifica C3.3 su iPhone 18 Pro Simulator.
+
+## Stato corrente — C3.3
+
+**Esito: COMPLETE per lo scope del checkpoint.** Cronologia attendibile delle presenze, correzioni live/storico persistenti e UI contestuale sono integrate; la suite finale è **122 PASS, 0 FAIL, 0 SKIPPED** su iOS Simulator. Due warning SwiftUI di frame non valido restano da diagnosticare; non sono state eseguite prove su device fisico o lock/unlock reale. Dettagli, commit e limiti sono riportati nella sezione C3.3 più avanti.
 
 ## Esito del checkpoint
 
@@ -56,3 +60,16 @@ Il test UI di recovery con fixture sintetica ha superato 1 test; il flusso eserc
 La suite `APPTests` è passata: **91 PASS, 0 FAIL, 0 SKIPPED**. I due test UI supplementari sono passati separatamente (1 PASS ciascuno). Build app+test e controlli del diff sono passati. Non è stato modificato codice produttivo, schema SwiftData, UI ordinaria o asset. Un’asserzione di test iniziale richiedeva erroneamente che il cronometro restasse esattamente a `00:30` dopo aver ripreso il gioco; la misura reale `00:27` rifletteva il normale avanzamento durante l’interazione UI. È stata corretta solo l’asserzione, che ora verifica il limite `0...30` e il successivo stato in pausa dopo il riavvio.
 
 C3.2-V-SUPP resta `PARTIAL` perché il lock/unlock reale non è stato eseguibile con gli strumenti pubblici disponibili. Nessun dato reale è stato letto, nessun backup è stato modificato e C3.3 non è iniziato. Le evidenze e la matrice completa sono in `docs/TESTING.md`.
+
+## C3.3 — cronologia delle presenze e correzioni manuali
+
+**Esito: COMPLETE per lo scope C3.3; nessun checkpoint successivo avviato.** Il lavoro C3.3 è stato ripreso dal working tree già modificato sopra la baseline `891920e` su `main`; tali modifiche e gli snapshot di recupero esistenti sono stati preservati. A fine verifica i cambiamenti C3.3 sono stati committati localmente; nessun remote o push è stato configurato.
+
+- C3.3-A: timeline di partecipazione Codable versionata, ordinamento stabile degli ingressi/uscite e baseline dichiarata per copertura parziale. Payload live aggiornato a schema 3 con migrazione dai precedenti formati; compatibilità C2 verificata con fixture sintetiche.
+- C3.3-B: anteprima/validazione per correzione del tempo, minuti individuali, sostituzioni, eventi e record storico; la proiezione UI delle sostituzioni simultanee è stata corretta per rispettare la sequence degli eventi (non l’ordine casuale degli UUID), con test deterministico; ricalcolo limitato ai dati coperti; rettifiche manuali separate; undo limitato e salvataggio SwiftData con readback/test di riapertura.
+- C3.3-C: controlli contestuali live e storico e XCUITest di correzione live con conferma, terminazione del processo e recupero.
+- SwiftData `MatchManagerSchemaV3` aggiunge la metadata di correzione storica, con migrazione leggera V2→V3; le versioni precedenti restano disponibili.
+- Verifica conclusiva: `xcodebuild test` su Xcode 27.0 (`27A266a`), iPhone 18 Pro Simulator, iOS 27.0 (`24A434`): **122 PASS, 0 FAIL, 0 SKIPPED** (119 test APPTests e 3 XCUITest). Result bundle e log finali sono conservati in `/private/tmp/AURINFORMATC-C3.3-final-regression-20261027.xcresult` e `.log`.
+- Il result bundle segnala due warning runtime `Invalid frame dimension (negative or non-finite).` durante due XCUITest; le asserzioni passano, ma la causa resta da isolare. Nessuna prova su dispositivo fisico o lock/unlock reale è stata svolta. Non sono stati usati dati personali o store reali.
+
+**Confini non coperti:** il recovery dopo terminazione è verificato dal simulatore XCUITest e da fixture sintetiche, non da un dispositivo fisico; lock/unlock reale resta requisito pre-release. La compatibilità con specifici payload reali legacy non è attestata da fixture sintetiche. Backend, sincronizzazione, CloudKit, modifiche grafiche e migrazioni ulteriori non fanno parte di C3.3.

@@ -28,8 +28,18 @@ Il precedente C3 ha introdotto snapshot/recovery temporale e salvataggio live JS
 
 **Recupero e limiti:** l'import non cancella né riscrive i file JSON originari. Dati corrotti/non supportati non producono una sessione vuota o una ricevuta di successo. La generazione precedente è nello stesso database SwiftData e non protegge da perdita/corruzione dell'intero store; il checksum non sostituisce backup. Non cancellare manualmente store, file di recovery o chiavi V1. La sessione post-reboot resta soggetta alla policy temporale già documentata.
 
-## Gate operativo successivo (non avviato)
+## C3.2-V — validazione end-to-end completata
 
-- Eseguire, con Mac sbloccato e store di test isolato, la prova UI di sessione live: creare partita, avviare, registrare gol/cambio, forzare la chiusura, riaprire, verificare recovery e finalizzare una sola volta.
-- Non usare o migrare dati reali durante tale prova senza una strategia di backup esplicita.
-- C3.3 editor, backend, CloudKit, autenticazione, sincronizzazione, PWA e branding dinamico restano fuori da C3.2-R1 e richiedono incarichi separati.
+- La prova UI con store isolato e dati sintetici ha verificato avvio, eventi, sostituzione, kill/relaunch, recupero, pausa/ripresa e finalizzazione idempotente; C3.2-V-SUPP ha coperto recovery temporale incerto, nuova partita e correzioni successive.
+- Nessun dato personale o store reale è stato usato. La prova su dispositivo fisico e lock/unlock OS reale resta requisito pre-release.
+- Backend, CloudKit, autenticazione, sincronizzazione, PWA e branding dinamico restano fuori dal runtime attuale e richiedono un incarico/prodotto separato.
+
+## Completato — C3.3: cronologia presenze e coerenza delle correzioni
+
+**C3.3-A — Modello temporale.** Aggiunta una timeline Codable versionata, con coordinate per periodo, sequence ordinata, origine delle transizioni e distinzione fra copertura completa/parziale. I payload precedenti vengono decodificati tramite migrazione esplicita; il tempo legacy diventa baseline osservata, senza ricostruzioni inventate.
+
+**C3.3-B — Motori e persistenza.** `MatchTiming` ricalcola minuti solo per intervalli attendibili; le rettifiche individuali sono persistite come offset separati. Motori puri di correzione offrono proposta, validazione, aggiornamento degli eventi/statistiche e undo limitato. SwiftData V3 aggiunge la metadata necessaria allo storico con migration stage leggero V2→V3; il payload live è aggiornato a schema 3.
+
+**C3.3-C — Interfaccia e verifica.** Aggiunti flussi contestuali per correzioni live/storico, accessibilità per i nuovi controlli e XCUITest reale su simulatore per conferma di una correzione live e recovery dopo terminazione. La regressione completa ha 122 test PASS, nessun fallimento o skip; i due warning SwiftUI sono documentati in `TESTING.md`.
+
+Nessun backend o sincronizzazione è stato introdotto. Nessun payload reale del dispositivo è stato usato. Restano da fare prima del pre-release la prova su dispositivo fisico e lock/unlock reale; non sono una prova equivalente ai test con clock controllato.
