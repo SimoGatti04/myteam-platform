@@ -317,7 +317,7 @@ test("2.8 Public roster returns only currently active players, sorted by jersey 
       method: "POST",
       url: "/api/v1/admin/roster-memberships",
       headers: adminHeaders,
-      payload: { playerId: p1.id, seasonId, jerseyNumber: 10, activeFrom: "2026-08-01" },
+      payload: { playerId: p1.id, seasonId, jerseyNumber: 10, activeFrom: "2026-09-01" },
     });
 
     const p2 = (
@@ -332,7 +332,7 @@ test("2.8 Public roster returns only currently active players, sorted by jersey 
       method: "POST",
       url: "/api/v1/admin/roster-memberships",
       headers: adminHeaders,
-      payload: { playerId: p2.id, seasonId, jerseyNumber: 2, activeFrom: "2026-08-01" },
+      payload: { playerId: p2.id, seasonId, jerseyNumber: 2, activeFrom: "2026-09-01" },
     });
 
     // Aggiungi giocatore storico (chiuso nel passato)
@@ -395,7 +395,7 @@ test("2.8 Public roster returns only currently active players, sorted by jersey 
       payload: {
         playerId: noJerseyP.id,
         seasonId,
-        activeFrom: "2026-08-01",
+        activeFrom: "2026-09-01",
       },
     });
 

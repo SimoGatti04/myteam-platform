@@ -149,9 +149,7 @@ export function createTestDatabase(): TestDatabase {
 
   function translateSql(sql: string): string {
     return sql
-      .replace(/::date/g, "")
-      .replace(/::text/g, "")
-      .replace(/::jsonb/g, "")
+      .replace(/::\w+/g, "")
       .replaceAll("'infinity'", "'9999-12-31'")
       .replace(/FOR UPDATE/g, "")
       .replaceAll(/\$(\d+)/g, "?$1");
