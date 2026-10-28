@@ -31,6 +31,7 @@ export const AdminPartiteView: React.FC<{
   const [competitions, setCompetitions] = useState<CompetitionDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [matchesLoadError, setMatchesLoadError] = useState<string | null>(null);
 
   // Modal creazione partita
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -53,11 +54,14 @@ export const AdminPartiteView: React.FC<{
     loadData();
   }, [isDemoData, adminTeam?.currentSeasonId]);
 
-  const loadData = async () => {
+  const loadData = async (preserveStatus = false) => {
     setLoading(true);
-    setStatusMsg(null);
+    if (!preserveStatus) {
+      setStatusMsg(null);
+    }
 
     if (isDemoData) {
+      setMatchesLoadError(null);
       const demoMatches = apiService.getDemoAdminMatches(adminTeam?.currentSeasonId || undefined);
       const demoOpponents = apiService.getDemoOpponents();
       const demoCompetitions = apiService.getDemoCompetitions();
@@ -72,8 +76,10 @@ export const AdminPartiteView: React.FC<{
       const matchesRes = await apiService.getAdminMatches(adminTeam?.currentSeasonId ? { seasonId: adminTeam.currentSeasonId } : undefined);
       if (matchesRes.success) {
         setMatches(matchesRes.data);
+        setMatchesLoadError(null);
       } else {
         setMatches([]);
+        setMatchesLoadError(`Impossibile caricare l'elenco delle partite (${matchesRes.status}): ${matchesRes.message}`);
       }
 
       // Caricamento avversari registrati
@@ -224,12 +230,15 @@ export const AdminPartiteView: React.FC<{
       if (onCloseModal) onCloseModal();
 
       if (pubRes.success) {
+        const isTeamPublished = Boolean(adminTeam?.publishedAt);
         setStatusMsg({
           type: 'success',
-          text: `Partita vs ${oppName} creata e PUBBLICATA con successo! Visibile sul sito pubblico.`,
+          text: isTeamPublished
+            ? `Partita vs ${oppName} creata e PUBBLICATA con successo! Visibile sul sito pubblico.`
+            : `Partita vs ${oppName} creata e contrassegnata come PUBBLICATA. ATTENZIONE: la squadra è in bozza privata (non pubblicata), quindi la partita non sarà visibile al pubblico finché la squadra non verrà pubblicata in Impostazioni.`,
         });
       } else {
-        // NON comunicare pubblicata in caso di fallimento!
+        // NON comunicare pubblicata in caso di fallimento! Preserva il messaggio di errore!
         setStatusMsg({
           type: 'error',
           text: `Partita vs ${oppName} salvata come bozza, ma la PUBBLICAZIONE è fallita (${pubRes.status}): ${pubRes.message}`,
@@ -246,7 +255,7 @@ export const AdminPartiteView: React.FC<{
       });
     }
 
-    await loadData();
+    await loadData(true);
   };
 
   // Pubblicazione di una bozza esistente
@@ -265,17 +274,21 @@ export const AdminPartiteView: React.FC<{
     setPublishingMatchId(null);
 
     if (res.success) {
+      const isTeamPublished = Boolean(adminTeam?.publishedAt);
       setStatusMsg({
         type: 'success',
-        text: 'Partita pubblicata con successo! Ora è visibile nella sezione pubblica del sito.',
+        text: isTeamPublished
+          ? 'Partita pubblicata con successo! Ora è visibile nella sezione pubblica del sito.'
+          : 'Partita pubblicata con successo. ATTENZIONE: non è visibile al pubblico perché la squadra è in bozza privata (non ancora pubblicata in Impostazioni).',
       });
-      await loadData();
+      await loadData(true);
     } else {
-      // Fallimento esplicito: non comunicare successo
+      // Fallimento esplicito: preserva feedback di errore e non comunicare successo
       setStatusMsg({
         type: 'error',
         text: `Impossibile pubblicare la partita (${res.status}): ${res.message}`,
       });
+      await loadData(true);
     }
   };
 
@@ -308,7 +321,7 @@ export const AdminPartiteView: React.FC<{
         type: 'success',
         text: `Squadra avversaria "${res.data.name}" registrata con successo in anagrafica Core!`,
       });
-      await loadData();
+      await loadData(true);
     } else {
       setStatusMsg({
         type: 'error',
@@ -338,35 +351,56 @@ export const AdminPartiteView: React.FC<{
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setIsModalOpen(true);
-            setNewOpponentNameInput('');
-            setScheduledDateInput('');
-            setIsOfficialInput(true);
-            if (opponents.length > 0 && opponents[0]) {
-              setSelectedOpponentMode('existing');
-              setSelectedOpponentId(opponents[0].id);
-            } else {
-              setSelectedOpponentMode('new');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '8px',
-            backgroundColor: 'var(--brand-secondary)',
-            color: '#0f172a',
-            border: 'none',
-            fontWeight: 700,
-            fontSize: '0.82rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-          }}
-        >
-          <PlusCircle size={16} /> Nuova Partita
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => loadData()}
+            disabled={loading}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Aggiorna
+          </button>
+          <button
+            onClick={() => {
+              setIsModalOpen(true);
+              setNewOpponentNameInput('');
+              setScheduledDateInput('');
+              setIsOfficialInput(true);
+              if (opponents.length > 0 && opponents[0]) {
+                setSelectedOpponentMode('existing');
+                setSelectedOpponentId(opponents[0].id);
+              } else {
+                setSelectedOpponentMode('new');
+              }
+            }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--brand-secondary)',
+              color: '#0f172a',
+              border: 'none',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <PlusCircle size={16} /> Nuova Partita
+          </button>
+        </div>
       </div>
 
       {!isDemoData && (
@@ -402,6 +436,25 @@ export const AdminPartiteView: React.FC<{
         }}>
           {statusMsg.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
           <span>{statusMsg.text}</span>
+        </div>
+      )}
+
+      {!isDemoData && !Boolean(adminTeam?.publishedAt) && (
+        <div style={{
+          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          fontSize: '0.8rem',
+          color: '#fbbf24',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <AlertCircle size={16} style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Squadra in bozza privata:</strong> L'identità della squadra non è ancora stata pubblicata in <em>Impostazioni Squadra</em>. Le partite contrassegnate come pubblicate non saranno visibili al pubblico finché la squadra non verrà pubblicata.
+          </span>
         </div>
       )}
 
@@ -461,11 +514,60 @@ export const AdminPartiteView: React.FC<{
 
       {activeSubTab === 'calendario' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {matches.length > 0 ? (
+          {loading ? (
+            <div style={{
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: '14px',
+              border: '1px solid var(--border-subtle)',
+              padding: '40px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '0.9rem',
+            }}>
+              Caricamento elenco partite e bozze in corso...
+            </div>
+          ) : matchesLoadError ? (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              borderRadius: '14px',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              padding: '30px 20px',
+              textAlign: 'center',
+              color: '#fca5a5',
+            }}>
+              <AlertCircle size={32} style={{ margin: '0 auto 10px auto', display: 'block', color: '#f87171' }} />
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '6px', color: '#ffffff' }}>
+                Errore di caricamento partite
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#fca5a5', marginBottom: '16px' }}>
+                {matchesLoadError}
+              </div>
+              <button
+                type="button"
+                onClick={() => loadData()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#ffffff',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <RefreshCw size={14} /> Riprova caricamento
+              </button>
+            </div>
+          ) : matches.length > 0 ? (
             matches.map((match) => {
               const oppName = opponentsMap.get(match.opponentId) || 'Squadra Avversaria';
               const compName = match.competitionId ? competitionsMap.get(match.competitionId) : (match.isOfficial ? 'Gara Ufficiale' : 'Amichevole');
               const isPublished = Boolean(match.publishedAt);
+              const isTeamPublished = Boolean(adminTeam?.publishedAt);
 
               return (
                 <div
@@ -531,9 +633,24 @@ export const AdminPartiteView: React.FC<{
                         <Globe size={14} />
                         {publishingMatchId === match.id ? 'Pubblicazione...' : 'Pubblica Partita'}
                       </button>
-                    ) : (
+                    ) : isTeamPublished ? (
                       <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <CheckCircle2 size={14} /> Visibile sul sito
+                      </div>
+                    ) : (
+                      <div style={{
+                        fontSize: '0.75rem',
+                        color: '#f59e0b',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                      }}>
+                        <AlertCircle size={13} /> Pubblicata (invisibile: squadra in bozza)
                       </div>
                     )}
                   </div>
@@ -619,7 +736,11 @@ export const AdminPartiteView: React.FC<{
             <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 700, fontSize: '0.9rem', color: '#ffffff' }}>
               Anagrafica Squadre Avversarie Registrate ({opponents.length})
             </div>
-            {opponents.length > 0 ? (
+            {loading ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Caricamento squadre avversarie in corso...
+              </div>
+            ) : opponents.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {opponents.map((op) => (
                   <div
