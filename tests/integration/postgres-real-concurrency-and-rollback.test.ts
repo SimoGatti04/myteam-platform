@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createApp } from "../../apps/api/src/app.js";
 import { DomainError } from "../../apps/api/src/platform/errors.js";
-import { createScopedPostgresContext } from "../helpers/pg-test-helper.js";
+import { createScopedPostgresContext, isEnvironmentalConnectionError } from "../helpers/pg-test-helper.js";
 import { realisticSeasonFixture, realisticPlayersFixture, realisticOpponentsFixture } from "../fixtures/q1-realistic-fixtures.js";
 
 const testDbUrl = process.env.TEST_DATABASE_URL;
@@ -14,9 +14,12 @@ test(
     let ctx;
     try {
       ctx = await createScopedPostgresContext();
-    } catch (err) {
-      t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
-      return;
+    } catch (err: any) {
+      if (isEnvironmentalConnectionError(err)) {
+        t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
+        return;
+      }
+      throw err; // SQL, schema, or migration failure must fail the test!
     }
     if (!ctx) return;
 
@@ -115,9 +118,12 @@ test(
     let ctx;
     try {
       ctx = await createScopedPostgresContext();
-    } catch (err) {
-      t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
-      return;
+    } catch (err: any) {
+      if (isEnvironmentalConnectionError(err)) {
+        t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
+        return;
+      }
+      throw err; // SQL, schema, or migration failure must fail the test!
     }
     if (!ctx) return;
 
@@ -202,9 +208,12 @@ test(
     let ctx;
     try {
       ctx = await createScopedPostgresContext();
-    } catch (err) {
-      t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
-      return;
+    } catch (err: any) {
+      if (isEnvironmentalConnectionError(err)) {
+        t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
+        return;
+      }
+      throw err; // SQL, schema, or migration failure must fail the test!
     }
     if (!ctx) return;
 
@@ -259,8 +268,11 @@ test(
     try {
       ctx = await createScopedPostgresContext();
     } catch (err: any) {
-      t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
-      return;
+      if (isEnvironmentalConnectionError(err)) {
+        t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
+        return;
+      }
+      throw err; // SQL, schema, or migration failure must fail the test!
     }
     if (!ctx) return;
 
