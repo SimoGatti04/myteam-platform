@@ -115,6 +115,12 @@ class ApiService {
         if (code === 'membership_end_before_start') {
           return 'La data di fine appartenenza non può precedere la data di inizio.';
         }
+        if (code === 'invalid_season_date') {
+          return 'Date di inizio o fine stagione non valide (formato AAAA-MM-GG).';
+        }
+        if (code === 'season_end_before_start') {
+          return 'La data di conclusione della stagione non può precedere la data di inizio.';
+        }
         return `Parametri non validi (${code}).`;
       case 401:
         return 'Autenticazione richiesta. Effettua l\'accesso con token autorizzato.';
@@ -127,8 +133,14 @@ class ApiService {
         if (code === 'public_match_not_found') {
           return 'Partita non trovata o non ancora pubblicata.';
         }
+        if (code === 'season_not_found') {
+          return 'Stagione sportiva specificata non trovata.';
+        }
         return `Risorsa non trovata (${code}).`;
       case 409:
+        if (code === 'season_label_exists') {
+          return 'Una stagione con questa denominazione esiste già.';
+        }
         if (code === 'roster_membership_already_ended') {
           return 'L\'appartenenza del giocatore è già stata terminata.';
         }

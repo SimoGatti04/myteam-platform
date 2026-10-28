@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { apiService } from '../../services/api';
 import type { SeasonDto } from '@myteam/contracts';
 import {
+  Calendar,
+  PlusCircle,
   Settings,
   Palette,
   Shield,
@@ -42,6 +44,122 @@ export const AdminImpostazioniView: React.FC = () => {
 
   const [saving, setSaving] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Gestione Stagioni (GET /api/v1/admin/seasons & POST /api/v1/admin/seasons)
+  const [seasons, setSeasons] = useState<SeasonDto[]>([]);
+  const [loadingSeasons, setLoadingSeasons] = useState<boolean>(true);
+  const [seasonsLoadError, setSeasonsLoadError] = useState<string | null>(null);
+
+  // Modal Nuova Stagione
+  const [isSeasonModalOpen, setIsSeasonModalOpen] = useState<boolean>(false);
+  const [newSeasonLabel, setNewSeasonLabel] = useState<string>('');
+  const [newSeasonStartsOn, setNewSeasonStartsOn] = useState<string>('');
+  const [newSeasonEndsOn, setNewSeasonEndsOn] = useState<string>('');
+  const [creatingSeason, setCreatingSeason] = useState<boolean>(false);
+  const [seasonModalError, setSeasonModalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSeasons();
+  }, [isDemoData]);
+
+  const loadSeasons = async () => {
+    setLoadingSeasons(true);
+    setSeasonsLoadError(null);
+
+    if (isDemoData) {
+      setSeasons(apiService.getDemoSeasons());
+      setLoadingSeasons(false);
+      return;
+    }
+
+    const res = await apiService.getAdminSeasons();
+    if (res.success) {
+      setSeasons(res.data);
+      setSeasonsLoadError(null);
+    } else {
+      setSeasons([]);
+      setSeasonsLoadError(`Impossibile caricare le stagioni (${res.status}): ${res.message}`);
+    }
+    setLoadingSeasons(false);
+  };
+
+  const openNewSeasonModal = () => {
+    setIsSeasonModalOpen(true);
+    setSeasonModalError(null);
+    const currentYear = new Date().getFullYear();
+    const nextYear = currentYear + 1;
+    setNewSeasonLabel(`${currentYear}/${nextYear}`);
+    setNewSeasonStartsOn(`${currentYear}-09-01`);
+    setNewSeasonEndsOn(`${nextYear}-06-30`);
+  };
+
+  const handleCreateSeason = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSeasonModalError(null);
+
+    const trimmedLabel = newSeasonLabel.trim();
+    if (!trimmedLabel) {
+      setSeasonModalError('Inserisci la denominazione della stagione (es. 2026/2027).');
+      return;
+    }
+    if (!newSeasonStartsOn || !newSeasonEndsOn) {
+      setSeasonModalError('Inserisci sia la data di inizio che la data di fine stagione.');
+      return;
+    }
+    if (newSeasonEndsOn < newSeasonStartsOn) {
+      setSeasonModalError('La data di conclusione della stagione non può precedere la data di inizio.');
+      return;
+    }
+
+    // Controllo client per evitare duplicazioni di etichetta già presenti
+    const alreadyExists = seasons.some(s => s.label.trim().toLowerCase() === trimmedLabel.toLowerCase());
+    if (alreadyExists) {
+      setSeasonModalError(`Una stagione con denominazione "${trimmedLabel}" è già presente nell'elenco.`);
+      return;
+    }
+
+    setCreatingSeason(true);
+
+    if (isDemoData) {
+      const demoSeason: SeasonDto = {
+        id: `demo-season-${Date.now()}`,
+        label: trimmedLabel,
+        startsOn: newSeasonStartsOn,
+        endsOn: newSeasonEndsOn,
+      };
+      setSeasons(prev => [demoSeason, ...prev]);
+      setCurrentSeasonId(demoSeason.id);
+      setCreatingSeason(false);
+      setIsSeasonModalOpen(false);
+      setStatusMessage({
+        type: 'success',
+        text: `Stagione "${trimmedLabel}" creata e selezionata come corrente nell'anteprima (DEMO). Salva le impostazioni per confermare.`,
+      });
+      return;
+    }
+
+    // Modalità REALE: chiamata Core POST /api/v1/admin/seasons
+    const res = await apiService.createSeason({
+      label: trimmedLabel,
+      startsOn: newSeasonStartsOn,
+      endsOn: newSeasonEndsOn,
+    });
+
+    setCreatingSeason(false);
+
+    if (res.success) {
+      const created = res.data;
+      setSeasons(prev => [created, ...prev]);
+      setCurrentSeasonId(created.id);
+      setIsSeasonModalOpen(false);
+      setStatusMessage({
+        type: 'success',
+        text: `Stagione "${created.label}" registrata con successo nel database Core e selezionata come corrente! Clicca su "Salva Impostazioni" per confermare l'assegnazione alla squadra.`,
+      });
+    } else {
+      setSeasonModalError(`Errore creazione stagione (${res.status}): ${res.message}`);
+    }
+  };
 
   useEffect(() => {
     if (adminTeam) {
@@ -342,7 +460,180 @@ export const AdminImpostazioniView: React.FC = () => {
           </div>
         </section>
 
-        {/* 2. Personalizzazione Colori (Modalità A Approvata) */}
+        {/* 2. Stagione Sportiva Corrente & Gestione Calendario */}
+        <section style={{
+          backgroundColor: 'var(--bg-card)',
+          borderRadius: '16px',
+          border: '1px solid var(--border-subtle)',
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={18} color="var(--brand-secondary)" />
+              Stagione Sportiva Corrente & Gestione Calendario
+            </h3>
+            <button
+              type="button"
+              onClick={openNewSeasonModal}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                color: 'var(--brand-secondary)',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <PlusCircle size={15} /> Nuova Stagione
+            </button>
+          </div>
+
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+            La stagione corrente definisce l'intervallo temporale predefinito per la rosa atleti, i tesseramenti e le partite in calendario.
+          </p>
+
+          {/* Caso caricamento in corso */}
+          {loadingSeasons && (
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <RefreshCw size={14} className="animate-spin" /> Caricamento stagioni dal server Core...
+            </div>
+          )}
+
+          {/* Errore caricamento stagioni */}
+          {seasonsLoadError && (
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '10px',
+              padding: '12px 16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}>
+              <span style={{ fontSize: '0.82rem', color: '#fca5a5' }}>{seasonsLoadError}</span>
+              <button
+                type="button"
+                onClick={loadSeasons}
+                style={{
+                  background: 'none',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  padding: '4px 10px',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Riprova
+              </button>
+            </div>
+          )}
+
+          {/* Caso DATABASE COMPLETAMENTE VUOTO: Nessuna stagione registrata */}
+          {!loadingSeasons && !seasonsLoadError && seasons.length === 0 && (
+            <div style={{
+              backgroundColor: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: '12px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '0.9rem' }}>
+                <AlertCircle size={18} /> Nessuna stagione registrata a sistema (Database Iniziale Vuoto)
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)', margin: 0, lineHeight: 1.5 }}>
+                La piattaforma è al primo avvio su database pulito. Per poter tesserare atleti e inserire partite nel calendario, è necessario creare la prima stagione sportiva ufficiale.
+              </p>
+              <div>
+                <button
+                  type="button"
+                  onClick={openNewSeasonModal}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--brand-secondary)',
+                    color: '#0f172a',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <PlusCircle size={15} /> Crea la Prima Stagione
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Selezione Stagione Esistente */}
+          {!loadingSeasons && seasons.length > 0 && (
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                Seleziona Stagione Corrente Squadra
+              </label>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={currentSeasonId}
+                  onChange={(e) => setCurrentSeasonId(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: '240px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">-- Nessuna stagione selezionata (Bozza) --</option>
+                  {seasons.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.label} ({s.startsOn} - {s.endsOn}) {s.id === adminTeam?.currentSeasonId ? '★ Attuale sul Server' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dettaglio/Stato Stagione Selezionata */}
+              <div style={{ marginTop: '8px', fontSize: '0.78rem' }}>
+                {currentSeasonId ? (
+                  currentSeasonId === adminTeam?.currentSeasonId ? (
+                    <span style={{ color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <CheckCircle2 size={14} /> Questa è la stagione attualmente attiva e salvata per la squadra.
+                    </span>
+                  ) : (
+                    <span style={{ color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <AlertCircle size={14} /> Nuova stagione selezionata (non ancora salvata sul server). Clicca su "Salva Impostazioni" in fondo per confermare l'assegnazione.
+                    </span>
+                  )
+                ) : (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Nessuna stagione attiva assegnata alla squadra. Le sezioni Rosa e Partite richiedono una stagione attiva per operare.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 3. Personalizzazione Colori (Modalità A Approvata) */}
         <section style={{
           backgroundColor: 'var(--bg-card)',
           borderRadius: '16px',
@@ -530,6 +821,192 @@ export const AdminImpostazioniView: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Modal Nuova Stagione */}
+      {isSeasonModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 100,
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-subtle)',
+            width: '100%',
+            maxWidth: '480px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={18} color="var(--brand-secondary)" />
+                Nuova Stagione Sportiva
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsSeasonModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+              Crea una nuova stagione sportiva registrata sul server Core (<code>POST /api/v1/admin/seasons</code>).
+            </p>
+
+            {seasonModalError && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#fca5a5',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                <AlertCircle size={16} />
+                <span>{seasonModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateSeason} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                  Denominazione / Etichetta Stagione *
+                </label>
+                <input
+                  type="text"
+                  placeholder="es. 2026/2027"
+                  value={newSeasonLabel}
+                  onChange={(e) => setNewSeasonLabel(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                    Data Inizio *
+                  </label>
+                  <input
+                    type="date"
+                    value={newSeasonStartsOn}
+                    onChange={(e) => setNewSeasonStartsOn(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                    Data Conclusione *
+                  </label>
+                  <input
+                    type="date"
+                    value={newSeasonEndsOn}
+                    onChange={(e) => setNewSeasonEndsOn(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsSeasonModalOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingSeason}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--brand-secondary)',
+                    color: '#0f172a',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: creatingSeason ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {creatingSeason ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Creazione in corso...
+                    </>
+                  ) : (
+                    'Crea Stagione'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
