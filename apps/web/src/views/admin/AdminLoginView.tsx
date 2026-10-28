@@ -190,7 +190,7 @@ export const AdminLoginView: React.FC = () => {
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
                 Per abilitare l'autenticazione reale, definire le variabili d'ambiente{' '}
-                <code>VITE_LOGTO_ENDPOINT</code> e <code>VITE_LOGTO_APP_ID</code> nel file di configurazione del deployment.
+                <code>VITE_LOGTO_ENDPOINT</code>, <code>VITE_LOGTO_APP_ID</code> e <code>VITE_LOGTO_API_RESOURCE</code> nel file di configurazione del deployment.
               </p>
               {!manualAuthAllowed && (
                 <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '4px', fontWeight: 500 }}>

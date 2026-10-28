@@ -93,12 +93,18 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
   // 2. CONFIGURAZIONE E AMBIENTI OIDC
   // ==========================================
   describe('2. OIDC Configuration Handling', () => {
-    it('returns null when VITE_LOGTO_ENDPOINT or VITE_LOGTO_APP_ID is missing', () => {
+    it('returns null when VITE_LOGTO_ENDPOINT, VITE_LOGTO_APP_ID or VITE_LOGTO_API_RESOURCE is missing', () => {
       const config1 = loadOidcConfig({ VITE_LOGTO_ENDPOINT: '' });
       expect(config1).toBeNull();
 
       const config2 = loadOidcConfig({ VITE_LOGTO_ENDPOINT: 'https://auth.myteam.local/oidc' });
       expect(config2).toBeNull();
+
+      const config3 = loadOidcConfig({
+        VITE_LOGTO_ENDPOINT: 'https://auth.myteam.local/oidc',
+        VITE_LOGTO_APP_ID: 'app-client-123',
+      });
+      expect(config3).toBeNull();
     });
 
     it('correctly parses full configuration and sets default scopes including platform:admin', () => {

@@ -1,25 +1,38 @@
 /**
  * Servizio di autenticazione per l'area amministrativa di myteam-platform.
  *
- * MODELLO DI SESSIONE E SICUREZZA (Approvato per W2):
+ * MODELLO DI SESSIONE E ANALISI DELLA SICUREZZA (Approvato per W2-R1):
  * - Flusso Principale: OpenID Connect (OIDC) con Authorization Code Flow + PKCE (RFC 7636).
- *   Integrato con Logto Identity Provider. Public Client senza client secret.
- * - Modello di Sessione:
- *   1. Nessun token o credenziale viene MAI salvato in `localStorage` permanente o cookie non protetti.
- *   2. I token di sessione sono archiviati primariamente in memoria volatile del client React.
- *   3. Per supportare il ricaricamento di pagina (F5) all'interno dello stesso tab, la sessione OIDC
- *      è sincronizzata con `sessionStorage`, che viene distrutto automaticamente alla chiusura del tab/finestra.
- *   4. La scadenza del token (`expiresAt`) viene verificata attivamente prima di ogni richiesta.
- *      Se il token è scaduto, la sessione viene invalidata e rimossa immediatamente.
- *   5. In caso di errore HTTP 401 (token revocato, non valido o scaduto sul backend), il servizio
- *      invalida istantaneamente la sessione locale.
+ *   Integrato con Logto Identity Provider. Public Client SPA senza client secret.
+ *
+ * - Analisi del Modello di Sessione e Rischio XSS (Trade-Off Architetturale):
+ *   1. Non consideriamo `sessionStorage` intrinsecamente "sicuro" contro attacchi XSS (Cross-Site Scripting),
+ *      poiché qualsiasi script in esecuzione nel contesto dell'origine può accedervi.
+ *   2. Tuttavia, rispetto a `localStorage` (persistenza indeterminata esposta a data leakage e furto a lungo termine),
+ *      `sessionStorage` è limitato rigorosamente alla singola scheda/tab del browser e viene distrutto
+ *      automaticamente alla chiusura della finestra.
+ *   3. La sessione attiva risiede primariamente nella memoria volatile dell'applicazione React. La sincronizzazione
+ *      con `sessionStorage` è circoscritta all'esigenza di preservare lo stato durante il refresh di pagina (F5).
+ *   4. Nessun refresh token né client secret viene memorizzato o gestito dal frontend.
+ *   5. Scadenza Attiva: Il token viene convalidato prima di ogni chiamata API (`getAuthToken()`).
+ *      Se scaduto, la sessione viene distrutta immediatamente sia in memoria che in storage.
+ *   6. Reazione Immediata a 401: Qualsiasi errore HTTP 401 sollevato dal backend Core scatena
+ *      automaticamente l'invalidazione della sessione e notifica l'interfaccia utente tramite listener.
+ *   7. Raccomandazione di sicurezza a lungo termine: L'evoluzione ottimale per mitigare integralmente
+ *      il rischio XSS nelle SPA prevede l'adozione di un pattern Backend-For-Frontend (BFF) o reverse proxy
+ *      con cookie HttpOnly, Secure, SameSite=Strict gestiti a monte. Fino all'introduzione del BFF,
+ *      il modello in-memory + sessionStorage con PKCE e breve durata dell'access token rappresenta
+ *      il trade-off standard conforme per client pubblici.
+ *
  * - Flusso di Collaudo Manuale:
  *   L'inserimento manuale del Bearer token JWT è consentito ESCLUSIVAMENTE in ambienti di sviluppo
- *   o staging autorizzati (isManualAuthAllowed) per il test delle API Core C1.1.
- *   In produzione è categoricamente disabilitato.
+ *   o staging autorizzati (isManualAuthAllowed) per il test delle API Core.
+ *   In produzione è categoricamente disabilitato e qualsiasi token manuale presente in storage
+ *   viene immediatamente eliminato e mai ripristinato.
  */
 
 import { oidcClient, OidcSession, parseJwtPayload } from './oidc';
+import { isManualAuthAllowed } from '../utils/env';
 
 const STORAGE_KEY_MANUAL_TOKEN = 'myteam_admin_auth_token';
 
@@ -34,24 +47,51 @@ export interface SessionInfo {
   scope?: string;
 }
 
+export type UnauthorizedListener = (message?: string) => void;
+
 class AuthService {
   private oidcSession: OidcSession | null = null;
   private manualToken: string | null = null;
+  private unauthorizedListeners: UnauthorizedListener[] = [];
 
   constructor() {
     this.initSession();
   }
 
-  private initSession(): void {
+  /**
+   * Inizializza la sessione all'avvio.
+   * Se la policy ambientale vieta l'autenticazione manuale (es. produzione),
+   * qualsiasi residuo di token manuale viene cancellato immediatamente da sessionStorage.
+   */
+  public initSession(): void {
     // 1. Prova a caricare la sessione OIDC valida da sessionStorage
     this.oidcSession = oidcClient.loadSession();
 
-    // 2. Prova a caricare l'eventuale token manuale di collaudo
-    try {
-      this.manualToken = sessionStorage.getItem(STORAGE_KEY_MANUAL_TOKEN);
-    } catch {
+    // 2. Prova a caricare l'eventuale token manuale di collaudo SOLO se consentito
+    if (!isManualAuthAllowed()) {
       this.manualToken = null;
+      try {
+        sessionStorage.removeItem(STORAGE_KEY_MANUAL_TOKEN);
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        this.manualToken = sessionStorage.getItem(STORAGE_KEY_MANUAL_TOKEN);
+      } catch {
+        this.manualToken = null;
+      }
     }
+  }
+
+  /**
+   * Sottoscrizione per notifiche di sessione non autorizzata (HTTP 401).
+   */
+  public onUnauthorized(listener: UnauthorizedListener): () => void {
+    this.unauthorizedListeners.push(listener);
+    return () => {
+      this.unauthorizedListeners = this.unauthorizedListeners.filter(l => l !== listener);
+    };
   }
 
   /**
@@ -70,6 +110,17 @@ class AuthService {
 
     // Se c'è un token manuale di collaudo
     if (this.manualToken && this.manualToken.trim().length > 0) {
+      // Verifica nuovamente la policy ambientale
+      if (!isManualAuthAllowed()) {
+        this.manualToken = null;
+        try {
+          sessionStorage.removeItem(STORAGE_KEY_MANUAL_TOKEN);
+        } catch {
+          // ignore
+        }
+        return null;
+      }
+
       // Controlla se il JWT manuale contiene una scadenza 'exp'
       const claims = parseJwtPayload(this.manualToken);
       if (claims && typeof claims.exp === 'number') {
@@ -100,9 +151,19 @@ class AuthService {
   }
 
   /**
-   * Imposta il token manuale di collaudo (riservato ad ambienti dev/staging).
+   * Imposta il token manuale di collaudo (riservato ad ambienti dev/staging autorizzati).
    */
   public setAuthToken(token: string | null): void {
+    if (!isManualAuthAllowed()) {
+      this.manualToken = null;
+      try {
+        sessionStorage.removeItem(STORAGE_KEY_MANUAL_TOKEN);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
     this.manualToken = token;
     this.oidcSession = null;
     oidcClient.saveSession(null);
@@ -168,7 +229,7 @@ class AuthService {
   }
 
   /**
-   * Genera gli header HTTP di autorizzazione per le chiamate API Core.
+   * Genera gli header HTTP di autorizzazione per le chiamate API Core riservate.
    */
   public getAuthHeaders(): Record<string, string> {
     const token = this.getAuthToken();
@@ -181,15 +242,23 @@ class AuthService {
   }
 
   /**
-   * Gestisce una risposta HTTP 401 Unauthorized invalidando la sessione.
+   * Gestisce una risposta HTTP 401 Unauthorized invalidando la sessione
+   * e notificando i componenti registrati.
    */
-  public handleUnauthorized(): void {
+  public handleUnauthorized(message?: string): void {
     this.logout();
+    for (const listener of this.unauthorizedListeners) {
+      try {
+        listener(message);
+      } catch {
+        // ignore listener errors
+      }
+    }
   }
 
   /**
    * Effettua il logout: invalida sessione in memoria e sessionStorage,
-   * ed eventualmente reindirizza all'endpoint di logout IdP.
+   * ed eventualmente reindirizza all'endpoint federato di logout IdP.
    */
   public logout(options?: { redirect?: boolean }): void {
     const idToken = this.oidcSession?.idToken;
