@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import type {
+  AdminMatchesQuery,
+  AdminRosterMembershipsQuery,
   CompetitionCreateRequest,
   CompetitionDto,
   MatchCreateRequest,
@@ -11,6 +13,7 @@ import type {
   OpponentDto,
   PlayerCreateRequest,
   PlayerDto,
+  PublicMatchDto,
   PublicMatchesDto,
   PublicRosterDto,
   PublicTeamDto,
@@ -159,6 +162,21 @@ function isValidDate(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+function validateMembershipWithinSeason(
+  activeFrom: string,
+  activeUntil: string | null,
+  seasonStartsOn: string,
+  seasonEndsOn: string,
+): void {
+  if (
+    activeFrom < seasonStartsOn ||
+    activeFrom > seasonEndsOn ||
+    (activeUntil !== null && activeUntil > seasonEndsOn)
+  ) {
+    throw new DomainError(400, "roster_membership_outside_season");
+  }
+}
+
 function changesBetween(before: Record<string, unknown>, after: Record<string, unknown>): AuditChanges {
   const changes: AuditChanges = {};
   for (const [field, nextValue] of Object.entries(after)) {
@@ -215,6 +233,18 @@ function membershipDto(row: MembershipRow): RosterMembershipDto {
   };
 }
 
+function publicMatchDto(row: PublicMatchRow): PublicMatchDto {
+  return {
+    id: row.id,
+    seasonId: row.season_id,
+    opponentName: row.opponent_name,
+    competitionName: row.competition_name,
+    isOfficial: row.is_official,
+    scheduledAt: toDateTime(row.scheduled_at),
+    status: row.status,
+  };
+}
+
 function matchDto(row: MatchRow): MatchDto {
   return {
     id: row.id,
@@ -230,6 +260,70 @@ function matchDto(row: MatchRow): MatchDto {
 
 export class PlatformService {
   constructor(private readonly pool: Pool) {}
+
+  async listAdminSeasons(): Promise<SeasonDto[]> {
+    const result = await this.pool.query<SeasonRow>(
+      `SELECT id, label, starts_on::text, ends_on::text
+       FROM seasons
+       ORDER BY starts_on DESC, ends_on DESC, lower(label), label, id`,
+    );
+    return result.rows.map(seasonDto);
+  }
+
+  async listAdminPlayers(): Promise<PlayerDto[]> {
+    const result = await this.pool.query<PlayerRow>(
+      `SELECT id, display_name
+       FROM players
+       ORDER BY lower(display_name), display_name, id`,
+    );
+    return result.rows.map((row) => ({ id: row.id, displayName: row.display_name }));
+  }
+
+  async listAdminRosterMemberships(query: AdminRosterMembershipsQuery): Promise<RosterMembershipDto[]> {
+    const result = await this.pool.query<MembershipRow>(
+      `SELECT id, player_id, season_id, jersey_number, active_from::text, active_until::text
+       FROM season_roster_memberships
+       WHERE ($1::uuid IS NULL OR season_id = $1::uuid)
+         AND ($2::uuid IS NULL OR player_id = $2::uuid)
+       ORDER BY season_id, active_from, id`,
+      [query.seasonId ?? null, query.playerId ?? null],
+    );
+    return result.rows.map(membershipDto);
+  }
+
+  async listAdminOpponents(): Promise<OpponentDto[]> {
+    const result = await this.pool.query<OpponentRow>(
+      `SELECT id, name
+       FROM opponents
+       ORDER BY lower(name), name, id`,
+    );
+    return result.rows.map((row) => ({ id: row.id, name: row.name }));
+  }
+
+  async listAdminCompetitions(): Promise<CompetitionDto[]> {
+    const result = await this.pool.query<CompetitionRow>(
+      `SELECT id, name, category, is_official
+       FROM competitions
+       ORDER BY lower(name), name, category, id`,
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      isOfficial: row.is_official,
+    }));
+  }
+
+  async listAdminMatches(query: AdminMatchesQuery): Promise<MatchDto[]> {
+    const result = await this.pool.query<MatchRow>(
+      `SELECT id, season_id, opponent_id, competition_id, is_official, scheduled_at, status, published_at
+       FROM matches
+       WHERE ($1::uuid IS NULL OR season_id = $1::uuid)
+       ORDER BY scheduled_at ASC NULLS LAST, id`,
+      [query.seasonId ?? null],
+    );
+    return result.rows.map(matchDto);
+  }
 
   async createSeason(input: SeasonCreateRequest, actor: AdminActor): Promise<SeasonDto> {
     if (!isValidDate(input.startsOn) || !isValidDate(input.endsOn)) {
@@ -402,8 +496,18 @@ export class PlatformService {
       ]);
       const player = await client.query("SELECT 1 FROM players WHERE id = $1", [input.playerId]);
       if (player.rowCount === 0) throw new DomainError(404, "player_not_found");
-      const season = await client.query("SELECT 1 FROM seasons WHERE id = $1", [input.seasonId]);
-      if (season.rowCount === 0) throw new DomainError(404, "season_not_found");
+      const season = await client.query<{ starts_on: string; ends_on: string }>(
+        "SELECT starts_on::text, ends_on::text FROM seasons WHERE id = $1",
+        [input.seasonId],
+      );
+      const seasonBounds = season.rows[0];
+      if (!seasonBounds) throw new DomainError(404, "season_not_found");
+      validateMembershipWithinSeason(
+        input.activeFrom,
+        input.activeUntil ?? null,
+        seasonBounds.starts_on,
+        seasonBounds.ends_on,
+      );
 
       const overlap = await client.query(
         `SELECT 1 FROM season_roster_memberships
@@ -449,6 +553,19 @@ export class PlatformService {
       )).rows[0];
       if (!current) throw new DomainError(404, "roster_membership_not_found");
       if (input.activeUntil < current.active_from) throw new DomainError(400, "membership_end_before_start");
+      const seasonBounds = (
+        await client.query<{ starts_on: string; ends_on: string }>(
+          "SELECT starts_on::text, ends_on::text FROM seasons WHERE id = $1",
+          [current.season_id],
+        )
+      ).rows[0];
+      if (!seasonBounds) throw new Error("Roster membership references a missing season");
+      validateMembershipWithinSeason(
+        current.active_from,
+        input.activeUntil,
+        seasonBounds.starts_on,
+        seasonBounds.ends_on,
+      );
       if (current.active_until && current.active_until !== input.activeUntil) {
         throw new DomainError(409, "roster_membership_already_ended");
       }
@@ -695,6 +812,24 @@ export class PlatformService {
     };
   }
 
+  async getPublicMatch(id: string): Promise<PublicMatchDto> {
+    const publishedTeam = await this.pool.query("SELECT 1 FROM team_profile WHERE id = 1 AND published_at IS NOT NULL");
+    if (publishedTeam.rowCount === 0) throw new DomainError(404, "public_team_not_found");
+
+    const result = await this.pool.query<PublicMatchRow>(
+      `SELECT m.id, m.season_id, o.name AS opponent_name, c.name AS competition_name,
+              m.is_official, m.scheduled_at, m.status
+       FROM matches m
+       JOIN opponents o ON o.id = m.opponent_id
+       LEFT JOIN competitions c ON c.id = m.competition_id
+       WHERE m.id = $1 AND m.published_at IS NOT NULL`,
+      [id],
+    );
+    const row = result.rows[0];
+    if (!row) throw new DomainError(404, "public_match_not_found");
+    return publicMatchDto(row);
+  }
+
   async getPublicMatches(): Promise<PublicMatchesDto> {
     const publishedTeam = await this.pool.query("SELECT 1 FROM team_profile WHERE id = 1 AND published_at IS NOT NULL");
     if (publishedTeam.rowCount === 0) throw new DomainError(404, "public_team_not_found");
@@ -710,15 +845,7 @@ export class PlatformService {
     const scheduled: PublicMatchesDto["scheduled"] = [];
     const toBeScheduled: PublicMatchesDto["toBeScheduled"] = [];
     for (const row of result.rows) {
-      const dto = {
-        id: row.id,
-        seasonId: row.season_id,
-        opponentName: row.opponent_name,
-        competitionName: row.competition_name,
-        isOfficial: row.is_official,
-        scheduledAt: toDateTime(row.scheduled_at),
-        status: row.status,
-      };
+      const dto = publicMatchDto(row);
       if (dto.scheduledAt === null) toBeScheduled.push(dto);
       else scheduled.push(dto);
     }

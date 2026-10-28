@@ -23,7 +23,7 @@ La persistenza applicativa è PostgreSQL 16, scelta durevole per il flusso condi
 
 Le rotte, i payload e la semantica preliminare sono elencati in [docs/API.md](API.md). I contratti sono utilizzabili da Web/QA come base d'integrazione, ma non sono definitivi: coordinare eventuali modifiche ai DTO prima del loro congelamento.
 
-## Verifiche — 28 ottobre 2026
+## Verifiche dello slice C1 precedente — 28 ottobre 2026 (storico)
 
 - **PASS** `pnpm check`: build dei package, type-check API/contratti/test e 6 test unitari (3 API + 3 C0), tutti superati.
 - **PASS** `pnpm test:integration`: 1 test PostgreSQL superato su `TEST_DATABASE_URL` locale con suffisso `_test`; il test crea uno schema casuale isolato, applica e riapplica la migrazione e rimuove lo schema in `finally`.
@@ -33,6 +33,26 @@ Le rotte, i payload e la semantica preliminare sono elencati in [docs/API.md](AP
 - **NOT RUN** CI GitHub Actions, verifica con una configurazione Logto reale, readiness/backup/restore di produzione e deploy/K3s.
 
 Il test JWT locale usa un JWKS effimero su loopback; è passato quando eseguito con i permessi runtime necessari. Il fallimento precedente del listener era un `EPERM` del sandbox, non un difetto del server.
+
+## C1.1 — letture amministrative e dettaglio partita
+
+**Stato:** implementato sul branch dedicato `codex/core-persistent-flow`, a partire da `c53db86f12ba1085fb2321d57422ff74158c8d28`; non integrato automaticamente in `main`. Contratti e policy API restano preliminari.
+
+- Letture admin protette per stagioni, identità giocatore, appartenenze stagionali, avversarie, competizioni e partite. Le partite admin includono bozze e record non pubblicati; i filtri supportati sono `seasonId` per partite e `seasonId`/`playerId` per appartenenze. Le liste non sono paginate.
+- Nuovo `GET /api/v1/public/matches/{id}`: restituisce esclusivamente il `PublicMatchDto` esistente; una partita non pubblicata/non presente restituisce 404 (e una squadra non pubblicata mantiene il 404 `public_team_not_found`). Non sono esposti risultati o eventi non disponibili.
+- Intervalli di appartenenza inclusivi, entro i limiti inclusivi della stagione. Lo storico e i rientri sono ammessi se i periodi non si sovrappongono; un giorno di confine è condiviso e quindi non può appartenere a due intervalli. La data di una partita fuori stagione non è rifiutata: rinvii e competizioni protratte restano possibili. Questa è una policy tecnica provvisoria, non una decisione di prodotto; eventuali avvisi o controlli successivi richiedono coordinamento.
+- Le sole modifiche amministrative restano chiusura appartenenza e aggiornamento calendario/stato partita, oltre alle scritture già esistenti. Non sono state aggiunte modifiche/eliminazioni generiche o correzioni dei legami partita.
+- `docs/API.md` documenta tutte le rotte, query, DTO, privacy, semantica dei 404, non-paginazione e limiti. I DTO TypeBox in `packages/contracts/src/platform.ts` sono dichiarati preliminari.
+
+### Verifiche C1.1 — 28 ottobre 2026
+
+- **PASS** `pnpm check`: build dei package, type-check API/contratti/test e test unitari (3 test API + 3 test condivisi, 6 totali). Include il test del listener JWKS locale su loopback e i test della configurazione Logto.
+- **NOT RUN — prerequisito assente** `pnpm test:integration`: il comando è stato avviato ma si è fermato prima di connettersi a PostgreSQL perché `.env` e `TEST_DATABASE_URL` non sono presenti. La suite d'integrazione PostgreSQL resta da eseguire; nessun container o database è stato avviato o modificato.
+- **NOT RUN — prerequisito assente** smoke test HTTP dell'API: `.env`/`DATABASE_URL` non sono presenti e `apps/api/src/index.ts` rifiuta l'avvio senza `DATABASE_URL`. Non si dichiara verificata l'API via rete in questo checkpoint.
+- **PASS** analisi dei due precedenti errori: il test che avvia un listener JWKS locale è passato con i permessi runtime autorizzati, quindi il precedente `EPERM` era una limitazione del sandbox e non un difetto applicativo. Il test Logto conferma invece la policy desiderata: issuer e URL JWKS devono essere HTTPS puliti; URL HTTP sono rifiutati, HTTPS è accettato. In C1.1 non sono stati cambiati né validatore né asserzioni Logto per ottenere un PASS.
+- **PASS** `git diff --check` sul diff finale C1.1.
+
+Web e QA sono stati informati delle rotte additive, della proiezione pubblica limitata e del comportamento sulle date; riceveranno lo SHA del commit pubblicato per l'integrazione dai propri branch/worktree.
 
 ## Ownership e risorse locali
 

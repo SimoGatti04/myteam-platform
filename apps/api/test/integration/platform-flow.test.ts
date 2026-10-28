@@ -8,6 +8,8 @@ import { DomainError } from "../../src/platform/errors.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
+type InjectResponse = Awaited<ReturnType<Awaited<ReturnType<typeof createApp>>["inject"]>>;
+
 if (!testDatabaseUrl && process.env.REQUIRE_POSTGRES_INTEGRATION === "1") {
   throw new Error("TEST_DATABASE_URL is required; run `pnpm db:up` and copy .env.example to .env");
 }
@@ -54,6 +56,18 @@ test(
       });
       assert.equal(unauthenticatedWrite.statusCode, 401);
 
+      for (const url of [
+        "/api/v1/admin/seasons",
+        "/api/v1/admin/players",
+        "/api/v1/admin/roster-memberships",
+        "/api/v1/admin/opponents",
+        "/api/v1/admin/competitions",
+        "/api/v1/admin/matches",
+      ]) {
+        const unauthorizedRead: InjectResponse = await app.inject({ method: "GET", url });
+        assert.equal(unauthorizedRead.statusCode, 401, `${url} must require admin authorization`);
+      }
+
       const headers = { authorization: "Bearer integration-admin" };
       const seasonResponse = await app.inject({
         method: "POST",
@@ -63,6 +77,18 @@ test(
       });
       assert.equal(seasonResponse.statusCode, 201, seasonResponse.payload);
       const season = seasonResponse.json<{ id: string }>();
+      const initialSeasons = await app.inject({ method: "GET", url: "/api/v1/admin/seasons", headers });
+      assert.equal(initialSeasons.statusCode, 200, initialSeasons.payload);
+      assert.deepEqual(initialSeasons.json<Array<{ id: string }>>().map(({ id }) => id), [season.id]);
+
+      const historicalSeasonResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/seasons",
+        headers,
+        payload: { label: "2024/2025", startsOn: "2024-08-01", endsOn: "2025-07-31" },
+      });
+      assert.equal(historicalSeasonResponse.statusCode, 201, historicalSeasonResponse.payload);
+      const historicalSeason = historicalSeasonResponse.json<{ id: string }>();
 
       const teamConfig = await app.inject({
         method: "PUT",
@@ -84,6 +110,26 @@ test(
       });
       assert.equal(playerResponse.statusCode, 201, playerResponse.payload);
       const player = playerResponse.json<{ id: string }>();
+      const adminPlayers = await app.inject({ method: "GET", url: "/api/v1/admin/players", headers });
+      assert.equal(adminPlayers.statusCode, 200, adminPlayers.payload);
+      assert.deepEqual(adminPlayers.json<Array<{ id: string }>>().map(({ id }) => id), [player.id]);
+
+      const outsideSeasonStart = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/roster-memberships",
+        headers,
+        payload: { playerId: player.id, seasonId: season.id, activeFrom: "2026-07-31" },
+      });
+      assert.equal(outsideSeasonStart.statusCode, 400);
+      assert.deepEqual(outsideSeasonStart.json(), { error: "roster_membership_outside_season" });
+      const outsideSeasonEnd = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/roster-memberships",
+        headers,
+        payload: { playerId: player.id, seasonId: season.id, activeFrom: "2027-08-01" },
+      });
+      assert.equal(outsideSeasonEnd.statusCode, 400);
+      assert.deepEqual(outsideSeasonEnd.json(), { error: "roster_membership_outside_season" });
 
       const membershipResponse = await app.inject({
         method: "POST",
@@ -92,6 +138,16 @@ test(
         payload: { playerId: player.id, seasonId: season.id, jerseyNumber: 10, activeFrom: "2026-08-01" },
       });
       assert.equal(membershipResponse.statusCode, 201, membershipResponse.payload);
+      const membership = membershipResponse.json<{ id: string }>();
+      const invalidMembershipEnd = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/roster-memberships/${membership.id}/end`,
+        headers,
+        payload: { activeUntil: "2027-08-01" },
+      });
+      assert.equal(invalidMembershipEnd.statusCode, 400);
+      assert.deepEqual(invalidMembershipEnd.json(), { error: "roster_membership_outside_season" });
+
       const overlappingMembership = await app.inject({
         method: "POST",
         url: "/api/v1/admin/roster-memberships",
@@ -106,6 +162,39 @@ test(
       assert.equal(overlappingMembership.statusCode, 409);
       assert.deepEqual(overlappingMembership.json(), { error: "roster_membership_period_overlaps" });
 
+      const endMembership = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/roster-memberships/${membership.id}/end`,
+        headers,
+        payload: { activeUntil: "2026-09-30", reason: "Temporary departure" },
+      });
+      assert.equal(endMembership.statusCode, 200, endMembership.payload);
+      const reentryMembership = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/roster-memberships",
+        headers,
+        payload: {
+          playerId: player.id,
+          seasonId: season.id,
+          jerseyNumber: 10,
+          activeFrom: "2026-10-01",
+        },
+      });
+      assert.equal(reentryMembership.statusCode, 201, reentryMembership.payload);
+      const inclusiveOverlap = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/roster-memberships",
+        headers,
+        payload: {
+          playerId: player.id,
+          seasonId: season.id,
+          activeFrom: "2026-09-30",
+          activeUntil: "2026-10-02",
+        },
+      });
+      assert.equal(inclusiveOverlap.statusCode, 409);
+      assert.deepEqual(inclusiveOverlap.json(), { error: "roster_membership_period_overlaps" });
+
       const formerPlayerResponse = await app.inject({
         method: "POST",
         url: "/api/v1/admin/players",
@@ -119,12 +208,39 @@ test(
         headers,
         payload: {
           playerId: formerPlayer.id,
-          seasonId: season.id,
-          activeFrom: "2025-08-01",
-          activeUntil: "2025-08-31",
+          seasonId: historicalSeason.id,
+          activeFrom: "2025-02-01",
+          activeUntil: "2025-02-28",
         },
       });
       assert.equal(formerMembership.statusCode, 201, formerMembership.payload);
+
+      const seasonsWithHistory = await app.inject({ method: "GET", url: "/api/v1/admin/seasons", headers });
+      assert.equal(seasonsWithHistory.statusCode, 200, seasonsWithHistory.payload);
+      assert.deepEqual(
+        seasonsWithHistory.json<Array<{ label: string }>>().map(({ label }) => label),
+        ["2026/2027", "2024/2025"],
+      );
+      const currentSeasonMemberships = await app.inject({
+        method: "GET",
+        url: `/api/v1/admin/roster-memberships?seasonId=${season.id}`,
+        headers,
+      });
+      assert.equal(currentSeasonMemberships.statusCode, 200, currentSeasonMemberships.payload);
+      assert.equal(currentSeasonMemberships.json<unknown[]>().length, 2);
+      const playerMemberships = await app.inject({
+        method: "GET",
+        url: `/api/v1/admin/roster-memberships?playerId=${player.id}`,
+        headers,
+      });
+      assert.equal(playerMemberships.statusCode, 200, playerMemberships.payload);
+      assert.equal(playerMemberships.json<unknown[]>().length, 2);
+      const invalidMembershipFilter = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/roster-memberships?seasonId=invalid",
+        headers,
+      });
+      assert.equal(invalidMembershipFilter.statusCode, 400);
 
       const opponentResponse = await app.inject({
         method: "POST",
@@ -133,6 +249,9 @@ test(
         payload: { name: "Away Club" },
       });
       const opponent = opponentResponse.json<{ id: string }>();
+      const listedOpponents = await app.inject({ method: "GET", url: "/api/v1/admin/opponents", headers });
+      assert.equal(listedOpponents.statusCode, 200, listedOpponents.payload);
+      assert.deepEqual(listedOpponents.json<Array<{ id: string }>>().map(({ id }) => id), [opponent.id]);
       const competitionResponse = await app.inject({
         method: "POST",
         url: "/api/v1/admin/competitions",
@@ -140,6 +259,9 @@ test(
         payload: { name: "League", category: "league", isOfficial: true },
       });
       const competition = competitionResponse.json<{ id: string }>();
+      const listedCompetitions = await app.inject({ method: "GET", url: "/api/v1/admin/competitions", headers });
+      assert.equal(listedCompetitions.statusCode, 200, listedCompetitions.payload);
+      assert.deepEqual(listedCompetitions.json<Array<{ id: string }>>().map(({ id }) => id), [competition.id]);
 
       const matchResponse = await app.inject({
         method: "POST",
@@ -156,6 +278,61 @@ test(
       assert.equal(matchResponse.statusCode, 201, matchResponse.payload);
       const match = matchResponse.json<{ id: string }>();
 
+      const beyondSeasonMatchResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/matches",
+        headers,
+        payload: {
+          seasonId: season.id,
+          opponentId: opponent.id,
+          competitionId: competition.id,
+          isOfficial: true,
+          scheduledAt: "2027-08-01T15:00:00.000Z",
+        },
+      });
+      assert.equal(beyondSeasonMatchResponse.statusCode, 201, beyondSeasonMatchResponse.payload);
+      const beyondSeasonMatch = beyondSeasonMatchResponse.json<{ id: string }>();
+      const draftMatchResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/matches",
+        headers,
+        payload: {
+          seasonId: season.id,
+          opponentId: opponent.id,
+          competitionId: competition.id,
+          isOfficial: true,
+          status: "to_be_scheduled",
+        },
+      });
+      assert.equal(draftMatchResponse.statusCode, 201, draftMatchResponse.payload);
+      const draftMatch = draftMatchResponse.json<{ id: string }>();
+
+      const adminMatchesBeforePublish = await app.inject({ method: "GET", url: "/api/v1/admin/matches", headers });
+      assert.equal(adminMatchesBeforePublish.statusCode, 200, adminMatchesBeforePublish.payload);
+      const listedAdminMatches = adminMatchesBeforePublish.json<Array<{ id: string; publishedAt: string | null; status: string }>>();
+      assert.equal(listedAdminMatches.length, 3);
+      assert.ok(listedAdminMatches.every(({ publishedAt }) => publishedAt === null));
+      assert.ok(listedAdminMatches.some(({ id }) => id === draftMatch.id && listedAdminMatches.find((item) => item.id === id)?.status === "to_be_scheduled"));
+      const seasonMatches = await app.inject({
+        method: "GET",
+        url: `/api/v1/admin/matches?seasonId=${season.id}`,
+        headers,
+      });
+      assert.equal(seasonMatches.statusCode, 200, seasonMatches.payload);
+      assert.equal(seasonMatches.json<unknown[]>().length, 3);
+      const invalidMatchFilter = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/matches?seasonId=invalid",
+        headers,
+      });
+      assert.equal(invalidMatchFilter.statusCode, 400);
+
+      const unavailablePublicDetail = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${match.id}`,
+      });
+      assert.equal(unavailablePublicDetail.statusCode, 404);
+      assert.deepEqual(unavailablePublicDetail.json(), { error: "public_team_not_found" });
       const publicMatchesBeforePublish = await app.inject({ method: "GET", url: "/api/v1/public/matches" });
       assert.equal(publicMatchesBeforePublish.statusCode, 404);
 
@@ -177,6 +354,12 @@ test(
       const hiddenMatches = await app.inject({ method: "GET", url: "/api/v1/public/matches" });
       assert.equal(hiddenMatches.statusCode, 200, hiddenMatches.payload);
       assert.deepEqual(hiddenMatches.json(), { scheduled: [], toBeScheduled: [] });
+      const unpublishedDetail = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${match.id}`,
+      });
+      assert.equal(unpublishedDetail.statusCode, 404);
+      assert.deepEqual(unpublishedDetail.json(), { error: "public_match_not_found" });
 
       const matchPublish = await app.inject({
         method: "POST",
@@ -218,6 +401,31 @@ test(
         publicMatches.json<{ scheduled: Array<{ scheduledAt: string }> }>().scheduled[0]?.scheduledAt,
         "2026-11-08T15:00:00.000Z",
       );
+      const publicMatchDetail = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${match.id}`,
+      });
+      assert.equal(publicMatchDetail.statusCode, 200, publicMatchDetail.payload);
+      assert.deepEqual(publicMatchDetail.json(), {
+        id: match.id,
+        seasonId: season.id,
+        opponentName: "Away Club",
+        competitionName: "League",
+        isOfficial: true,
+        scheduledAt: "2026-11-08T15:00:00.000Z",
+        status: "scheduled",
+      });
+      for (const unpublishedId of [beyondSeasonMatch.id, draftMatch.id]) {
+        const hiddenDetail: InjectResponse = await app.inject({
+          method: "GET",
+          url: `/api/v1/public/matches/${unpublishedId}`,
+        });
+        assert.equal(hiddenDetail.statusCode, 404);
+        assert.deepEqual(hiddenDetail.json(), { error: "public_match_not_found" });
+      }
+      const allAdminMatches = await app.inject({ method: "GET", url: "/api/v1/admin/matches", headers });
+      assert.equal(allAdminMatches.statusCode, 200, allAdminMatches.payload);
+      assert.equal(allAdminMatches.json<unknown[]>().length, 3);
 
       const history = await scopedPool.query<{ scheduled_at: Date | null; status: string; reason: string | null }>(
         `SELECT scheduled_at, status, reason FROM match_schedule_history WHERE match_id = $1 ORDER BY recorded_at, id`,
