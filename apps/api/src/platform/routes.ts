@@ -2,6 +2,14 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import {
   AdminTeamSchema,
+  AdminSeasonsSchema,
+  AdminPlayersSchema,
+  AdminRosterMembershipsSchema,
+  AdminRosterMembershipsQuerySchema,
+  AdminOpponentsSchema,
+  AdminCompetitionsSchema,
+  AdminMatchesSchema,
+  AdminMatchesQuerySchema,
   ApiErrorSchema,
   CompetitionCreateRequestSchema,
   CompetitionSchema,
@@ -12,6 +20,7 @@ import {
   OpponentSchema,
   PlayerCreateRequestSchema,
   PlayerSchema,
+  PublicMatchSchema,
   PublicMatchesSchema,
   PublicRosterSchema,
   PublicTeamSchema,
@@ -23,6 +32,8 @@ import {
   TeamConfigurationRequestSchema,
 } from "@myteam/contracts";
 import type {
+  AdminMatchesQuery,
+  AdminRosterMembershipsQuery,
   CompetitionCreateRequest,
   MatchCreateRequest,
   MatchSchedulePatchRequest,
@@ -98,6 +109,12 @@ export function registerPlatformRoutes(
         async (request) => service.publishTeam(requireActor(request)),
       );
 
+      admin.get(
+        "/seasons",
+        { schema: { response: { 200: AdminSeasonsSchema, ...errorResponses } } },
+        async () => service.listAdminSeasons(),
+      );
+
       admin.post<{ Body: SeasonCreateRequest }>(
         "/seasons",
         {
@@ -109,6 +126,12 @@ export function registerPlatformRoutes(
         async (request, reply) => reply.code(201).send(await service.createSeason(request.body, requireActor(request))),
       );
 
+      admin.get(
+        "/players",
+        { schema: { response: { 200: AdminPlayersSchema, ...errorResponses } } },
+        async () => service.listAdminPlayers(),
+      );
+
       admin.post<{ Body: PlayerCreateRequest }>(
         "/players",
         {
@@ -118,6 +141,17 @@ export function registerPlatformRoutes(
           },
         },
         async (request, reply) => reply.code(201).send(await service.createPlayer(request.body, requireActor(request))),
+      );
+
+      admin.get<{ Querystring: AdminRosterMembershipsQuery }>(
+        "/roster-memberships",
+        {
+          schema: {
+            querystring: AdminRosterMembershipsQuerySchema,
+            response: { 200: AdminRosterMembershipsSchema, ...errorResponses },
+          },
+        },
+        async (request) => service.listAdminRosterMemberships(request.query),
       );
 
       admin.post<{ Body: RosterMembershipCreateRequest }>(
@@ -144,6 +178,12 @@ export function registerPlatformRoutes(
         async (request) => service.endRosterMembership(request.params.id, request.body, requireActor(request)),
       );
 
+      admin.get(
+        "/opponents",
+        { schema: { response: { 200: AdminOpponentsSchema, ...errorResponses } } },
+        async () => service.listAdminOpponents(),
+      );
+
       admin.post<{ Body: OpponentCreateRequest }>(
         "/opponents",
         {
@@ -153,6 +193,12 @@ export function registerPlatformRoutes(
           },
         },
         async (request, reply) => reply.code(201).send(await service.createOpponent(request.body, requireActor(request))),
+      );
+
+      admin.get(
+        "/competitions",
+        { schema: { response: { 200: AdminCompetitionsSchema, ...errorResponses } } },
+        async () => service.listAdminCompetitions(),
       );
 
       admin.post<{ Body: CompetitionCreateRequest }>(
@@ -165,6 +211,17 @@ export function registerPlatformRoutes(
         },
         async (request, reply) =>
           reply.code(201).send(await service.createCompetition(request.body, requireActor(request))),
+      );
+
+      admin.get<{ Querystring: AdminMatchesQuery }>(
+        "/matches",
+        {
+          schema: {
+            querystring: AdminMatchesQuerySchema,
+            response: { 200: AdminMatchesSchema, ...errorResponses },
+          },
+        },
+        async (request) => service.listAdminMatches(request.query),
       );
 
       admin.post<{ Body: MatchCreateRequest }>(
@@ -214,6 +271,22 @@ export function registerPlatformRoutes(
     "/api/v1/public/roster",
     { schema: { response: { 200: PublicRosterSchema, ...errorResponses } } },
     async () => service.getPublicRoster(),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/v1/public/matches/:id",
+    {
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        response: { 200: PublicMatchSchema, ...errorResponses },
+      },
+    },
+    async (request) => service.getPublicMatch(request.params.id),
   );
 
   app.get(

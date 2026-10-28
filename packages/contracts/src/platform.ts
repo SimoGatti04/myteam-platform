@@ -41,6 +41,8 @@ export const SeasonSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AdminSeasonsSchema = Type.Array(SeasonSchema);
+
 export const TeamConfigurationRequestSchema = Type.Object(
   {
     name: Type.Optional(Type.Union([Type.String({ maxLength: 120 }), Type.Null()])),
@@ -86,6 +88,8 @@ export const PlayerSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AdminPlayersSchema = Type.Array(PlayerSchema);
+
 export const RosterMembershipCreateRequestSchema = Type.Object(
   {
     playerId: UuidSchema,
@@ -105,6 +109,16 @@ export const RosterMembershipSchema = Type.Object(
     jerseyNumber: Type.Union([Type.Integer(), Type.Null()]),
     activeFrom: DateSchema,
     activeUntil: Type.Union([DateSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const AdminRosterMembershipsSchema = Type.Array(RosterMembershipSchema);
+
+export const AdminRosterMembershipsQuerySchema = Type.Object(
+  {
+    seasonId: Type.Optional(UuidSchema),
+    playerId: Type.Optional(UuidSchema),
   },
   { additionalProperties: false },
 );
@@ -141,6 +155,8 @@ export const OpponentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AdminOpponentsSchema = Type.Array(OpponentSchema);
+
 export const CompetitionCreateRequestSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 120 }),
@@ -159,6 +175,8 @@ export const CompetitionSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const AdminCompetitionsSchema = Type.Array(CompetitionSchema);
 
 export const MatchCreateRequestSchema = Type.Object(
   {
@@ -195,6 +213,13 @@ export const MatchSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AdminMatchesSchema = Type.Array(MatchSchema);
+
+export const AdminMatchesQuerySchema = Type.Object(
+  { seasonId: Type.Optional(UuidSchema) },
+  { additionalProperties: false },
+);
+
 export const PublicMatchSchema = Type.Object(
   {
     id: UuidSchema,
@@ -223,22 +248,30 @@ export const ApiErrorSchema = Type.Object(
 
 export type SeasonCreateRequest = Static<typeof SeasonCreateRequestSchema>;
 export type SeasonDto = Static<typeof SeasonSchema>;
+export type AdminSeasonsDto = Static<typeof AdminSeasonsSchema>;
 export type TeamConfigurationRequest = Static<typeof TeamConfigurationRequestSchema>;
 export type AdminTeamDto = Static<typeof AdminTeamSchema>;
 export type PublicTeamDto = Static<typeof PublicTeamSchema>;
 export type PlayerCreateRequest = Static<typeof PlayerCreateRequestSchema>;
 export type PlayerDto = Static<typeof PlayerSchema>;
+export type AdminPlayersDto = Static<typeof AdminPlayersSchema>;
 export type RosterMembershipCreateRequest = Static<typeof RosterMembershipCreateRequestSchema>;
 export type RosterMembershipDto = Static<typeof RosterMembershipSchema>;
+export type AdminRosterMembershipsDto = Static<typeof AdminRosterMembershipsSchema>;
+export type AdminRosterMembershipsQuery = Static<typeof AdminRosterMembershipsQuerySchema>;
 export type RosterMembershipEndRequest = Static<typeof RosterMembershipEndRequestSchema>;
 export type PublicRosterDto = Static<typeof PublicRosterSchema>;
 export type OpponentCreateRequest = Static<typeof OpponentCreateRequestSchema>;
 export type OpponentDto = Static<typeof OpponentSchema>;
+export type AdminOpponentsDto = Static<typeof AdminOpponentsSchema>;
 export type CompetitionCreateRequest = Static<typeof CompetitionCreateRequestSchema>;
 export type CompetitionDto = Static<typeof CompetitionSchema>;
+export type AdminCompetitionsDto = Static<typeof AdminCompetitionsSchema>;
 export type MatchCreateRequest = Static<typeof MatchCreateRequestSchema>;
 export type MatchSchedulePatchRequest = Static<typeof MatchSchedulePatchRequestSchema>;
 export type MatchDto = Static<typeof MatchSchema>;
+export type AdminMatchesDto = Static<typeof AdminMatchesSchema>;
+export type AdminMatchesQuery = Static<typeof AdminMatchesQuerySchema>;
 export type PublicMatchDto = Static<typeof PublicMatchSchema>;
 export type PublicMatchesDto = Static<typeof PublicMatchesSchema>;
 export type MatchStatus = Static<typeof MatchStatusSchema>;
