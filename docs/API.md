@@ -1,4 +1,4 @@
-# API Core C1.1 — contratti preliminari
+# API Core C1.2 — contratti preliminari
 
 **Stato:** API v1 iniziale implementata sul branch `codex/core-persistent-flow`. Tutti gli schemi TypeBox in `packages/contracts/src/platform.ts` sono **preliminari** e soggetti a coordinamento con Web, QA, iOS e Integrations; non sono ancora contratti di prodotto congelati né il completamento dell'MVP. Le liste restituite dalle rotte admin sono array JSON dei DTO di risorsa già definiti, senza involucro di paginazione.
 
@@ -42,10 +42,10 @@ Le query sconosciute o gli UUID non validi sono rifiutati con `400 request_valid
 | `POST /api/v1/admin/opponents` | Crea un'avversaria |
 | `POST /api/v1/admin/competitions` | Crea una competizione |
 | `POST /api/v1/admin/matches` | Crea una partita non pubblicata in stato programmato/da programmare |
-| `PATCH /api/v1/admin/matches/{id}/schedule` | Riprogramma o aggiorna lo stato, conservando lo storico |
+| `PATCH /api/v1/admin/matches/{id}/schedule` | Riprogramma o aggiorna lo stato, conservando lo storico; rifiuta le partite già completate |
 | `POST /api/v1/admin/matches/{id}/publish` | Rende la partita visibile nella proiezione pubblica |
 
-Creazione risorsa risponde `201`; validazione `400`; token mancante/non valido `401`; scope insufficiente `403`; risorsa assente `404`; conflitto dominio `409`. Gli errori hanno forma `{ "error": "code" }`; gli errori interni non restituiscono dettagli del database.
+Creazione risorsa risponde `201`; validazione `400`; token mancante/non valido `401`; scope insufficiente `403`; risorsa assente `404`; conflitto dominio `409`. Gli errori hanno forma `{ "error": "code" }`; gli errori interni non restituiscono dettagli del database. Il PATCH calendario/stato risponde `400 completed_match_schedule_is_immutable` se la partita è già `completed` o se la richiesta tenta di impostare tale stato. Non registra risultati o eventi gara.
 
 ## Semantica preliminare e limiti
 
