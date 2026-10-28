@@ -3,17 +3,9 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-// Trova la root del pacchetto apps/web usando percorsi relativi indipendenti dalla macchina
+// Trova la root del pacchetto apps/web usando percorsi relativi al checkout corrente
 function findWebRoot(): string {
   const localWeb = join(process.cwd(), "apps/web");
-  if (existsSync(join(localWeb, "index.html"))) {
-    return localWeb;
-  }
-  // Sibling worktree fallback se siamo in un worktree isolato
-  const siblingWeb = join(process.cwd(), "../myteam-platform/apps/web");
-  if (existsSync(join(siblingWeb, "index.html"))) {
-    return siblingWeb;
-  }
   return localWeb;
 }
 

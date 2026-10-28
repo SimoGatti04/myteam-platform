@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createApp } from "../../apps/api/src/app.js";
 import { DomainError } from "../../apps/api/src/platform/errors.js";
 import { createScopedPostgresContext } from "../helpers/pg-test-helper.js";
-import { realisticSeasonFixture, realisticPlayersFixture } from "../fixtures/q1-realistic-fixtures.js";
+import { realisticSeasonFixture, realisticPlayersFixture, realisticOpponentsFixture } from "../fixtures/q1-realistic-fixtures.js";
 
 const testDbUrl = process.env.TEST_DATABASE_URL;
 

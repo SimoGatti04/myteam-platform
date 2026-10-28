@@ -9,7 +9,7 @@ import {
   realisticCompetitionsFixture,
 } from "../fixtures/q1-realistic-fixtures.js";
 
-test("E2E Integrated Pipeline: Admin writes -> Persistence -> Public API -> Web Consumption", async () => {
+test("API Integrated Pipeline (Fastify Inject + Memory DB): Admin writes -> Persistence -> Public API", async () => {
   const { app, adminHeaders } = createTestApp();
   try {
     // 1. Setup Season via Admin API

@@ -105,7 +105,9 @@ test("8.6 Web Production Build Verification: Index HTML and Chunks integrity", a
   const fs = await import("node:fs");
   const path = await import("node:path");
 
-  const distDir = path.resolve("/Users/gatti/Workspace/myteam-platform/apps/web/dist");
+  const { fileURLToPath } = await import("node:url");
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const distDir = path.resolve(__dirname, "../../apps/web/dist");
   assert.ok(fs.existsSync(distDir), "Production dist directory must exist");
 
   const indexHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf8");
