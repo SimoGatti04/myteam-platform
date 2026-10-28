@@ -1,0 +1,22 @@
+{
+  "type": "module",
+  "name": "myteam-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22.12 <27"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api dev",
+    "build": "pnpm -r --if-present run build",
+    "typecheck": "pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck",
+    "test": "pnpm --filter @myteam/contracts build && pnpm exec tsx --test tests/api/*.test.ts",
+    "check": "pnpm build && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
