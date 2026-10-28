@@ -1,0 +1,81 @@
+:root {
+  --brand-primary: #334155;
+  --brand-primary-light: #475569;
+  --brand-primary-dark: #1e293b;
+  --brand-secondary: #0ea5e9;
+  --brand-secondary-light: #38bdf8;
+  --brand-surface: #0f172a;
+  --brand-border: #334155;
+  --brand-text-on-primary: #ffffff;
+  --brand-hero-bg: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+
+  /* UI Neutral scales */
+  --bg-main: #0b0f17;
+  --bg-card: #131b2a;
+  --bg-card-hover: #1a2438;
+  --bg-card-subtle: #172133;
+  --border-subtle: #233148;
+  --border-strong: #334460;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --status-live: #ef4444;
+  --status-success: #10b981;
+  --status-warning: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Animations */
+@keyframes pulseLive {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.15); }
+}
+
+.live-badge-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--status-live);
+  animation: pulseLive 1.5s infinite ease-in-out;
+}
