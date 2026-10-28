@@ -1,7 +1,18 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import { createApp } from "../../apps/api/src/app.js";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
-import { DomainError } from "../../apps/api/src/platform/errors.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const apiDir = process.env.TARGET_API_DIR
+  ? path.resolve(process.env.TARGET_API_DIR)
+  : path.resolve(__dirname, "../../apps/api");
+
+const appModule = await import(path.join(apiDir, "src/app.js"));
+const errorsModule = await import(path.join(apiDir, "src/platform/errors.js"));
+
+const createApp = appModule.createApp;
+const DomainError = errorsModule.DomainError;
 
 export interface TestAppContext {
   app: FastifyInstance;
@@ -19,7 +30,7 @@ export function createTestApp(): TestAppContext {
   const app = createApp({
     logger: false,
     pool: db.pool,
-    verifyAdminToken: async (header) => {
+    verifyAdminToken: async (header: string | undefined) => {
       if (!header) {
         throw new DomainError(401, "authentication_required");
       }

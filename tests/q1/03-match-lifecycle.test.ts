@@ -211,9 +211,10 @@ test("3.4 Reschedule match updates history, logs audit, and handles postponed st
   }
 });
 
-test("3.5 Completed match schedule is immutable and transitions to completed are guarded", async () => {
+test("3.5 Completed match schedule is immutable and transitions to completed are guarded (CORE-BUG-01)", async () => {
   const { app, db, adminHeaders, seasonId, opponentId } = await setupMatchContext();
   try {
+    const originalTime = "2026-10-10T15:00:00.000Z";
     const mRes = await app.inject({
       method: "POST",
       url: "/api/v1/admin/matches",
@@ -222,7 +223,7 @@ test("3.5 Completed match schedule is immutable and transitions to completed are
         seasonId,
         opponentId,
         isOfficial: true,
-        scheduledAt: "2026-10-10T15:00:00.000Z",
+        scheduledAt: originalTime,
       },
     });
     const matchId = mRes.json<{ id: string }>().id;
@@ -237,19 +238,39 @@ test("3.5 Completed match schedule is immutable and transitions to completed are
     assert.equal(attemptDirectComplete.statusCode, 400);
     assert.equal(attemptDirectComplete.json().error, "completed_match_schedule_is_immutable");
 
-    // Partita già completata a DB rifiuta qualsiasi aggiornamento di orario
+    // Partita già completata a DB rifiuta qualsiasi aggiornamento di orario o stato
     await db.pool.query("UPDATE matches SET status = 'completed' WHERE id = $1", [matchId]);
+
+    const initialHistoryLength = db.getScheduleHistory(matchId).length;
+    const initialAuditCount = db.getAuditEvents().filter((e) => e.entity_id === matchId).length;
+
     const attemptRescheduleCompleted = await app.inject({
       method: "PATCH",
       url: `/api/v1/admin/matches/${matchId}/schedule`,
       headers: adminHeaders,
       payload: {
-        scheduledAt: "2026-10-11T15:00:00.000Z",
+        status: "postponed",
+        scheduledAt: "2026-10-25T15:00:00.000Z",
         reason: "Tentativo errato su gara terminata",
       },
     });
     assert.equal(attemptRescheduleCompleted.statusCode, 400);
     assert.equal(attemptRescheduleCompleted.json().error, "completed_match_schedule_is_immutable");
+
+    // Verifica che stato e data nel DB siano rimasti intatti
+    const currentDbMatch = (await db.pool.query<{ status: string; scheduled_at: string }>(
+      "SELECT status, scheduled_at FROM matches WHERE id = $1",
+      [matchId],
+    )).rows[0];
+    assert.equal(currentDbMatch.status, "completed");
+    assert.equal(currentDbMatch.scheduled_at, originalTime);
+
+    // Verifica assenza di nuovi eventi audit o storico
+    const newHistoryLength = db.getScheduleHistory(matchId).length;
+    assert.equal(newHistoryLength, initialHistoryLength, "No new schedule history on rejected completed reschedule");
+
+    const newAuditCount = db.getAuditEvents().filter((e) => e.entity_id === matchId).length;
+    assert.equal(newAuditCount, initialAuditCount, "No new audit log on rejected completed reschedule");
   } finally {
     await app.close();
   }
@@ -315,7 +336,7 @@ test("3.6 Publishing matches exposes them in public list separated by scheduled 
 test("3.7 Match Detail: Single public match detail endpoint GET /api/v1/public/matches/:id status and contract", async () => {
   const { app, adminHeaders, seasonId, opponentId, competitionId } = await setupMatchContext();
   try {
-    // Creiamo e pubblichiamo una partita
+    // 1. Partita pubblicata -> 200 con DTO completo minimizzato
     const mRes = await app.inject({
       method: "POST",
       url: "/api/v1/admin/matches",
@@ -332,17 +353,58 @@ test("3.7 Match Detail: Single public match detail endpoint GET /api/v1/public/m
     await app.inject({ method: "POST", url: `/api/v1/admin/matches/${matchId}/publish`, headers: adminHeaders });
 
     const detailRes = await app.inject({ method: "GET", url: `/api/v1/public/matches/${matchId}` });
+    assert.equal(detailRes.statusCode, 200, "Published match must return HTTP 200 on GET /public/matches/:id");
 
-    if (detailRes.statusCode === 200) {
-      // Endpoint implementato (es. Core C1.1)
-      const match = detailRes.json<{ id: string; opponentName: string; status: string }>();
-      assert.equal(match.id, matchId);
-      assert.ok(match.opponentName);
-    } else {
-      // In Core C1.0 la rotta non e registrata: restituisce route_not_found (404)
-      assert.equal(detailRes.statusCode, 404);
-      assert.equal(detailRes.json().error, "route_not_found");
-    }
+    const match = detailRes.json<{
+      id: string;
+      seasonId: string;
+      opponentName: string;
+      competitionName: string | null;
+      isOfficial: boolean;
+      scheduledAt: string | null;
+      status: string;
+    }>();
+
+    assert.equal(match.id, matchId);
+    assert.equal(match.seasonId, seasonId);
+    assert.equal(match.opponentName, realisticOpponentsFixture[0].name);
+    assert.equal(match.competitionName, realisticCompetitionsFixture[0].name);
+    assert.equal(match.isOfficial, true);
+    assert.equal(match.status, "scheduled");
+    assert.equal(match.scheduledAt, "2026-11-15T15:00:00.000Z");
+
+    // Data minimization: nessun campo amministrativo esposto
+    const rawKeys = Object.keys(detailRes.json());
+    assert.ok(!rawKeys.includes("publishedAt"), "publishedAt must not be exposed");
+    assert.ok(!rawKeys.includes("createdAt"), "createdAt must not be exposed");
+    assert.ok(!rawKeys.includes("updatedAt"), "updatedAt must not be exposed");
+    assert.ok(!rawKeys.includes("opponentId"), "opponentId must not be exposed");
+    assert.ok(!rawKeys.includes("competitionId"), "competitionId must not be exposed");
+
+    // 2. Partita non pubblicata (bozza) -> 404 public_match_not_found
+    const draftRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/matches",
+      headers: adminHeaders,
+      payload: {
+        seasonId,
+        opponentId,
+        isOfficial: true,
+        scheduledAt: "2026-11-20T15:00:00.000Z",
+      },
+    });
+    const draftId = draftRes.json<{ id: string }>().id;
+    const draftDetail = await app.inject({ method: "GET", url: `/api/v1/public/matches/${draftId}` });
+    assert.equal(draftDetail.statusCode, 404, "Draft match must return 404 on public detail route");
+    assert.equal(draftDetail.json().error, "public_match_not_found");
+
+    // 3. Partita inesistente -> 404 public_match_not_found
+    const notFoundRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/public/matches/00000000-0000-0000-0000-000000000000",
+    });
+    assert.equal(notFoundRes.statusCode, 404);
+    assert.equal(notFoundRes.json().error, "public_match_not_found");
   } finally {
     await app.close();
   }

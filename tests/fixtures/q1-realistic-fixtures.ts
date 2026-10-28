@@ -26,15 +26,15 @@ export const realisticPlayersFixture = [
 export const formerPlayerFixture = {
   displayName: "Federico Rota",
   jerseyNumber: 4,
-  activeFrom: "2024-09-01",
-  activeUntil: "2025-06-30",
+  activeFrom: "2026-09-01",
+  activeUntil: "2026-09-30",
 };
 
 export const futurePlayerFixture = {
   displayName: "Davide Villa",
   jerseyNumber: 99,
-  activeFrom: "2028-01-01",
-  activeUntil: "2028-06-30",
+  activeFrom: "2026-12-01",
+  activeUntil: "2027-05-31",
 };
 
 export const realisticOpponentsFixture = [
