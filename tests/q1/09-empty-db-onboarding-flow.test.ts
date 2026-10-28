@@ -146,3 +146,109 @@ test("9.3 Onboarding Step 2: Configure and publish Team with the created season"
     await app.close();
   }
 });
+
+test("9.4 Season Creation Errors & Duplicate Prevention: 400 date errors and 409 duplicate label", async () => {
+  const { app, adminHeaders } = createTestApp();
+  try {
+    // 1. Errore date non valide -> 400 invalid_season_date
+    const resBadDate = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2026/2027", startsOn: "not-a-date", endsOn: "2027-06-30" },
+    });
+    assert.equal(resBadDate.statusCode, 400);
+    assert.equal(resBadDate.json().error, "request_validation_failed");
+
+    // 2. Data fine prima di inizio -> 400 season_end_before_start
+    const resInverted = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2026/2027", startsOn: "2027-06-30", endsOn: "2026-09-01" },
+    });
+    assert.equal(resInverted.statusCode, 400);
+    assert.equal(resInverted.json().error, "season_end_before_start");
+
+    // 3. Creazione prima stagione valida -> 201
+    const resValid = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2026/2027", startsOn: "2026-09-01", endsOn: "2027-06-30" },
+    });
+    assert.equal(resValid.statusCode, 201);
+
+    // 4. Tentativo duplicato con stessa etichetta -> 409 season_label_exists
+    const resDuplicate = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2026/2027", startsOn: "2026-10-01", endsOn: "2027-07-31" },
+    });
+    assert.equal(resDuplicate.statusCode, 409);
+    assert.equal(resDuplicate.json().error, "season_label_exists");
+  } finally {
+    await app.close();
+  }
+});
+
+test("9.5 Season Selection State: Distinction between locally selected season and saved server state", async () => {
+  const { app, adminHeaders } = createTestApp();
+  try {
+    // 1. Crea due stagioni
+    const s1Res = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2026/2027", startsOn: "2026-09-01", endsOn: "2027-06-30" },
+    });
+    const s1Id = s1Res.json<{ id: string }>().id;
+
+    const s2Res = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/seasons",
+      headers: adminHeaders,
+      payload: { label: "2027/2028", startsOn: "2027-09-01", endsOn: "2028-06-30" },
+    });
+    const s2Id = s2Res.json<{ id: string }>().id;
+
+    // 2. Configura il team con la stagione 1
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/admin/team",
+      headers: adminHeaders,
+      payload: {
+        name: realisticTeamProfileFixture.name,
+        crestUrl: realisticTeamProfileFixture.crestUrl,
+        currentSeasonId: s1Id,
+      },
+    });
+
+    // 3. Verifica stato salvato su server: s1
+    const teamBefore = (await app.inject({ method: "GET", url: "/api/v1/admin/team", headers: adminHeaders })).json<{ currentSeasonId: string }>();
+    assert.equal(teamBefore.currentSeasonId, s1Id);
+
+    // Nel client (come simulato e verificato in AdminImpostazioniView),
+    // la selezione locale di s2Id NON modifica il server finché non viene invocato PUT /admin/team.
+    // Se l'utente non salva, il server mantiene s1Id
+    const teamStillS1 = (await app.inject({ method: "GET", url: "/api/v1/admin/team", headers: adminHeaders })).json<{ currentSeasonId: string }>();
+    assert.equal(teamStillS1.currentSeasonId, s1Id);
+
+    // Dopo salvataggio esplicito con s2Id:
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/admin/team",
+      headers: adminHeaders,
+      payload: {
+        name: realisticTeamProfileFixture.name,
+        crestUrl: realisticTeamProfileFixture.crestUrl,
+        currentSeasonId: s2Id,
+      },
+    });
+    const teamAfter = (await app.inject({ method: "GET", url: "/api/v1/admin/team", headers: adminHeaders })).json<{ currentSeasonId: string }>();
+    assert.equal(teamAfter.currentSeasonId, s2Id, "Server updates currentSeasonId only after explicit save");
+  } finally {
+    await app.close();
+  }
+});

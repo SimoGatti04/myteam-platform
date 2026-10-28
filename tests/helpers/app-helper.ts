@@ -4,9 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { createTestDatabase, type TestDatabase } from "./test-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const apiDir = process.env.TARGET_API_DIR
-  ? path.resolve(process.env.TARGET_API_DIR)
-  : path.resolve(__dirname, "../../apps/api");
+const apiDir = path.resolve(__dirname, "../../apps/api");
 
 const appModule = await import(path.join(apiDir, "src/app.js"));
 const errorsModule = await import(path.join(apiDir, "src/platform/errors.js"));

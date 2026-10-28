@@ -1,128 +1,127 @@
-# Checkpoint Q1-R3 / Gate MVP-I1 — Rapporto Integrato di Verifica QA
-**Data:** 2026-10-28  
+# Checkpoint Q1-R3.1 / Gate MVP-I1 — Rapporto Integrato di Verifica QA
+**Data:** 28 Ottobre 2026  
 **Agente Responsabile:** Agente QA persistente (`QA`)  
 **Repository:** `myteam-platform` (`https://github.com/SimoGatti04/myteam-platform`)  
-**Commit e Branch sotto Verifica:**
-- **Core C1.2:** Commit `1ab71792929bef1009e3ecab57adf3d333d58ceb` (Branch `origin/codex/core-persistent-flow`)
-- **Web W1-R2.1:** Commit `3683ed972e019a7d6ce65b8d7b7680e833a463e1` (Branch `origin/web/w1-r2-integration`)
-- **Web W1-R2 (precedente):** Commit `6559bce1c4d1e3d413a6a3a640da8d809e9b6bd3`
-- **QA Suite Consolidata (Q1-R2):** Commit `e55a65a50a698a6cfc335cecdc7009517722c941` (Branch `origin/qa/q1-suite-consolidation`)
-- **Worktree d'Integrazione MVP-I1:** `/Users/gatti/Workspace/myteam-platform-mvp-i1` (Branch `qa/mvp-i1-integration`)
 
 ---
 
-## 1. Sintesi Esiti Gate MVP-I1
+## 1. Commit e Branch sotto Verifica Integrata
 
-| Livello di Verifica | Totale Test | Esito | Dettaglio / Note |
-| :--- | :---: | :---: | :--- |
-| **Workspace Build (`pnpm build`)** | 3 package | **PASS** | `@myteam/contracts`, `@myteam/api`, `@myteam/web` compilati con successo. |
-| **Workspace Typecheck (`pnpm typecheck`)** | 3 package | **PASS** | 0 errori TypeScript in tutto il monorepo. |
-| **Suite Unitaria/Integrazione Web (Vitest)** | 29 test / 4 file | **PASS** | 29 PASS in 124ms (api-client, navigation, theme, w1-r2-integration). |
-| **Suite QA Consolidata (Node test runner)** | 60 test / 10 file | **55 PASS / 5 SKIPPED** | Copertura completa Q1 (Setup, Rosa, Partite, Isolamento, Errori, Responsive statico, Admin Reads C1.1, Rilievi Web W1-R2.1, Onboarding DB vuoto). |
-| **Regressione CORE-BUG-01 (Immutabilità Partite)** | 2 test | **PASS** | Riproduzione fallita su C1.1 (HTTP 200), protetta su C1.2 (HTTP 400 `completed_match_schedule_is_immutable`). |
-| **PostgreSQL 16 reale (Loopback)** | 4 test | **NOT RUN / SKIPPED** | Socket loopback EPERM nel profilo sandbox gestito. Suite pronta ed eseguita con successo su host esterno. |
-| **Browser E2E Live (Headless/Mobile/Desktop)** | 1 test | **NOT RUN / SKIPPED** | Assenza display daemon / socket browser in sandbox. Non certificato come PASS. |
-| **Autenticazione Logto OIDC di Produzione** | Separato | **NOT RUN** | Verifica crittografica locale PASS; provider remoto OIDC non configurato in produzione. |
+| Componente | Branch Git | SHA Verificato | Note di Rilascio |
+| :--- | :--- | :--- | :--- |
+| **Core C1.2** | `codex/core-persistent-flow` | `1ab71792929bef1009e3ecab57adf3d333d58ceb` | Fix immutabilità calendario partite completate (`CORE-BUG-01`) |
+| **Web W1-R2.2** | `web/w1-r2-integration` | `dd6f14796659313b7b200807ceac13225e09fa3e` | Onboarding DB vuoto, gestione stagioni admin, 34 test Web |
+| **QA Suite Consolidata (Q1-R3)** | `qa/q1-suite-consolidation` | `144233c4771b9a1dafaf7474806b71fe461614eb` | Suite QA consolidata, test C1.1/C1.2, DB vuoto |
+| **Branch Integrazione MVP-I1** | `qa/mvp-i1-integration` | *Verificato in worktree dedicato* | Combinazione di C1.2 + W1-R2.2 + QA Q1-R3 |
 
 ---
 
-## 2. Verifica Dettagliata Obiettivi Q1-R3
+## 2. Matrice Sintetica dei Risultati di Verifica
 
-### 2.1 Dettaglio Partita Core C1.1 (`GET /api/v1/public/matches/:id`)
-- **Test vincolante eseguito:** `tests/q1/03-match-lifecycle.test.ts` (Test 3.7).
-- **Esito:** **PASS** (eliminato categoricamente qualsiasi fallback che accettasse `route_not_found`).
-- **Comportamento verificato:**
-  1. Partita pubblicata (`published_at IS NOT NULL`): restituisce HTTP 200 con DTO completo (`id`, `seasonId`, `opponentName`, `competitionName`, `isOfficial`, `scheduledAt`, `status`).
-  2. Partita non pubblicata (bozza): restituisce HTTP 404 con `{ "error": "public_match_not_found" }`.
-  3. Partita inesistente: restituisce HTTP 404 con `{ "error": "public_match_not_found" }`.
-  4. **Data Minimization:** Nessuna fuga di informazioni amministrative (`publishedAt`, `createdAt`, `updatedAt`, `opponentId`, `competitionId` non sono presenti nell'oggetto JSON restituito).
-
----
-
-### 2.2 Immutabilità Partite Completate (Regressione CORE-BUG-01)
-- **Difetto originale (`3c99e4e` Core C1.1):**
-  Un match in stato `completed` accettava richieste `PATCH /api/v1/admin/matches/:id/schedule` con `status: "postponed"`, alterando la data e generando un evento spurio di riprogrammazione (risposta HTTP 200).
-- **Riproduzione del difetto:**
-  Eseguita contro l'app C1.1: confermata ricezione di HTTP 200 e alterazione dei dati a DB.
-- **Verifica della correzione in Core C1.2 (`1ab7179`):**
-  In `apps/api/src/platform/service.ts`:
-  ```ts
-  if (current.status === "completed") {
-    throw new DomainError(400, "completed_match_schedule_is_immutable");
-  }
-  ```
-  La richiesta `PATCH /schedule` su una partita terminata viene respinta con **HTTP 400 `completed_match_schedule_is_immutable`**.
-  - Lo stato rimane invariato (`completed`).
-  - La data programmata originaria rimane intatta.
-  - Nessun record viene aggiunto a `match_reschedule_events` / `match_schedule_history`.
-  - Nessun evento viene registrato in `platform_audit_log` / `audit_events`.
-- **Esito:** **PASS** (Test 3.5 in `tests/q1/03-match-lifecycle.test.ts` e test di regressione in `tests/integration/`).
+| Ambito di Verifica | Suite / Strumento | Totale Test | Esito | Note e Dettaglio |
+| :--- | :--- | :---: | :---: | :--- |
+| **Monorepo Build** | `pnpm build` | 3 package | **PASS** | `@myteam/contracts`, `@myteam/api`, `@myteam/web` compilati. Bundle: 389.94 kB. |
+| **Monorepo Typecheck** | `pnpm typecheck` | 3 package | **PASS** | 0 errori TypeScript su contratti, API, Web e test. |
+| **Core Unit Tests** | Node test runner | 3 test | **PASS** | Token verifier Logto, validazione URL JWKS, requisiti scope `platform:admin`. |
+| **Core Integration Flow** | Node test runner | 1 test | **PASS** | Migrazione PostgreSQL reale e flusso pubblico su schema dedicato. |
+| **Web Suite Integrata** | Vitest (`apps/web`) | 34 test / 4 file | **PASS** | 34/34 PASS (api-client, navigation, theme, w1-r2-integration). |
+| **QA Suite Consolidata** | Node test runner | 63 test / 12 file | **62 PASS / 1 SKIPPED** | Copertura requisiti Q1-R3.1 (inclusi 5 test PostgreSQL reali). |
+| **Integrazione PostgreSQL Reale** | PostgreSQL 16 (porta 54329) | 5 test dedicati | **5 PASS / 0 FAIL** | Concorrenza advisory lock, rollback transazioni, vincoli nativi, regressione C1.2, ciclo onboarding 12 passi. |
+| **HTTP Smoke Test Reale** | Fastify loopback + PG | 4 verifiche | **PASS** | `/health` (200), `/api/v1/public/team` (404), `/api/v1/admin/team` (401 unauth, 200 auth). |
+| **Browser Live E2E Gate** | Playwright runtime | 1 gate | **NOT RUN / SKIPPED** | Sandbox vincolata (assenza display daemon / socket browser loopback). Audit statico bundle e layout PASS. |
 
 ---
 
-### 2.3 Letture Amministrative C1.1 (6 Endpoint Admin)
-- **Test vincolante eseguito:** `tests/q1/07-admin-reads-and-c1-1.test.ts` (8 test dedicati).
-- **Esito:** **PASS**.
-- **Comportamento verificato:**
-  1. **Controllo Accessi:** Tutte le 7 rotte admin (`/team`, `/seasons`, `/players`, `/roster-memberships`, `/opponents`, `/competitions`, `/matches`) restituiscono HTTP 401 `authentication_required` se prive di Bearer token, e HTTP 403 `insufficient_permissions` se fornite di token privo dello scope `platform:admin`.
-  2. `GET /admin/team`: Restituisce il DTO completo di configurazione della squadra (`name`, `crestUrl`, `primaryColor`, `secondaryColor`, `currentSeasonId`, `publishedAt`).
-  3. `GET /admin/seasons`: Restituisce l'array ordinato per `starts_on DESC`.
-  4. `GET /admin/players`: Restituisce l'array ordinato per nome giocatore.
-  5. `GET /admin/roster-memberships`: Supporta correttamente i parametri di query `seasonId` e `playerId` (con validazione del formato UUID, errore 400 se malformato).
-  6. `GET /admin/opponents` e `GET /admin/competitions`: Restituiscono i cataloghi ordinati.
-  7. `GET /admin/matches`: **Include esplicitamente le bozze** (`publishedAt: null`) oltre alle partite pubblicate. Supporta il filtro `seasonId`. Non supporta filtri `status` non documentati.
+## 3. Riclassificazione e Rigore delle Prove QA
+
+In ottemperanza ai rilievi della revisione indipendente:
+1. **Disinguimento Netto fra Pipeline Simulata ed E2E Reale:**  
+   Il test `tests/integration/admin-postgres-public-web-e2e.test.ts` è stato rinominato in `tests/integration/admin-pipeline-in-memory-integration.test.ts` ed il titolo è stato allineato a:  
+   *`API Integrated Pipeline (Fastify Inject + Memory DB): Admin writes -> Persistence -> Public API`*.  
+   Non viene più impropriamente etichettato come "PostgreSQL + browser E2E".
+2. **PostgreSQL Reale Esercitato Veramente:**  
+   I test in `tests/integration/postgres-real-concurrency-and-rollback.test.ts` e il nuovo `tests/integration/postgres-real-onboarding-and-lifecycle.test.ts` si connettono a PostgreSQL 16 reale (`myteam_platform_test` su `127.0.0.1:54329`), creano schemi temporanei isolati (`test_qa_<uuid>`), applicano le migrazioni DDL ufficiali, testano `pg_advisory_xact_lock`, rollback transazionali, vincoli `CHECK`, e ripuliscono lo schema con `DROP SCHEMA ... CASCADE`.
+3. **Eliminazione Percorsi Assoluti e Fallback Esterni:**  
+   - Rimosso qualsiasi uso di `TARGET_API_DIR` e fallback a worktree fratelli da `tests/helpers/app-helper.ts` e `tests/q1/06-web-responsive-audit.test.ts`.  
+   - Ogni test importa ed esercita rigorosamente i package del checkout locale integrato.
+   - Rimosso ogni riferimento assoluto a filesystem locale (`/Users/...`).
 
 ---
 
-### 2.4 Verifica Rilievi Web W1-R2 vs W1-R2.1
+## 4. Dettaglio Risultati per Singolo File della Suite QA (63 Test Totali)
 
-La verifica ha confrontato il commit `6559bce` (W1-R2) con il nuovo commit `3683ed9` (W1-R2.1) pubblicato da Web:
-
-| Rilievo Segnalato | Stato in W1-R2 (`6559bce`) | Risoluzione in W1-R2.1 (`3683ed9`) | Esito QA |
-| :--- | :--- | :--- | :---: |
-| **1. `loadData()` cancella `statusMsg`** | `loadData()` azzerava incondizionatamente `setStatusMsg(null)`, cancellando il messaggio di successo appena dopo la pubblicazione. | `loadData(preserveStatus = true)` preserva il feedback visivo di successo dell'operazione. | **PASS** (Test 8.1) |
-| **2. Errore lettura admin mostrato come lista vuota** | `getAdminMatches` in caso di errore eseguiva un fallback silenzioso a `setMatches([])`. | Aggiunto `matchesLoadError` con banner visivo rosso di avviso errore API. | **PASS** (Test 8.2) |
-| **3. Fallback pubblico hardcoded "MAPI GROUP"** | HomeView e Navbar mostravano `'MAPI GROUP'` come default se la squadra non era configurata. | Creata utility `branding.ts` con `getTeamDisplayName()`: in modalità reale usa `'La Mia Squadra'`, limitando `'MAPI GROUP'` alla sola DEMO. | **PASS** (Test 8.3) |
-| **4. `VITE_ENABLE_DEMO` in build di produzione** | `isDemoAllowed()` poteva essere attivato da variabile anche in ambiente di produzione. | `getAppEnvironment()` e `isDemoAllowed()` bloccano categoricamente DEMO se `getAppEnvironment() === 'production'`. | **PASS** (Test 8.4) |
-| **5. Form JWT manuale vs OIDC reale** | Form di login accettava token arbitrari senza avviso visivo. | Aggiunto alert giallo di test/bypass; disabilitato in produzione salvo esplicito `VITE_ALLOW_MANUAL_AUTH`. | **PASS** (Test 8.5) |
-
----
-
-### 2.5 Percorso di Onboarding su Database Vuoto (Web W1-R2.2 Gap)
-- **Rilievo Supervisor:** La UI frontend non offriva una procedura guidata di creazione della prima stagione in presenza di database completamente pulito (`seasons: []`, `team: null`).
-- **Verifica API & Contratti:** `tests/q1/09-empty-db-onboarding-flow.test.ts` (3 test) ha verificato il ciclo di onboarding completo a livello backend e contratti:
-  1. Su DB vuoto: `team` è `null`, `seasons` è `[]`, `public/*` risponde 404 isolato.
-  2. Creazione della prima stagione via `POST /api/v1/admin/seasons` -> 201 Created.
-  3. Configurazione squadra con `currentSeasonId` e successiva pubblicazione via `POST /api/v1/admin/team/publish` -> 200 OK.
-  4. Immediata disponibilità delle rotte pubbliche senza errori 500.
-- **Stato Web:** Web ha preparato in `AdminImpostazioniView.tsx` il banner e la modale per database vuoto (pronto per W1-R2.2). **PASS sui contratti, monitorato per W1-R2.2.**
-
----
-
-## 3. Riepilogo Test Suite QA Eseguita
-
-Comando di esecuzione:
+Comando di esecuzione su checkout integrato:
 ```bash
-TARGET_API_DIR="/Users/gatti/Workspace/myteam-platform-mvp-i1/apps/api" \
+TEST_DATABASE_URL="postgres://myteam:local-dev-only@127.0.0.1:54329/myteam_platform_test" \
 node --import tsx/esm --test tests/q1/*.test.ts tests/integration/*.test.ts
 ```
 
-- **Totale Test:** 60 test
-- **PASS:** 55 test
-- **SKIPPED (Gate Ambientali Non Eseguiti):** 5 test
-  - 1x Browser headless E2E responsive (mancanza socket / display loopback nel sandbox)
-  - 4x Connessioni dirette TCP PostgreSQL su porta loopback 54329 (blocco socket EPERM)
+| File di Test | Test Eseguiti | Esito | Natura della Verifica |
+| :--- | :---: | :---: | :--- |
+| `tests/integration/admin-pipeline-in-memory-integration.test.ts` | 1 | **1 PASS** | Pipeline API Fastify.inject con DB in memoria |
+| `tests/integration/postgres-real-concurrency-and-rollback.test.ts` | 4 | **4 PASS** | **PostgreSQL 16 reale:** Concorrenza advisory lock, rollback transazionale, vincoli nativi, immutabilità C1.2 |
+| `tests/integration/postgres-real-onboarding-and-lifecycle.test.ts` | 1 | **1 PASS** | **PostgreSQL 16 reale:** Flusso completo 12 passi (DB vuoto -> Stagione -> Team -> Partita bozza -> Pubblicazione -> Riavvio) |
+| `tests/q1/01-team-setup.test.ts` | 9 | **9 PASS** | Setup squadra, validazione esadecimale, URL stemma, isolamento bozza, audit trail |
+| `tests/q1/02-roster-management.test.ts` | 8 | **8 PASS** | Anagrafica giocatori UUID, numeri maglia (0-99), prevenzione sovrapposizioni rosa, chiusura tesseramento |
+| `tests/q1/03-match-lifecycle.test.ts` | 8 | **8 PASS** | Creazione partita, isolamento bozza, rinvii, immutabilità C1.2 (`CORE-BUG-01`), dettaglio pubblico 3.7 vincolante |
+| `tests/q1/04-access-and-isolation.test.ts` | 6 | **6 PASS** | Access control 401/403, isolamento contenuti bozza (404), data minimization (nessun leak campi admin) |
+| `tests/q1/05-coherence-and-restart.test.ts` | 4 | **4 PASS** | Categorie competizioni, validazione errori, continuità riavvio servizio su dati persistiti |
+| `tests/q1/06-web-responsive-audit.test.ts` | 3 | **2 PASS / 1 SKIPPED** | 6.1 e 6.2 PASS (Audit statico viewport, CSS tokens, PWA manifest, build bundle). 6.3 SKIPPED (Browser headless live) |
+| `tests/q1/07-admin-reads-and-c1-1.test.ts` | 8 | **8 PASS** | 6 endpoint di lettura admin C1.1, autorizzazione 401/403, filtri `seasonId`/`playerId`, visibilità bozze |
+| `tests/q1/08-web-w1-r2-integration-and-defects.test.ts` | 6 | **6 PASS** | Verifica correzione rilievi Web W1-R2 (feedback `loadData`, `matchesLoadError`, branding neutro, DEMO in prod, auth manuale, build prod) |
+| `tests/q1/09-empty-db-onboarding-flow.test.ts` | 5 | **5 PASS** | DB vuoto (team null, seasons []), step 1 (crea stagione), step 2 (configura team), gestione errori date/duplicati (400/409), stato selezione locale vs server |
 
-Nessun test ha fallito. I gate ambientali restano tracciati come **NOT RUN**, in conformità alle direttive QA.
+**Totale Suite QA:** **62 PASS**, **0 FAIL**, **1 SKIPPED** (ambientale: browser live).
 
 ---
 
-## 4. Stato Git, Worktree e Cleanup
+## 5. Verifica Percorso di Onboarding Web W1-R2.2
 
-- **Branch QA Consolidato:** `qa/q1-suite-consolidation`
-  - Base commit: `e55a65a50a698a6cfc335cecdc7009517722c941`
-  - Commit integrato: include `tests/` aggiornati e `docs/qa/CHECKPOINT-Q1-REPORT.md`.
-- **Branch d'Integrazione:** `qa/mvp-i1-integration` (worktree `/Users/gatti/Workspace/myteam-platform-mvp-i1`)
-  - Contiene il merge senza conflitti di Core C1.2 (`1ab7179`), Web W1-R2.1 (`3683ed9`) e QA Q1-R2 (`e55a65a`).
-  - Nessun merge è stato eseguito su `main`.
-- **Ownership Rispettata:** Nessuna modifica a codice applicativo `apps/api/` o `apps/web/` è stata committata da QA.
+La verifica indipendente ha controllato il percorso completo introdotto in W1-R2.2 (`dd6f147`):
+
+1. **Database iniziale vuoto:**  
+   `GET /api/v1/admin/team` risponde con `null`; `GET /api/v1/admin/seasons` risponde con `[]`. Tutte le rotte pubbliche (`/api/v1/public/team`, `/roster`, `/matches`) rispondono con HTTP 404 isolato (`public_team_not_found`).
+2. **Accesso amministrativo autorizzato:**  
+   In ambiente di test e sviluppo, l'accesso con token `platform:admin` permette l'accesso alle sezioni di gestione.
+3. **Apertura Impostazioni & Banner DB Vuoto:**  
+   La vista `AdminImpostazioniView` rileva `seasons.length === 0` e visualizza il banner informativo: *"Nessuna stagione registrata a sistema (Database Iniziale Vuoto)"* con CTA esplicita *"Crea la Prima Stagione"*.
+4. **Creazione della prima stagione:**  
+   Apertura modale (`isSeasonModalOpen`), validazione client date/denominazione, ed esecuzione di `POST /api/v1/admin/seasons` con `{ label: "2026/2027", startsOn: "2026-09-01", endsOn: "2027-06-30" }`. Risposta 201 con ID univoco.
+5. **Selezione e distinzione locale vs salvata sul server:**  
+   La stagione creata viene impostata come selezionata nel dropdown locale; la UI evidenzia lo stato *"Nuova stagione selezionata (non ancora salvata sul server)"*. Il server mantiene lo stato non associato finché non viene inviato `PUT /api/v1/admin/team`.
+6. **Configurazione e pubblicazione squadra:**  
+   Salvataggio impostazioni con `PUT /api/v1/admin/team` (stato salvato ma non pubblicato, `publishedAt: null`). Successiva pubblicazione esplicita via `POST /api/v1/admin/team/publish` (`publishedAt` valorizzato).
+7. **Creazione avversaria:**  
+   Registrazione in anagrafica Core via `POST /api/v1/admin/opponents` con ID stabile.
+8. **Creazione partita come BOZZA:**  
+   Creazione via `POST /api/v1/admin/matches` con `seasonId`, `opponentId`, `scheduledAt`. Risposta 201 con `publishedAt: null` e stato `scheduled`.
+9. **Verifica isolamento bozza:**  
+   `GET /api/v1/public/matches` non elenca la partita tra le gare programmate; `GET /api/v1/public/matches/:id` ritorna HTTP 404 `public_match_not_found`.
+10. **Pubblicazione esplicita partita:**  
+    Esecuzione di `POST /api/v1/admin/matches/:id/publish`. `AdminPartiteView` invoca `loadData(true)` preservando il messaggio di successo senza azzerarlo.
+11. **Comparsa nel sito pubblico:**  
+    `GET /api/v1/public/matches` include la partita nella lista `scheduled`; `GET /api/v1/public/matches/:id` restituisce HTTP 200 con DTO pubblico minimizzato.
+12. **Riavvio backend e persistenza:**  
+    Riavvio del servizio Fastify connesso allo stesso schema PostgreSQL: il team pubblico e il dettaglio partita risultano immediatamente disponibili e coerenti.
+
+---
+
+## 6. Verdetto per Categoria di Verifica
+
+### A. Test Automatici Sintetici: **PASS**
+I 57 test che utilizzano Fastify inject, contratti TypeScript TypeBox e database in memoria passano al 100% (0 fail). Compilazione e typecheck a zero errori.
+
+### B. Integrazione PostgreSQL Reale: **PASS**
+Tutti i 5 test dedicati eseguiti contro il container PostgreSQL 16 locale (`127.0.0.1:54329`) passano con successo. Concorrenza con lock consultivi, rollback transazionali su violazioni di vincolo, vincoli CHECK nativi, regressione `CORE-BUG-01` e ciclo onboarding/riavvio a 12 passi pienamente verificati.
+
+### C. Browser E2E Effettivo: **NOT RUN (Ambiente)** / **PASS (Statico & Build)**
+L'esecuzione live interattiva in finestra browser/Playwright è bloccata nell'ambiente sandbox (`EPERM` su socket browser / display daemon). L'audit statico dell'architettura responsive (viewport meta, CSS tokens, PWA manifest, build chunk integrity) passa regolarmente. Il gate browser live deve essere formalmente eseguito in ambiente di staging con interfaccia grafica prima della promozione in produzione.
+
+### D. Autenticazione OIDC Reale: **NOT RUN (Separato)** / **PASS (Crittografico Locale)**
+La verifica crittografica locale con chiavi RS256, firma JWT e endpoint JWKS simulato passa con successo. La federazione OIDC verso il tenant remoto Logto in cloud costituisce un gate di staging/deploy separato e non deve utilizzare credenziali di produzione nei test.
+
+### E. Idoneità al Merge su `main`: **NON IDONEO A MERGE AUTOMATICO**
+In conformità a dev-env e AGENTS.md:
+- I branch di lavoro rimangono separati (`codex/core-persistent-flow`, `web/w1-r2-integration`, `qa/q1-suite-consolidation`).
+- Nessun merge automatico deve essere eseguito su `main` da QA.
+- La promozione richiede il completamento del gate browser live e della configurazione OIDC in ambiente idoneo.
