@@ -345,4 +345,208 @@ describe('Demo and Security Environment Controls', () => {
       expect(emptyRes.data.length).toBe(0);
     }
   });
+  // =========================================================================
+  // Web W1-R2.2: Completamento Setup Iniziale MVP-I1 (Stagioni & DB Vuoto)
+  // =========================================================================
+
+  it('15. Initial empty DB: admin seasons list returns empty array without throwing or inventing fake seasons', async () => {
+    authService.setAuthToken('test-token-seasons');
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+
+    const res = await apiService.getAdminSeasons();
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(Array.isArray(res.data)).toBe(true);
+      expect(res.data.length).toBe(0);
+    }
+  });
+
+  it('16. Season Creation: POST /api/v1/admin/seasons creates a new season with label, startsOn and endsOn', async () => {
+    authService.setAuthToken('test-token-seasons');
+
+    const createdSeasonDto = {
+      id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+      label: '2026/2027',
+      startsOn: '2026-09-01',
+      endsOn: '2027-06-30',
+    };
+
+    let capturedReq: any = null;
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      capturedReq = { url, method: init?.method, body: JSON.parse(init?.body as string) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => createdSeasonDto,
+      };
+    });
+
+    const createPayload = {
+      label: '2026/2027',
+      startsOn: '2026-09-01',
+      endsOn: '2027-06-30',
+    };
+
+    const res = await apiService.createSeason(createPayload);
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.id).toBe(createdSeasonDto.id);
+      expect(res.data.label).toBe('2026/2027');
+      expect(res.data.startsOn).toBe('2026-09-01');
+      expect(res.data.endsOn).toBe('2027-06-30');
+    }
+
+    expect(capturedReq.method).toBe('POST');
+    expect(capturedReq.url).toContain('/api/v1/admin/seasons');
+    expect(capturedReq.body.label).toBe('2026/2027');
+    expect(capturedReq.body.startsOn).toBe('2026-09-01');
+    expect(capturedReq.body.endsOn).toBe('2027-06-30');
+  });
+
+  it('17. Season Creation Errors: maps 400 invalid_season_date, season_end_before_start, and 409 season_label_exists', async () => {
+    authService.setAuthToken('test-token-seasons');
+
+    // 17a. 400 invalid_season_date
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_season_date' }),
+    });
+    const resInvalidDate = await apiService.createSeason({
+      label: '2026/2027',
+      startsOn: 'bad-date',
+      endsOn: '2027-06-30',
+    });
+    expect(resInvalidDate.success).toBe(false);
+    if (!resInvalidDate.success) {
+      expect(resInvalidDate.status).toBe(400);
+      expect(resInvalidDate.message).toBe('Date di inizio o fine stagione non valide (formato AAAA-MM-GG).');
+    }
+
+    // 17b. 400 season_end_before_start
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'season_end_before_start' }),
+    });
+    const resEndBeforeStart = await apiService.createSeason({
+      label: '2026/2027',
+      startsOn: '2027-06-30',
+      endsOn: '2026-09-01',
+    });
+    expect(resEndBeforeStart.success).toBe(false);
+    if (!resEndBeforeStart.success) {
+      expect(resEndBeforeStart.status).toBe(400);
+      expect(resEndBeforeStart.message).toBe('La data di conclusione della stagione non può precedere la data di inizio.');
+    }
+
+    // 17c. 409 season_label_exists
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'season_label_exists' }),
+    });
+    const resDuplicate = await apiService.createSeason({
+      label: '2026/2027',
+      startsOn: '2026-09-01',
+      endsOn: '2027-06-30',
+    });
+    expect(resDuplicate.success).toBe(false);
+    if (!resDuplicate.success) {
+      expect(resDuplicate.status).toBe(409);
+      expect(resDuplicate.message).toBe('Una stagione con questa denominazione esiste già.');
+    }
+  });
+
+  it('18. Team Setup with Season: sets currentSeasonId on empty DB team via PUT /api/v1/admin/team and preserves draft state', async () => {
+    authService.setAuthToken('test-token-setup');
+
+    const seasonId = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+
+    let capturedPutBody: any = null;
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      if (init?.method === 'PUT') {
+        capturedPutBody = JSON.parse(init.body as string);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 1,
+            name: capturedPutBody.name,
+            crestUrl: capturedPutBody.crestUrl,
+            primaryColor: capturedPutBody.primaryColor,
+            secondaryColor: capturedPutBody.secondaryColor,
+            currentSeasonId: capturedPutBody.currentSeasonId,
+            publishedAt: null, // Still in draft
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+
+    const configureRes = await apiService.configureTeam({
+      name: 'Polisportiva Aurora',
+      crestUrl: 'https://example.com/crest.png',
+      primaryColor: '#1E3A8A',
+      secondaryColor: '#38BDF8',
+      currentSeasonId: seasonId,
+    });
+
+    expect(configureRes.success).toBe(true);
+    if (configureRes.success) {
+      expect(configureRes.data.currentSeasonId).toBe(seasonId);
+      expect(configureRes.data.publishedAt).toBeNull(); // Configuration saved does NOT publish
+      expect(configureRes.data.name).toBe('Polisportiva Aurora');
+    }
+    expect(capturedPutBody.currentSeasonId).toBe(seasonId);
+    expect(capturedPutBody.name).toBe('Polisportiva Aurora');
+  });
+
+  it('19. End-to-End Setup to Match Creation Flow: once currentSeasonId is assigned, match creation uses it', async () => {
+    authService.setAuthToken('test-token-match-flow');
+
+    const seasonId = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+    const opponentId = '99999999-9999-9999-9999-999999999999';
+
+    // Verify creating match with the configured seasonId
+    let capturedMatchReq: any = null;
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      capturedMatchReq = JSON.parse(init.body as string);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'match-1234-uuid',
+          seasonId: capturedMatchReq.seasonId,
+          opponentId: capturedMatchReq.opponentId,
+          competitionId: null,
+          isOfficial: true,
+          scheduledAt: '2026-10-15T15:00:00.000Z',
+          status: 'scheduled',
+          publishedAt: null,
+        }),
+      };
+    });
+
+    const createMatchRes = await apiService.createMatch({
+      seasonId: seasonId,
+      opponentId: opponentId,
+      competitionId: null,
+      isOfficial: true,
+      scheduledAt: '2026-10-15T15:00:00.000Z',
+      status: 'scheduled',
+    });
+
+    expect(createMatchRes.success).toBe(true);
+    if (createMatchRes.success) {
+      expect(createMatchRes.data.seasonId).toBe(seasonId);
+      expect(createMatchRes.data.publishedAt).toBeNull(); // Draft match created
+    }
+    expect(capturedMatchReq.seasonId).toBe(seasonId);
+  });
 });
