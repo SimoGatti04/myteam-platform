@@ -59,9 +59,9 @@ export const AdminRosaView: React.FC<{
     }
   }, [openNewPlayerModal]);
 
-  const loadData = async () => {
+  const loadData = async (preserveStatus = false) => {
     setLoading(true);
-    setStatusMsg(null);
+    if (!preserveStatus) setStatusMsg(null);
 
     if (isDemoData) {
       const demoSeasons = apiService.getDemoSeasons();

@@ -1,3 +1,4 @@
+import { getTeamDisplayName } from '../utils/branding';
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
@@ -231,7 +232,7 @@ export const Navbar: React.FC = () => {
           )}
           <div>
             <div style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: '-0.02em', color: '#ffffff', lineHeight: 1.2 }}>
-              {publicTeam?.name || 'MAPI GROUP'}
+              {getTeamDisplayName(publicTeam?.name, isDemoData)}
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span>Prima Squadra</span>

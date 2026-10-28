@@ -1,3 +1,4 @@
+import { getTeamDisplayName } from '../utils/branding';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { apiService } from '../services/api';
@@ -241,7 +242,7 @@ export const HomeView: React.FC = () => {
               lineHeight: 1.1,
               marginBottom: '6px',
             }}>
-              {publicTeam?.name || 'MAPI GROUP'}
+              {getTeamDisplayName(publicTeam?.name, isDemoData)}
             </h1>
             <p style={{
               fontSize: '0.9rem',
@@ -340,7 +341,7 @@ export const HomeView: React.FC = () => {
             }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#ffffff' }}>
-                  {publicTeam?.name || 'MAPI GROUP'}
+                  {getTeamDisplayName(publicTeam?.name, isDemoData)}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Squadra Ufficiale</div>
               </div>
@@ -436,7 +437,7 @@ export const HomeView: React.FC = () => {
                 {secondaryMatch.competitionName || (secondaryMatch.isOfficial ? 'Gara Ufficiale' : 'Amichevole')} • {formatMatchStatus(secondaryMatch.status)}
               </div>
               <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ffffff' }}>
-                {publicTeam?.name || 'MAPI GROUP'} vs {secondaryMatch.opponentName}
+                {getTeamDisplayName(publicTeam?.name, isDemoData)} vs {secondaryMatch.opponentName}
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--brand-secondary)', marginTop: '2px' }}>
                 {secondaryMatch.scheduledAt ? formatDateTime(secondaryMatch.scheduledAt) : 'Data da definire'}

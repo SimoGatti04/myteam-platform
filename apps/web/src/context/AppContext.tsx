@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { PublicTeamDto, AdminTeamDto } from '@myteam/contracts';
-import { apiService, type ApiResult } from '../services/api';
+import { apiService } from '../services/api';
 import { authService } from '../services/auth';
 import { deriveThemeTokens, applyThemeToDocument, NEUTRAL_THEME, type ThemeTokens, type TokenOverrides } from '../services/theme';
-import { isDemoAllowed } from '../utils/env';
+import { isDemoAllowed, isManualAuthAllowed } from '../utils/env';
 
 export type DataMode = 'real' | 'demo';
 
@@ -18,6 +18,7 @@ interface AppContextType {
   setDataMode: (mode: DataMode) => void;
   isDemoData: boolean;
   demoAllowed: boolean;
+  manualAuthAllowed: boolean;
 
   // Navigazione
   activeTab: 'home' | 'partite' | 'rosa' | 'statistiche' | 'votazioni';
@@ -64,6 +65,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const demoAllowed = isDemoAllowed();
+  const manualAuthAllowed = isManualAuthAllowed();
 
   // Determinazione iniziale modalità:
   // In produzione: SEMPRE e RIGOROSAMENTE 'real'. Nessun demo consentito.
@@ -253,6 +255,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Autenticazione Admin
   const loginAdminWithToken = async (token: string): Promise<{ success: boolean; error?: string }> => {
+    if (!manualAuthAllowed) {
+      return {
+        success: false,
+        error: 'L\'inserimento manuale del Bearer token è disabilitato in questo ambiente. Configurare il provider Logto OIDC.',
+      };
+    }
     if (!token || token.trim().length === 0) {
       return { success: false, error: 'Il token Bearer non può essere vuoto.' };
     }
@@ -296,6 +304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDataMode,
         isDemoData,
         demoAllowed,
+        manualAuthAllowed,
         activeTab,
         setActiveTab,
         adminMode,

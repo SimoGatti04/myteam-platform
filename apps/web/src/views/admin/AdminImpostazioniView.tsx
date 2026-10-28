@@ -302,7 +302,7 @@ export const AdminImpostazioniView: React.FC = () => {
               </label>
               <input
                 type="text"
-                placeholder="es. MAPI GROUP"
+                placeholder="es. Nome Società Sportiva"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 style={{

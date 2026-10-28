@@ -1,3 +1,4 @@
+import { getTeamDisplayName } from '../utils/branding';
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export const VotazioniView: React.FC = () => {
-  const { dataMode, setDataMode, isDemoData } = useApp();
+  const { dataMode, setDataMode, isDemoData, publicTeam } = useApp();
 
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [demoVoteSuccess, setDemoVoteSuccess] = useState<boolean>(false);
@@ -159,7 +160,7 @@ export const VotazioniView: React.FC = () => {
               Votazione Aperta (Demo)
             </span>
             <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff', margin: '4px 0 0 0' }}>
-              Player of the Match • MAPI GROUP vs Oratorio San Luigi
+              Player of the Match • {getTeamDisplayName(publicTeam?.name, isDemoData)} vs Oratorio San Luigi
             </h3>
           </div>
 

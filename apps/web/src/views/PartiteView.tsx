@@ -1,3 +1,4 @@
+import { getTeamDisplayName } from '../utils/branding';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { apiService } from '../services/api';
@@ -342,7 +343,7 @@ export const PartiteView: React.FC = () => {
                     padding: '4px 0',
                   }}>
                     <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#ffffff' }}>
-                      {publicTeam?.name || 'MAPI GROUP'} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>vs</span> {match.opponentName}
+                      {getTeamDisplayName(publicTeam?.name, isDemoData)} <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>vs</span> {match.opponentName}
                     </div>
 
                     {match.isDemo && match.demoDetail?.homeScore !== undefined ? (
@@ -557,7 +558,7 @@ export const PartiteView: React.FC = () => {
             {/* Titolo e Squadre */}
             <div style={{ textAlign: 'center', padding: '12px 0' }}>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff', marginBottom: '6px' }}>
-                {publicTeam?.name || 'MAPI GROUP'} vs {activeSelectedMatch.opponentName}
+                {getTeamDisplayName(publicTeam?.name, isDemoData)} vs {activeSelectedMatch.opponentName}
               </div>
               <div style={{ fontSize: '0.85rem', color: 'var(--brand-secondary)' }}>
                 {activeSelectedMatch.scheduledAt ? formatDateTime(activeSelectedMatch.scheduledAt) : 'Data da definire'}

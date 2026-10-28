@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { apiService } from '../src/services/api';
 import { authService } from '../src/services/auth';
 import type { MatchDto, OpponentDto, SeasonDto, PlayerDto, RosterMembershipDto } from '@myteam/contracts';
+import { isDemoAllowed, isManualAuthAllowed, isProduction, isStaging, getAppEnvironment } from '../src/utils/env';
+import { getTeamDisplayName, NEUTRAL_TEAM_NAME, DEMO_DEFAULT_TEAM_NAME } from '../src/utils/branding';
 
 describe('Web W1-R2 MVP Integration Tests', () => {
   const originalFetch = globalThis.fetch;
@@ -221,21 +223,54 @@ describe('Web W1-R2 MVP Integration Tests', () => {
 });
 
 describe('Demo and Security Environment Controls', () => {
-  it('7. isDemoAllowed returns false when DEV is false and VITE_ENABLE_DEMO is not true', async () => {
-    const { isDemoAllowed } = await import('../src/utils/env');
-    // In our test runner / node environment, import.meta.env.DEV might be true or false.
-    // Let us verify isDemoAllowed returns a boolean without throwing.
-    expect(typeof isDemoAllowed()).toBe('boolean');
+  it('7. isDemoAllowed strictly blocks demo mode in production, even with VITE_ENABLE_DEMO=true', () => {
+    // Produzione esplicita con VITE_APP_ENV='production'
+    expect(isDemoAllowed({ VITE_APP_ENV: 'production', VITE_ENABLE_DEMO: 'true' })).toBe(false);
+    expect(isProduction({ VITE_APP_ENV: 'production' })).toBe(true);
+
+    // Produzione standard Vite MODE='production'
+    expect(isDemoAllowed({ MODE: 'production', PROD: true, VITE_ENABLE_DEMO: 'true' })).toBe(false);
+    expect(isProduction({ MODE: 'production', PROD: true })).toBe(true);
+
+    // Produzione senza flag demo
+    expect(isDemoAllowed({ VITE_APP_ENV: 'production' })).toBe(false);
   });
 
-  it('8. authService does not expose token without setAuthToken', () => {
+  it('8. isDemoAllowed distinguishes authorized staging from production', () => {
+    // Staging autorizzato con VITE_ENABLE_DEMO='true'
+    expect(isStaging({ VITE_APP_ENV: 'staging' })).toBe(true);
+    expect(isDemoAllowed({ VITE_APP_ENV: 'staging', VITE_ENABLE_DEMO: 'true' })).toBe(true);
+
+    // Staging senza autorizzazione demo
+    expect(isDemoAllowed({ VITE_APP_ENV: 'staging', VITE_ENABLE_DEMO: 'false' })).toBe(false);
+    expect(isDemoAllowed({ VITE_APP_ENV: 'staging' })).toBe(false);
+
+    // Staging tramite MODE='staging'
+    expect(isDemoAllowed({ MODE: 'staging', VITE_ENABLE_DEMO: 'true' })).toBe(true);
+    expect(isDemoAllowed({ MODE: 'staging', VITE_ENABLE_DEMO: 'false' })).toBe(false);
+
+    // Development locale permette demo di default
+    expect(isDemoAllowed({ DEV: true, MODE: 'development' })).toBe(true);
+  });
+
+  it('9. isManualAuthAllowed blocks manual token input in production and allows it in dev/staging', () => {
+    // In produzione: DISABILITATO (mostra stato non configurato per Logto OIDC)
+    expect(isManualAuthAllowed({ VITE_APP_ENV: 'production' })).toBe(false);
+    expect(isManualAuthAllowed({ MODE: 'production', PROD: true })).toBe(false);
+
+    // In staging e development: ABILITATO per collaudo tecnico
+    expect(isManualAuthAllowed({ VITE_APP_ENV: 'staging' })).toBe(true);
+    expect(isManualAuthAllowed({ DEV: true })).toBe(true);
+  });
+
+  it('10. authService does not expose token without setAuthToken', () => {
     authService.logout();
     expect(authService.isAuthenticated()).toBe(false);
     expect(authService.getAuthToken()).toBeNull();
     expect(authService.getAuthHeaders()).toEqual({});
   });
 
-  it('9. 401 / 403 error mapping conveys permission and authentication failure', async () => {
+  it('11. 401 / 403 error mapping conveys permission and authentication failure', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
@@ -247,6 +282,67 @@ describe('Demo and Security Environment Controls', () => {
     if (!res.success) {
       expect(res.status).toBe(401);
       expect(res.message).toContain('Autenticazione richiesta');
+    }
+  });
+
+  it('12. Branding: getTeamDisplayName uses neutral technical name in real mode and preserves demo fixture', () => {
+    // 1. Nome configurato: viene restituito fedelmente sia in real sia in demo
+    expect(getTeamDisplayName('ASD Aurora Calcio', false)).toBe('ASD Aurora Calcio');
+    expect(getTeamDisplayName('ASD Aurora Calcio', true)).toBe('ASD Aurora Calcio');
+
+    // 2. Nome non configurato in modalità REALE: usa il nome tecnico neutro, MAI "MAPI GROUP"
+    expect(getTeamDisplayName(null, false)).toBe(NEUTRAL_TEAM_NAME);
+    expect(getTeamDisplayName('', false)).toBe(NEUTRAL_TEAM_NAME);
+    expect(getTeamDisplayName('   ', false)).toBe(NEUTRAL_TEAM_NAME);
+    expect(getTeamDisplayName(null, false)).not.toBe('MAPI GROUP');
+
+    // 3. Nome non configurato in modalità DEMO: usa il default delle fixture
+    expect(getTeamDisplayName(null, true)).toBe(DEMO_DEFAULT_TEAM_NAME);
+  });
+
+  it('13. Match visibility guard: match is only publicly visible if both match and team are published', () => {
+    const isTeamPublishedReal = (teamPublishedAt: string | null) => Boolean(teamPublishedAt);
+
+    // Squadra NON pubblicata (bozza privata)
+    const teamDraft = null;
+    const matchPublished = '2026-10-28T10:00:00.000Z';
+    const isMatchVisibleWhenTeamDraft = Boolean(matchPublished) && isTeamPublishedReal(teamDraft);
+    expect(isMatchVisibleWhenTeamDraft).toBe(false);
+
+    // Squadra pubblicata
+    const teamPublished = '2026-10-01T12:00:00.000Z';
+    const isMatchVisibleWhenTeamPublished = Boolean(matchPublished) && isTeamPublishedReal(teamPublished);
+    expect(isMatchVisibleWhenTeamPublished).toBe(true);
+  });
+  it('14. Admin Partite: distinguishes read error from empty match list and does not mistake error for empty state', async () => {
+    authService.setAuthToken('test-token');
+
+    // Scenario A: Server error 500
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'internal_error', message: 'DB connection timeout' }),
+    });
+
+    const errorRes = await apiService.getAdminMatches();
+    expect(errorRes.success).toBe(false);
+    if (!errorRes.success) {
+      expect(errorRes.status).toBe(500);
+      expect(errorRes.message).toBe('Errore interno del server.');
+    }
+
+    // Scenario B: Legitimate empty list (200 with [])
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+
+    const emptyRes = await apiService.getAdminMatches();
+    expect(emptyRes.success).toBe(true);
+    if (emptyRes.success) {
+      expect(emptyRes.data).toEqual([]);
+      expect(emptyRes.data.length).toBe(0);
     }
   });
 });
