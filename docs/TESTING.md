@@ -1,15 +1,19 @@
-# Test e verifiche
+# Verifica
 
-## Comandi locali
+## Comandi
 
-- `pnpm check` esegue build, typecheck TypeScript e suite automatica.
-- `pnpm test` avvia i test con il runner integrato di Node tramite `tsx`.
-- Per il controllo HTTP manuale, avviare `pnpm dev` e richiamare `curl --fail http://127.0.0.1:3000/health`.
+- `pnpm check`: build, typecheck (incluse le prove API) e test unitari.
+- `pnpm db:up`: avvia PostgreSQL 16 locale, loopback-only.
+- `pnpm db:migrate`: applica le migrazioni versionate.
+- `pnpm dev`: avvia l'API locale; default `127.0.0.1:3000`.
+- `pnpm test:integration`: test reale su PostgreSQL tramite `TEST_DATABASE_URL`.
 
-## C0
+## Test PostgreSQL
 
-I test verificano il contratto liveness, la risposta HTTP prodotta da Fastify e la validazione della configurazione. Non verificano ancora database, autenticazione, API di prodotto o deployment.
+1. `cp .env.example .env`
+2. `pnpm db:up`
+3. `pnpm test:integration`
 
-## Test persistenti futuri
+Il runner accetta solo host loopback e un database con suffisso `_test`; crea uno schema casuale isolato, applica e riapplica le migrazioni, poi rimuove solo quello schema. Non usa `DATABASE_URL` come fallback. Il Compose crea `myteam_platform_test` alla prima inizializzazione del volume. I test devono usare la stessa major version del deployment previsto (`postgres:16`).
 
-Le semantiche che dipendono dal database devono essere testate contro PostgreSQL, non simulate solo con mock. I test con servizi devono dichiarare prerequisiti, versione immagine e modalità di avvio/arresto; i comandi locali ordinari non devono mutare infrastruttura remota né dati di produzione.
+Nessuna prova richiede Logto reale: il test JWT usa una chiave e un JWKS locale; il test di flusso inietta un verificatore deterministico. Prima del deploy resta da verificare la configurazione effettiva di Logto e del database.

@@ -9,9 +9,13 @@
   },
   "scripts": {
     "dev": "pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api dev",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose stop postgres",
+    "db:migrate": "pnpm --filter @myteam/api migrate",
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck",
-    "test": "pnpm --filter @myteam/contracts build && pnpm exec tsx --test tests/api/*.test.ts",
+    "test": "pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api test && pnpm exec tsx --test tests/api/*.test.ts",
+    "test:integration": "pnpm --filter @myteam/api test:integration",
     "check": "pnpm build && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
