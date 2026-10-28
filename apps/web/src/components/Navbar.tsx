@@ -33,6 +33,7 @@ export const Navbar: React.FC = () => {
     dataMode,
     setDataMode,
     isDemoData,
+    demoAllowed,
     isAuthenticated,
     logoutAdmin,
     setSelectedMatchId,
@@ -76,20 +77,59 @@ export const Navbar: React.FC = () => {
         borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          {isDemoData ? (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              backgroundColor: 'rgba(245, 158, 11, 0.2)',
-              color: '#f59e0b',
-              padding: '2px 8px',
-              borderRadius: '9999px',
-              fontWeight: 700,
-              border: '1px solid rgba(245, 158, 11, 0.4)',
-            }}>
-              <Sparkles size={12} /> MODALITÀ DIMOSTRATIVA (MOCK DI SVILUPPO)
-            </span>
+          {demoAllowed ? (
+            <>
+              {isDemoData ? (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                  color: '#f59e0b',
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  fontWeight: 700,
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                }}>
+                  <Sparkles size={12} /> MODALITÀ DIMOSTRATIVA (MOCK DI SVILUPPO)
+                </span>
+              ) : (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                  color: '#10b981',
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  fontWeight: 600,
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                }}>
+                  <Globe size={12} /> DATI REALI (Core Platform API)
+                </span>
+              )}
+
+              {/* Toggle modalità Dati REALE / DEMO esplicito (solo se demoAllowed) */}
+              <button
+                onClick={() => setDataMode(dataMode === 'real' ? 'demo' : 'real')}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-dim)',
+                  fontSize: '0.7rem',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                title="Passa tra chiamate API reali e dati dimostrativi di sviluppo"
+              >
+                <RefreshCw size={10} />
+                Passa a {dataMode === 'real' ? 'Demo' : 'Reale'}
+              </button>
+            </>
           ) : (
             <span style={{
               display: 'inline-flex',
@@ -102,30 +142,9 @@ export const Navbar: React.FC = () => {
               fontWeight: 600,
               border: '1px solid rgba(16, 185, 129, 0.3)',
             }}>
-              <Globe size={12} /> DATI REALI (Core Platform API)
+              <Globe size={12} /> myteam-platform • Produzione
             </span>
           )}
-
-          {/* Toggle modalità Dati REALE / DEMO esplicito */}
-          <button
-            onClick={() => setDataMode(dataMode === 'real' ? 'demo' : 'real')}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-dim)',
-              fontSize: '0.7rem',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-            title="Passa tra chiamate API reali e dati dimostrativi di sviluppo"
-          >
-            <RefreshCw size={10} />
-            Passa a {dataMode === 'real' ? 'Demo' : 'Reale'}
-          </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -312,22 +331,26 @@ export const Navbar: React.FC = () => {
               >
                 <Users size={16} /> Rosa
               </button>
-              <button
-                onClick={() => handleAdminNavClick('votazioni')}
-                style={{
-                  ...navButtonStyle(adminTab === 'votazioni'),
-                }}
-              >
-                <Vote size={16} /> Votazioni
-              </button>
-              <button
-                onClick={() => handleAdminNavClick('contenuti')}
-                style={{
-                  ...navButtonStyle(adminTab === 'contenuti'),
-                }}
-              >
-                <Layers size={16} /> Contenuti
-              </button>
+              {isDemoData && (
+                <>
+                  <button
+                    onClick={() => handleAdminNavClick('votazioni')}
+                    style={{
+                      ...navButtonStyle(adminTab === 'votazioni'),
+                    }}
+                  >
+                    <Vote size={16} /> Votazioni (Demo)
+                  </button>
+                  <button
+                    onClick={() => handleAdminNavClick('contenuti')}
+                    style={{
+                      ...navButtonStyle(adminTab === 'contenuti'),
+                    }}
+                  >
+                    <Layers size={16} /> Contenuti (Demo)
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handleAdminNavClick('impostazioni')}
                 style={{
@@ -396,12 +419,16 @@ export const Navbar: React.FC = () => {
               <button onClick={() => handleAdminNavClick('rosa')} style={mobileNavButtonStyle(adminTab === 'rosa')}>
                 <Users size={18} /> Rosa
               </button>
-              <button onClick={() => handleAdminNavClick('votazioni')} style={mobileNavButtonStyle(adminTab === 'votazioni')}>
-                <Vote size={18} /> Votazioni
-              </button>
-              <button onClick={() => handleAdminNavClick('contenuti')} style={mobileNavButtonStyle(adminTab === 'contenuti')}>
-                <Layers size={18} /> Contenuti
-              </button>
+              {isDemoData && (
+                <>
+                  <button onClick={() => handleAdminNavClick('votazioni')} style={mobileNavButtonStyle(adminTab === 'votazioni')}>
+                    <Vote size={18} /> Votazioni (Demo)
+                  </button>
+                  <button onClick={() => handleAdminNavClick('contenuti')} style={mobileNavButtonStyle(adminTab === 'contenuti')}>
+                    <Layers size={18} /> Contenuti (Demo)
+                  </button>
+                </>
+              )}
               <button onClick={() => handleAdminNavClick('impostazioni')} style={mobileNavButtonStyle(adminTab === 'impostazioni')}>
                 <Settings size={18} /> Impostazioni
               </button>

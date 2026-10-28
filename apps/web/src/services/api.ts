@@ -11,6 +11,7 @@ import type {
   PlayerDto,
   RosterMembershipCreateRequest,
   RosterMembershipDto,
+  RosterMembershipEndRequest,
   OpponentCreateRequest,
   OpponentDto,
   CompetitionCreateRequest,
@@ -18,12 +19,15 @@ import type {
   MatchCreateRequest,
   MatchSchedulePatchRequest,
   MatchDto,
+  AdminRosterMembershipsQuery,
+  AdminMatchesQuery,
 } from '@myteam/contracts';
 import { authService } from './auth';
 import {
   DEMO_PUBLIC_TEAM,
   DEMO_ADMIN_TEAM,
   DEMO_SEASON,
+  DEMO_PAST_SEASON,
   DEMO_COMPETITIONS,
   DEMO_OPPONENTS,
   DEMO_PLAYERS,
@@ -101,17 +105,34 @@ class ApiService {
 
   private mapErrorMessage(status: number, code: string): string {
     switch (status) {
+      case 400:
+        if (code === 'roster_membership_outside_season') {
+          return 'Le date di appartenenza devono ricadere nell\'intervallo della stagione.';
+        }
+        if (code === 'roster_membership_period_overlaps') {
+          return 'Il periodo di appartenenza si sovrappone a uno già esistente per questo giocatore.';
+        }
+        if (code === 'membership_end_before_start') {
+          return 'La data di fine appartenenza non può precedere la data di inizio.';
+        }
+        return `Parametri non validi (${code}).`;
       case 401:
-        return 'Autenticazione richiesta. Effettua l\'accesso.';
+        return 'Autenticazione richiesta. Effettua l\'accesso con token autorizzato.';
       case 403:
-        return 'Accesso negato. Permessi insufficienti.';
+        return 'Accesso negato. Permessi insufficienti per questa operazione.';
       case 404:
         if (code === 'public_team_not_found') {
           return 'Squadra non ancora pubblicata. Il sito è attualmente in bozza.';
         }
-        return 'Risorsa non trovata.';
+        if (code === 'public_match_not_found') {
+          return 'Partita non trovata o non ancora pubblicata.';
+        }
+        return `Risorsa non trovata (${code}).`;
       case 409:
-        return 'Conflitto nei dati inviati.';
+        if (code === 'roster_membership_already_ended') {
+          return 'L\'appartenenza del giocatore è già stata terminata.';
+        }
+        return `Conflitto nei dati inviati (${code}).`;
       case 503:
         return 'Servizio momentaneamente non disponibile o configurazione incompleta.';
       default:
@@ -123,7 +144,7 @@ class ApiService {
   }
 
   // ==========================================
-  // LETTURE PUBBLICHE REALI (Core Platform C0/C1)
+  // LETTURE PUBBLICHE REALI (Core Platform C0/C1/C1.1)
   // ==========================================
 
   async getPublicTeam(): Promise<ApiResult<PublicTeamDto>> {
@@ -138,8 +159,12 @@ class ApiService {
     return this.request<PublicMatchesDto>('/api/v1/public/matches');
   }
 
+  async getPublicMatch(id: string): Promise<ApiResult<PublicMatchDto>> {
+    return this.request<PublicMatchDto>(`/api/v1/public/matches/${encodeURIComponent(id)}`);
+  }
+
   // ==========================================
-  // AMMINISTRAZIONE REALE (Core Platform C0/C1)
+  // AMMINISTRAZIONE REALE (Core Platform C1.1)
   // Richiedono Bearer token Logto
   // ==========================================
 
@@ -161,12 +186,20 @@ class ApiService {
     });
   }
 
+  async getAdminSeasons(): Promise<ApiResult<SeasonDto[]>> {
+    return this.request<SeasonDto[]>('/api/v1/admin/seasons');
+  }
+
   async createSeason(req: SeasonCreateRequest): Promise<ApiResult<SeasonDto>> {
     return this.request<SeasonDto>('/api/v1/admin/seasons', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
+  }
+
+  async getAdminPlayers(): Promise<ApiResult<PlayerDto[]>> {
+    return this.request<PlayerDto[]>('/api/v1/admin/players');
   }
 
   async createPlayer(req: PlayerCreateRequest): Promise<ApiResult<PlayerDto>> {
@@ -177,12 +210,33 @@ class ApiService {
     });
   }
 
+  async getAdminRosterMemberships(query?: AdminRosterMembershipsQuery): Promise<ApiResult<RosterMembershipDto[]>> {
+    const params = new URLSearchParams();
+    if (query?.seasonId) params.set('seasonId', query.seasonId);
+    if (query?.playerId) params.set('playerId', query.playerId);
+    const qs = params.toString();
+    const url = qs ? `/api/v1/admin/roster-memberships?${qs}` : '/api/v1/admin/roster-memberships';
+    return this.request<RosterMembershipDto[]>(url);
+  }
+
   async createRosterMembership(req: RosterMembershipCreateRequest): Promise<ApiResult<RosterMembershipDto>> {
     return this.request<RosterMembershipDto>('/api/v1/admin/roster-memberships', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
+  }
+
+  async endRosterMembership(id: string, req: RosterMembershipEndRequest): Promise<ApiResult<RosterMembershipDto>> {
+    return this.request<RosterMembershipDto>(`/api/v1/admin/roster-memberships/${encodeURIComponent(id)}/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  }
+
+  async getAdminOpponents(): Promise<ApiResult<OpponentDto[]>> {
+    return this.request<OpponentDto[]>('/api/v1/admin/opponents');
   }
 
   async createOpponent(req: OpponentCreateRequest): Promise<ApiResult<OpponentDto>> {
@@ -193,12 +247,24 @@ class ApiService {
     });
   }
 
+  async getAdminCompetitions(): Promise<ApiResult<CompetitionDto[]>> {
+    return this.request<CompetitionDto[]>('/api/v1/admin/competitions');
+  }
+
   async createCompetition(req: CompetitionCreateRequest): Promise<ApiResult<CompetitionDto>> {
     return this.request<CompetitionDto>('/api/v1/admin/competitions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
+  }
+
+  async getAdminMatches(query?: AdminMatchesQuery): Promise<ApiResult<MatchDto[]>> {
+    const params = new URLSearchParams();
+    if (query?.seasonId) params.set('seasonId', query.seasonId);
+    const qs = params.toString();
+    const url = qs ? `/api/v1/admin/matches?${qs}` : '/api/v1/admin/matches';
+    return this.request<MatchDto[]>(url);
   }
 
   async createMatch(req: MatchCreateRequest): Promise<ApiResult<MatchDto>> {
@@ -226,6 +292,7 @@ class ApiService {
   // ==========================================
   // FORNITURA DATI DEMO ESPLICITA
   // Richiamata SOLO ed ESCLUSIVAMENTE quando dataMode === 'demo'
+  // in ambienti di sviluppo autorizzati.
   // ==========================================
 
   getDemoPublicTeam(): PublicTeamDto {
@@ -239,7 +306,7 @@ class ApiService {
   getDemoRoster(): PublicRosterDto {
     return {
       season: { id: DEMO_SEASON.id, label: DEMO_SEASON.label },
-      players: DEMO_ROSTER_MEMBERS.map(m => ({
+      players: DEMO_ROSTER_MEMBERS.filter(m => m.isActive).map(m => ({
         id: m.playerId,
         displayName: m.displayName,
         jerseyNumber: m.jerseyNumber,
@@ -271,6 +338,25 @@ class ApiService {
     return { scheduled, toBeScheduled };
   }
 
+  getDemoAdminMatches(seasonId?: string): MatchDto[] {
+    const list: MatchDto[] = [];
+    for (const m of DEMO_MATCH_DETAILS) {
+      if (seasonId && m.seasonId !== seasonId) continue;
+      // map to MatchDto
+      list.push({
+        id: m.id,
+        seasonId: m.seasonId,
+        opponentId: 'op-1', // mapped from fixture
+        competitionId: 'c1-campionato-csi',
+        isOfficial: m.isOfficial,
+        scheduledAt: m.scheduledAt,
+        status: m.status,
+        publishedAt: m.status === 'to_be_scheduled' ? null : '2026-09-01T10:00:00.000Z',
+      });
+    }
+    return list;
+  }
+
   getDemoMatchDetails(): typeof DEMO_MATCH_DETAILS {
     return DEMO_MATCH_DETAILS;
   }
@@ -287,16 +373,32 @@ class ApiService {
     return DEMO_PLAYER_STATS;
   }
 
-  getDemoSeasons() {
-    return [DEMO_SEASON];
+  getDemoSeasons(): SeasonDto[] {
+    return [DEMO_SEASON, DEMO_PAST_SEASON];
   }
 
-  getDemoCompetitions() {
+  getDemoCompetitions(): CompetitionDto[] {
     return DEMO_COMPETITIONS;
   }
 
-  getDemoOpponents() {
+  getDemoOpponents(): OpponentDto[] {
     return DEMO_OPPONENTS;
+  }
+
+  getDemoPlayers(): PlayerDto[] {
+    return DEMO_PLAYERS;
+  }
+
+  getDemoRosterMemberships(seasonId?: string): RosterMembershipDto[] {
+    const sid = seasonId || DEMO_SEASON.id;
+    return DEMO_ROSTER_MEMBERS.map(m => ({
+      id: m.id,
+      playerId: m.playerId,
+      seasonId: sid,
+      jerseyNumber: m.jerseyNumber,
+      activeFrom: '2026-09-01',
+      activeUntil: m.isActive ? null : '2026-10-01',
+    }));
   }
 }
 

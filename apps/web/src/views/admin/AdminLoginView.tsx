@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Lock, Shield, KeyRound, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react';
 
 export const AdminLoginView: React.FC = () => {
-  const { loginAdminWithToken, setDataMode, setAdminMode } = useApp();
+  const { loginAdminWithToken, setDataMode, setAdminMode, demoAllowed } = useApp();
   const [tokenInput, setTokenInput] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -135,6 +135,8 @@ export const AdminLoginView: React.FC = () => {
           </button>
         </form>
 
+        {demoAllowed && (
+          <>
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -185,6 +187,8 @@ export const AdminLoginView: React.FC = () => {
             Passa a Modalità Demo <ArrowRight size={14} />
           </button>
         </div>
+          </>
+        )}
 
         <div style={{ textAlign: 'center' }}>
           <button

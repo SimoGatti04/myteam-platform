@@ -3,6 +3,7 @@ import type { PublicTeamDto, AdminTeamDto } from '@myteam/contracts';
 import { apiService, type ApiResult } from '../services/api';
 import { authService } from '../services/auth';
 import { deriveThemeTokens, applyThemeToDocument, NEUTRAL_THEME, type ThemeTokens, type TokenOverrides } from '../services/theme';
+import { isDemoAllowed } from '../utils/env';
 
 export type DataMode = 'real' | 'demo';
 
@@ -16,6 +17,7 @@ interface AppContextType {
   dataMode: DataMode;
   setDataMode: (mode: DataMode) => void;
   isDemoData: boolean;
+  demoAllowed: boolean;
 
   // Navigazione
   activeTab: 'home' | 'partite' | 'rosa' | 'statistiche' | 'votazioni';
@@ -61,22 +63,38 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Determinazione iniziale modalità: query param ?demo=true o sessionStorage o default 'real'
+  const demoAllowed = isDemoAllowed();
+
+  // Determinazione iniziale modalità:
+  // In produzione: SEMPRE e RIGOROSAMENTE 'real'. Nessun demo consentito.
+  // In sviluppo autorizzato: verifica query param ?demo=true o sessionStorage o default 'real'.
   const [dataMode, setDataModeState] = useState<DataMode>(() => {
+    if (!demoAllowed) {
+      return 'real';
+    }
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('demo') === 'true' || params.get('demo') === '1') {
         return 'demo';
       }
-      const stored = sessionStorage.getItem('myteam_data_mode');
-      if (stored === 'demo' || stored === 'real') {
-        return stored;
+      try {
+        const stored = sessionStorage.getItem('myteam_data_mode');
+        if (stored === 'demo' || stored === 'real') {
+          return stored;
+        }
+      } catch {
+        // storage unavailable
       }
     }
     return 'real';
   });
 
   const setDataMode = (mode: DataMode) => {
+    if (!demoAllowed) {
+      // In produzione non è consentito attivare la modalità demo
+      setDataModeState('real');
+      return;
+    }
     setDataModeState(mode);
     try {
       sessionStorage.setItem('myteam_data_mode', mode);
@@ -85,7 +103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const isDemoData = dataMode === 'demo';
+  const isDemoData = dataMode === 'demo' && demoAllowed;
 
   // Navigazione
   const [activeTab, setActiveTab] = useState<'home' | 'partite' | 'rosa' | 'statistiche' | 'votazioni'>('home');
@@ -144,7 +162,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Caricamento Dati Pubblici della Squadra
   const refreshPublicTeam = useCallback(async () => {
-    if (dataMode === 'demo') {
+    if (isDemoData) {
       const demoTeam = apiService.getDemoPublicTeam();
       setPublicTeam(demoTeam);
       setPublicTeamState({ status: 'success', error: null });
@@ -167,11 +185,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
       });
     }
-  }, [dataMode]);
+  }, [isDemoData]);
 
   // Caricamento Dati Squadra Admin
   const refreshAdminTeam = useCallback(async () => {
-    if (dataMode === 'demo') {
+    if (isDemoData) {
       const demoAdmin = apiService.getDemoAdminTeam();
       setAdminTeam(demoAdmin);
       setAdminTeamState({ status: 'success', error: null });
@@ -211,9 +229,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsAuthenticated(false);
       }
     }
-  }, [dataMode]);
+  }, [isDemoData]);
 
-  // Ricarica quando cambia dataMode
+  // Ricarica quando cambia dataMode o adminMode
   useEffect(() => {
     refreshPublicTeam();
     if (adminMode) {
@@ -277,6 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dataMode,
         setDataMode,
         isDemoData,
+        demoAllowed,
         activeTab,
         setActiveTab,
         adminMode,

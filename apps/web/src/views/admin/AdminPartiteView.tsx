@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { apiService } from '../../services/api';
-import type { PublicMatchDto } from '@myteam/contracts';
+import type { MatchDto, OpponentDto, CompetitionDto } from '@myteam/contracts';
 import {
   Calendar,
   PlusCircle,
-  Edit2,
   Trophy,
   Users,
   Shield,
-  FileSpreadsheet,
   CheckCircle2,
   Clock,
-  HelpCircle,
   X,
-  Plus,
-  Trash2,
   AlertCircle,
-  Info
+  Info,
+  Globe,
+  FileText,
+  UploadCloud,
+  RefreshCw
 } from 'lucide-react';
 
 export const AdminPartiteView: React.FC<{
@@ -26,66 +25,147 @@ export const AdminPartiteView: React.FC<{
 }> = ({ openModalWithMatchId, onCloseModal }) => {
   const { adminTeam, isDemoData } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'competizioni' | 'avversari' | 'importazioni'>('calendario');
-  const [matches, setMatches] = useState<PublicMatchDto[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'avversari' | 'importazioni'>('calendario');
+  const [matches, setMatches] = useState<MatchDto[]>([]);
+  const [opponents, setOpponents] = useState<OpponentDto[]>([]);
+  const [competitions, setCompetitions] = useState<CompetitionDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal creazione partita
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [opponentNameInput, setOpponentNameInput] = useState<string>('');
+  const [selectedOpponentMode, setSelectedOpponentMode] = useState<'existing' | 'new'>('existing');
+  const [selectedOpponentId, setSelectedOpponentId] = useState<string>('');
+  const [newOpponentNameInput, setNewOpponentNameInput] = useState<string>('');
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<string>('');
   const [scheduledDateInput, setScheduledDateInput] = useState<string>('');
   const [isOfficialInput, setIsOfficialInput] = useState<boolean>(true);
-  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [submittingAction, setSubmittingAction] = useState<'draft' | 'publish' | null>(null);
+
+  // Stato pubblicazione riga singola
+  const [publishingMatchId, setPublishingMatchId] = useState<string | null>(null);
+
+  // Modalità aggiunta avversario rapida da subtab
+  const [newOpponentInlineName, setNewOpponentInlineName] = useState<string>('');
+  const [creatingOpponent, setCreatingOpponent] = useState<boolean>(false);
 
   useEffect(() => {
     loadData();
-  }, [isDemoData]);
+  }, [isDemoData, adminTeam?.currentSeasonId]);
 
   const loadData = async () => {
     setLoading(true);
     setStatusMsg(null);
+
     if (isDemoData) {
-      const demo = apiService.getDemoMatches();
-      setMatches([...demo.scheduled, ...demo.toBeScheduled]);
+      const demoMatches = apiService.getDemoAdminMatches(adminTeam?.currentSeasonId || undefined);
+      const demoOpponents = apiService.getDemoOpponents();
+      const demoCompetitions = apiService.getDemoCompetitions();
+      setMatches(demoMatches);
+      setOpponents(demoOpponents);
+      setCompetitions(demoCompetitions);
+      if (demoOpponents.length > 0 && demoOpponents[0]) {
+        setSelectedOpponentId(demoOpponents[0].id);
+      }
     } else {
-      const res = await apiService.getPublicMatches();
-      if (res.success) {
-        setMatches([...res.data.scheduled, ...res.data.toBeScheduled]);
+      // Caricamento gare admin (incluse bozze non pubblicate)
+      const matchesRes = await apiService.getAdminMatches(adminTeam?.currentSeasonId ? { seasonId: adminTeam.currentSeasonId } : undefined);
+      if (matchesRes.success) {
+        setMatches(matchesRes.data);
       } else {
         setMatches([]);
+      }
+
+      // Caricamento avversari registrati
+      const opponentsRes = await apiService.getAdminOpponents();
+      if (opponentsRes.success) {
+        setOpponents(opponentsRes.data);
+        if (opponentsRes.data.length > 0 && opponentsRes.data[0]) {
+          setSelectedOpponentId(opponentsRes.data[0].id);
+          setSelectedOpponentMode('existing');
+        } else {
+          setSelectedOpponentMode('new');
+        }
+      } else {
+        setOpponents([]);
+        setSelectedOpponentMode('new');
+      }
+
+      // Caricamento competizioni
+      const compsRes = await apiService.getAdminCompetitions();
+      if (compsRes.success) {
+        setCompetitions(compsRes.data);
+      } else {
+        setCompetitions([]);
       }
     }
     setLoading(false);
   };
 
-  const handleCreateMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!opponentNameInput.trim()) return;
+  const opponentsMap = new Map<string, string>();
+  for (const op of opponents) {
+    opponentsMap.set(op.id, op.name);
+  }
 
-    setSubmitting(true);
+  const competitionsMap = new Map<string, string>();
+  for (const cp of competitions) {
+    competitionsMap.set(cp.id, cp.name);
+  }
+
+  // Creazione Partita: Salva Bozza OPPURE Salva e Pubblica
+  const handleSaveMatch = async (e: React.FormEvent, shouldPublish: boolean) => {
+    e.preventDefault();
+
+    let targetOpponentId = selectedOpponentId;
+
+    if (selectedOpponentMode === 'new') {
+      if (!newOpponentNameInput.trim()) {
+        setStatusMsg({ type: 'error', text: 'Inserisci il nome della squadra avversaria.' });
+        return;
+      }
+    } else {
+      if (!targetOpponentId) {
+        setStatusMsg({ type: 'error', text: 'Seleziona una squadra avversaria esistente o creane una nuova.' });
+        return;
+      }
+    }
+
+    setSubmittingAction(shouldPublish ? 'publish' : 'draft');
     setStatusMsg(null);
 
     if (isDemoData) {
-      const newMatch: PublicMatchDto = {
-        id: `demo-match-${Date.now()}`,
-        seasonId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-        opponentName: opponentNameInput.trim(),
-        competitionName: isOfficialInput ? 'Campionato CSI' : 'Amichevole',
+      // In modalità Demo locale
+      const opponentName = selectedOpponentMode === 'new'
+        ? newOpponentNameInput.trim()
+        : (opponentsMap.get(targetOpponentId) || 'Squadra Avversaria');
+
+      const mockMatchId = `demo-match-${Date.now()}`;
+      const newMatch: MatchDto = {
+        id: mockMatchId,
+        seasonId: adminTeam?.currentSeasonId || '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+        opponentId: targetOpponentId || 'op-demo',
+        competitionId: selectedCompetitionId || null,
         isOfficial: isOfficialInput,
         scheduledAt: scheduledDateInput ? new Date(scheduledDateInput).toISOString() : null,
         status: scheduledDateInput ? 'scheduled' : 'to_be_scheduled',
+        publishedAt: shouldPublish ? new Date().toISOString() : null,
       };
+
       setMatches(prev => [newMatch, ...prev]);
-      setSubmitting(false);
+      setSubmittingAction(null);
       setIsModalOpen(false);
       if (onCloseModal) onCloseModal();
-      setStatusMsg({ type: 'success', text: 'Partita aggiunta all\'anteprima dimostrativa (DEMO).' });
+      setStatusMsg({
+        type: 'success',
+        text: shouldPublish
+          ? `Partita vs ${opponentName} creata e contrassegnata come pubblicata (DEMO).`
+          : `Partita vs ${opponentName} salvata come bozza non pubblicata (DEMO).`,
+      });
       return;
     }
 
     if (!adminTeam?.currentSeasonId) {
-      setSubmitting(false);
+      setSubmittingAction(null);
       setStatusMsg({
         type: 'error',
         text: 'Nessuna stagione attiva configurata. Imposta la stagione corrente in Impostazioni squadra prima di creare partite.',
@@ -93,31 +173,38 @@ export const AdminPartiteView: React.FC<{
       return;
     }
 
-    // Modalità REALE: crea prima l'avversario tramite POST /api/v1/admin/opponents
-    const oppRes = await apiService.createOpponent({
-      name: opponentNameInput.trim(),
-    });
-
-    if (!oppRes.success) {
-      setSubmitting(false);
-      setStatusMsg({
-        type: 'error',
-        text: `Errore creazione squadra avversaria (${oppRes.status}): ${oppRes.message}`,
+    // Modalità REALE: crea avversario se richiesto 'new'
+    if (selectedOpponentMode === 'new') {
+      const oppRes = await apiService.createOpponent({
+        name: newOpponentNameInput.trim(),
       });
-      return;
+
+      if (!oppRes.success) {
+        setSubmittingAction(null);
+        setStatusMsg({
+          type: 'error',
+          text: `Errore creazione squadra avversaria (${oppRes.status}): ${oppRes.message}`,
+        });
+        return;
+      }
+
+      targetOpponentId = oppRes.data.id;
+      // Aggiorna anagrafica locale
+      setOpponents(prev => [...prev, oppRes.data]);
     }
 
-    // Crea la partita tramite POST /api/v1/admin/matches
+    // Crea la partita con POST /api/v1/admin/matches (sempre non pubblicata inizialmente)
     const matchRes = await apiService.createMatch({
       seasonId: adminTeam.currentSeasonId,
-      opponentId: oppRes.data.id,
+      opponentId: targetOpponentId,
+      competitionId: selectedCompetitionId.trim() ? selectedCompetitionId : null,
       isOfficial: isOfficialInput,
       scheduledAt: scheduledDateInput ? new Date(scheduledDateInput).toISOString() : null,
       status: scheduledDateInput ? 'scheduled' : 'to_be_scheduled',
     });
 
     if (!matchRes.success) {
-      setSubmitting(false);
+      setSubmittingAction(null);
       setStatusMsg({
         type: 'error',
         text: `Errore creazione partita (${matchRes.status}): ${matchRes.message}`,
@@ -125,17 +212,109 @@ export const AdminPartiteView: React.FC<{
       return;
     }
 
-    // Pubblica la partita per renderla visibile pubblicamente se la squadra è già pubblicata
-    await apiService.publishMatch(matchRes.data.id);
+    const createdMatchId = matchRes.data.id;
+    const oppName = opponentsMap.get(targetOpponentId) || newOpponentNameInput.trim() || 'Avversaria';
 
-    setSubmitting(false);
-    setIsModalOpen(false);
-    if (onCloseModal) onCloseModal();
-    setStatusMsg({
-      type: 'success',
-      text: `Partita vs ${oppRes.data.name} creata e pubblicata con successo sul server Core!`,
-    });
+    if (shouldPublish) {
+      // Pubblicazione esplicita richiesta
+      const pubRes = await apiService.publishMatch(createdMatchId);
+
+      setSubmittingAction(null);
+      setIsModalOpen(false);
+      if (onCloseModal) onCloseModal();
+
+      if (pubRes.success) {
+        setStatusMsg({
+          type: 'success',
+          text: `Partita vs ${oppName} creata e PUBBLICATA con successo! Visibile sul sito pubblico.`,
+        });
+      } else {
+        // NON comunicare pubblicata in caso di fallimento!
+        setStatusMsg({
+          type: 'error',
+          text: `Partita vs ${oppName} salvata come bozza, ma la PUBBLICAZIONE è fallita (${pubRes.status}): ${pubRes.message}`,
+        });
+      }
+    } else {
+      // Salvataggio come Bozza (non pubblicata)
+      setSubmittingAction(null);
+      setIsModalOpen(false);
+      if (onCloseModal) onCloseModal();
+      setStatusMsg({
+        type: 'success',
+        text: `Partita vs ${oppName} salvata come BOZZA (non pubblicata sul sito pubblico).`,
+      });
+    }
+
     await loadData();
+  };
+
+  // Pubblicazione di una bozza esistente
+  const handlePublishExistingMatch = async (matchId: string) => {
+    setPublishingMatchId(matchId);
+    setStatusMsg(null);
+
+    if (isDemoData) {
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, publishedAt: new Date().toISOString() } : m));
+      setPublishingMatchId(null);
+      setStatusMsg({ type: 'success', text: 'Partita pubblicata nell\'anteprima dimostrativa (DEMO).' });
+      return;
+    }
+
+    const res = await apiService.publishMatch(matchId);
+    setPublishingMatchId(null);
+
+    if (res.success) {
+      setStatusMsg({
+        type: 'success',
+        text: 'Partita pubblicata con successo! Ora è visibile nella sezione pubblica del sito.',
+      });
+      await loadData();
+    } else {
+      // Fallimento esplicito: non comunicare successo
+      setStatusMsg({
+        type: 'error',
+        text: `Impossibile pubblicare la partita (${res.status}): ${res.message}`,
+      });
+    }
+  };
+
+  // Creazione rapida avversario da subtab Avversari
+  const handleCreateOpponentInline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOpponentInlineName.trim()) return;
+
+    setCreatingOpponent(true);
+    setStatusMsg(null);
+
+    if (isDemoData) {
+      const demoOp: OpponentDto = {
+        id: `op-${Date.now()}`,
+        name: newOpponentInlineName.trim(),
+      };
+      setOpponents(prev => [demoOp, ...prev]);
+      setNewOpponentInlineName('');
+      setCreatingOpponent(false);
+      setStatusMsg({ type: 'success', text: 'Squadra avversaria aggiunta (DEMO).' });
+      return;
+    }
+
+    const res = await apiService.createOpponent({ name: newOpponentInlineName.trim() });
+    setCreatingOpponent(false);
+
+    if (res.success) {
+      setNewOpponentInlineName('');
+      setStatusMsg({
+        type: 'success',
+        text: `Squadra avversaria "${res.data.name}" registrata con successo in anagrafica Core!`,
+      });
+      await loadData();
+    } else {
+      setStatusMsg({
+        type: 'error',
+        text: `Errore creazione avversario (${res.status}): ${res.message}`,
+      });
+    }
   };
 
   return (
@@ -155,12 +334,23 @@ export const AdminPartiteView: React.FC<{
             )}
           </div>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Calendario, anagrafica avversari e programmazione gare (Opzione A approvata)
+            Calendario, bozze non pubblicate e anagrafica avversari riutilizzabile (Opzione A approvata)
           </p>
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setIsModalOpen(true);
+            setNewOpponentNameInput('');
+            setScheduledDateInput('');
+            setIsOfficialInput(true);
+            if (opponents.length > 0 && opponents[0]) {
+              setSelectedOpponentMode('existing');
+              setSelectedOpponentId(opponents[0].id);
+            } else {
+              setSelectedOpponentMode('new');
+            }
+          }}
           style={{
             padding: '8px 16px',
             borderRadius: '8px',
@@ -193,7 +383,7 @@ export const AdminPartiteView: React.FC<{
         }}>
           <Info size={16} color="var(--brand-secondary)" style={{ flexShrink: 0 }} />
           <span>
-            <strong>Integrazione Core C1.1:</strong> Scrittura gare collegata direttamente agli endpoint autorizzati <code>POST /api/v1/admin/matches</code> e <code>POST /api/v1/admin/matches/:id/publish</code>.
+            <strong>Integrazione Core C1.1 Attiva:</strong> Lettura amministrativa <code>GET /api/v1/admin/matches</code> e anagrafica avversari <code>GET /api/v1/admin/opponents</code>. Separazione rigorosa tra salvataggio bozza e pubblicazione.
           </span>
         </div>
       )}
@@ -215,7 +405,7 @@ export const AdminPartiteView: React.FC<{
         </div>
       )}
 
-      {/* Sottosezioni Gestione Partite (Opzione A confermata nelle specifiche) */}
+      {/* Sottosezioni Gestione Partite (Opzione A approvata) */}
       <div style={{
         display: 'flex',
         gap: '8px',
@@ -235,7 +425,7 @@ export const AdminPartiteView: React.FC<{
             cursor: 'pointer',
           }}
         >
-          Calendario & Gare
+          Calendario & Bozze ({matches.length})
         </button>
         <button
           onClick={() => setActiveSubTab('avversari')}
@@ -250,7 +440,7 @@ export const AdminPartiteView: React.FC<{
             cursor: 'pointer',
           }}
         >
-          Squadre Avversarie
+          Squadre Avversarie ({opponents.length})
         </button>
         <button
           onClick={() => setActiveSubTab('importazioni')}
@@ -272,43 +462,84 @@ export const AdminPartiteView: React.FC<{
       {activeSubTab === 'calendario' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {matches.length > 0 ? (
-            matches.map((match) => (
-              <div
-                key={match.id}
-                style={{
-                  backgroundColor: 'var(--bg-card)',
-                  borderRadius: '12px',
-                  border: '1px solid var(--border-subtle)',
-                  padding: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '0.72rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--brand-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
-                      {match.competitionName || (match.isOfficial ? 'Gara Ufficiale' : 'Amichevole')}
-                    </span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {match.status}
-                    </span>
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ffffff' }}>
-                    vs {match.opponentName}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                    {match.scheduledAt ? new Date(match.scheduledAt).toLocaleString('it-IT') : 'Data da programmare'}
-                  </div>
-                </div>
+            matches.map((match) => {
+              const oppName = opponentsMap.get(match.opponentId) || 'Squadra Avversaria';
+              const compName = match.competitionId ? competitionsMap.get(match.competitionId) : (match.isOfficial ? 'Gara Ufficiale' : 'Amichevole');
+              const isPublished = Boolean(match.publishedAt);
 
-                <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 600 }}>
-                  ✓ Salvata nel sistema
+              return (
+                <div
+                  key={match.id}
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '16px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '0.72rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--brand-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                        {compName}
+                      </span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: isPublished ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: isPublished ? '#34d399' : '#f59e0b',
+                      }}>
+                        {isPublished ? 'PUBBLICATA' : 'BOZZA (NON PUBBLICATA)'}
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {match.status}
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ffffff' }}>
+                      vs {oppName}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                      {match.scheduledAt ? new Date(match.scheduledAt).toLocaleString('it-IT') : 'Data da programmare'}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {!isPublished ? (
+                      <button
+                        onClick={() => handlePublishExistingMatch(match.id)}
+                        disabled={publishingMatchId === match.id}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                          border: '1px solid rgba(16, 185, 129, 0.4)',
+                          color: '#34d399',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          cursor: publishingMatchId === match.id ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Globe size={14} />
+                        {publishingMatchId === match.id ? 'Pubblicazione...' : 'Pubblica Partita'}
+                      </button>
+                    ) : (
+                      <div style={{ fontSize: '0.78rem', color: '#34d399', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={14} /> Visibile sul sito
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div style={{
               backgroundColor: 'var(--bg-card)',
@@ -319,22 +550,103 @@ export const AdminPartiteView: React.FC<{
               color: 'var(--text-muted)',
               fontSize: '0.9rem',
             }}>
-              Nessuna partita presente. Clicca su "Nuova Partita" per creare una gara.
+              Nessuna partita registrata. Clicca su "Nuova Partita" per creare una bozza o programmare una gara.
             </div>
           )}
         </div>
       )}
 
       {activeSubTab === 'avversari' && (
-        <div style={{
-          backgroundColor: 'var(--bg-card)',
-          borderRadius: '14px',
-          border: '1px solid var(--border-subtle)',
-          padding: '24px',
-          color: 'var(--text-muted)',
-          fontSize: '0.85rem',
-        }}>
-          Le squadre avversarie vengono registrate automaticamente tramite l'anagrafica centralizzata Core alla creazione delle gare (<code>POST /api/v1/admin/opponents</code>). La gestione con stemmi personalizzati è in completamento in C1.1.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Form rapido aggiunta avversario */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '14px',
+            border: '1px solid var(--border-subtle)',
+            padding: '18px',
+          }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
+              Registra Nuova Squadra Avversaria
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Le squadre avversarie sono entità permanenti riutilizzabili per tutte le partite e stagioni (<code>POST /api/v1/admin/opponents</code>).
+            </p>
+            <form onSubmit={handleCreateOpponentInline} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                placeholder="es. Atletico Bovisa"
+                value={newOpponentInlineName}
+                onChange={(e) => setNewOpponentInlineName(e.target.value)}
+                required
+                style={{
+                  flex: '1',
+                  minWidth: '220px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid var(--border-subtle)',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="submit"
+                disabled={creatingOpponent || !newOpponentInlineName.trim()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--brand-secondary)',
+                  color: '#0f172a',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: creatingOpponent || !newOpponentInlineName.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {creatingOpponent ? 'Creazione...' : 'Salva Avversario'}
+              </button>
+            </form>
+          </div>
+
+          {/* Elenco avversari censiti */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '14px',
+            border: '1px solid var(--border-subtle)',
+            overflow: 'hidden',
+          }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 700, fontSize: '0.9rem', color: '#ffffff' }}>
+              Anagrafica Squadre Avversarie Registrate ({opponents.length})
+            </div>
+            {opponents.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {opponents.map((op) => (
+                  <div
+                    key={op.id}
+                    style={{
+                      padding: '12px 18px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#ffffff', fontSize: '0.88rem' }}>
+                      {op.name}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                      ID: {op.id}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Nessuna squadra avversaria registrata.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -352,7 +664,7 @@ export const AdminPartiteView: React.FC<{
             Integrazione Calendario CSI & Import CSV
           </h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-            La funzione di importazione da calendario CSI / CSV è collocata nelle specifiche come modulo di automazione di Fase 2. Nessun falso successo o sincronizzazione fittizia viene simulata in questo checkpoint.
+            La funzione di importazione automatizzata da calendario CSI e file CSV è collocata nelle specifiche come modulo di automazione di Fase 2. Nessun falso successo o sincronizzazione fittizia viene simulata in questo checkpoint.
           </p>
         </div>
       )}
@@ -378,7 +690,7 @@ export const AdminPartiteView: React.FC<{
             borderRadius: '16px',
             border: '1px solid var(--border-subtle)',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: '520px',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
@@ -400,33 +712,130 @@ export const AdminPartiteView: React.FC<{
               </button>
             </div>
 
-            <form onSubmit={handleCreateMatch} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Selezione Squadra Avversaria */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
                   Squadra Avversaria *
                 </label>
-                <input
-                  type="text"
-                  placeholder="es. Polisportiva Aurora"
-                  value={opponentNameInput}
-                  onChange={(e) => setOpponentNameInput(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                  }}
-                />
+
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOpponentMode('existing')}
+                    disabled={opponents.length === 0}
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: selectedOpponentMode === 'existing' ? 700 : 500,
+                      backgroundColor: selectedOpponentMode === 'existing' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      color: selectedOpponentMode === 'existing' ? 'var(--brand-secondary)' : 'var(--text-muted)',
+                      border: selectedOpponentMode === 'existing' ? '1px solid var(--brand-secondary)' : '1px solid var(--border-subtle)',
+                      cursor: opponents.length === 0 ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Scegli Esistente ({opponents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOpponentMode('new')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: selectedOpponentMode === 'new' ? 700 : 500,
+                      backgroundColor: selectedOpponentMode === 'new' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      color: selectedOpponentMode === 'new' ? 'var(--brand-secondary)' : 'var(--text-muted)',
+                      border: selectedOpponentMode === 'new' ? '1px solid var(--brand-secondary)' : '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    + Crea Nuovo Avversario
+                  </button>
+                </div>
+
+                {selectedOpponentMode === 'existing' && opponents.length > 0 ? (
+                  <select
+                    value={selectedOpponentId}
+                    onChange={(e) => setSelectedOpponentId(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                  >
+                    {opponents.map((op) => (
+                      <option key={op.id} value={op.id} style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                        {op.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="es. Polisportiva Aurora"
+                    value={newOpponentNameInput}
+                    onChange={(e) => setNewOpponentNameInput(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                  />
+                )}
               </div>
 
+              {/* Competizione */}
+              {competitions.length > 0 && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                    Competizione (Opzionale)
+                  </label>
+                  <select
+                    value={selectedCompetitionId}
+                    onChange={(e) => setSelectedCompetitionId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                      -- Nessuna competizione specificata --
+                    </option>
+                    {competitions.map((c) => (
+                      <option key={c.id} value={c.id} style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                        {c.name} ({c.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Data e Ora */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                  Data e Ora di Inizio (Opzionale)
+                  Data e Ora di Inizio (Opzionale — lasciare vuoto per "Data da definire")
                 </label>
                 <input
                   type="datetime-local"
@@ -445,6 +854,7 @@ export const AdminPartiteView: React.FC<{
                 />
               </div>
 
+              {/* Ufficialità */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input
                   type="checkbox"
@@ -458,7 +868,8 @@ export const AdminPartiteView: React.FC<{
                 </label>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+              {/* Azioni separate: Salva Bozza vs Salva e Pubblica */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -477,9 +888,29 @@ export const AdminPartiteView: React.FC<{
                 >
                   Annulla
                 </button>
+
                 <button
-                  type="submit"
-                  disabled={submitting || !opponentNameInput.trim()}
+                  type="button"
+                  disabled={Boolean(submittingAction)}
+                  onClick={(e) => handleSaveMatch(e, false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontWeight: 600,
+                    fontSize: '0.82rem',
+                    cursor: submittingAction ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {submittingAction === 'draft' ? 'Salvataggio bozza...' : 'Salva come Bozza'}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={Boolean(submittingAction)}
+                  onClick={(e) => handleSaveMatch(e, true)}
                   style={{
                     padding: '8px 18px',
                     borderRadius: '8px',
@@ -488,10 +919,10 @@ export const AdminPartiteView: React.FC<{
                     border: 'none',
                     fontWeight: 700,
                     fontSize: '0.82rem',
-                    cursor: submitting || !opponentNameInput.trim() ? 'not-allowed' : 'pointer',
+                    cursor: submittingAction ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {submitting ? 'Creazione in corso...' : 'Salva Partita'}
+                  {submittingAction === 'publish' ? 'Pubblicazione...' : 'Salva e Pubblica'}
                 </button>
               </div>
             </form>
