@@ -1,6 +1,6 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 28 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; il primo slice persistente Core è implementato e verificato sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+**Aggiornato:** 28 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
 
 ## Baseline C0
 
@@ -53,6 +53,23 @@ Il test JWT locale usa un JWKS effimero su loopback; è passato quando eseguito 
 - **PASS** `git diff --check` sul diff finale C1.1.
 
 Web e QA sono stati informati delle rotte additive, della proiezione pubblica limitata e del comportamento sulle date; riceveranno lo SHA del commit pubblicato per l'integrazione dai propri branch/worktree.
+
+## C1.2 — immutabilità delle partite completate e integrazione
+
+**Stato:** implementato sul branch dedicato `codex/core-persistent-flow`, a partire da `3c99e4ec785c1cea1cbe8bb8e1070c278b770740`; nessun merge automatico su `main`. Non sono cambiati percorsi, DTO o schemi condivisi rispetto a C1.1.
+
+- `PATCH /api/v1/admin/matches/{id}/schedule` ora rifiuta con `400 completed_match_schedule_is_immutable` ogni tentativo di aggiornamento se il record persistito è già `completed`, oltre a continuare a rifiutare la transizione verso `completed`. Il flusso dei risultati non è implementato.
+- La regressione d'integrazione semina in PostgreSQL una partita completata, tenta di modificarne insieme data e stato e verifica errore, immutabilità di data/stato e nessuna nuova riga nello storico. È una prova reale quando eseguita con `TEST_DATABASE_URL`, non sostituibile da un mock.
+- Le letture admin C1.1 sono state verificate in `docs/API.md`: stagioni, giocatori, appartenenze, avversarie, competizioni e partite (comprese bozze/non pubblicate) restano protette e non hanno cambi incompatibili in C1.2. I DTO TypeBox restano preliminari.
+- Compatibilità Web: il worktree W1 usa `GET /api/v1/admin/team` e le scritture del flusso, ma il client `apps/web/src/services/api.ts` non espone ancora metodi per le letture admin di collezione. Backend e documentazione sono pronti a integrarle; il caricamento/listing di tali collezioni dal pannello resta da collegare lato Web.
+- `docs/TESTING.md` documenta `pnpm --filter @myteam/api dev` e la prova manuale admin → PostgreSQL → pubblicazione → API pubblica → browser, con prerequisiti Logto e database locale espliciti.
+
+### Verifiche C1.2 — 28 ottobre 2026
+
+- **PASS** `pnpm check`: build dei package, type-check API/contratti/test e 6 test automatici (3 unitari API e 3 test API condivisi).
+- **PASS** `git diff --check` sui file modificati.
+- **NOT RUN — prerequisito assente** `pnpm test:integration`: nel worktree non esiste `.env`, `TEST_DATABASE_URL` e `DATABASE_URL` non sono definite nell'ambiente. Non è stato avviato né modificato alcun database o container; l'accesso al socket Docker è stato negato e non è stato ritentato.
+- **NOT RUN — prerequisiti assenti** smoke HTTP ed E2E browser: mancano la configurazione autorizzata del database locale e le credenziali/configurazioni Logto di sviluppo. Nessuna configurazione Logto reale è stata cambiata.
 
 ## Ownership e risorse locali
 

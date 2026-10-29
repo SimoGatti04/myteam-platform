@@ -383,6 +383,51 @@ test(
       });
       assert.equal(noOpReschedule.statusCode, 200, noOpReschedule.payload);
 
+      // Seed a completed record directly in PostgreSQL: result-entry workflows are not part of this slice.
+      await scopedPool.query(
+        `UPDATE matches SET status = 'completed', scheduled_at = $2 WHERE id = $1`,
+        [draftMatch.id, "2026-12-01T15:00:00.000Z"],
+      );
+      const completedBeforeResult = await scopedPool.query<{ scheduled_at: Date | null; status: string }>(
+        "SELECT scheduled_at, status FROM matches WHERE id = $1",
+        [draftMatch.id],
+      );
+      const completedBefore = completedBeforeResult.rows[0];
+      assert.ok(completedBefore, "completed fixture must exist in PostgreSQL");
+      assert.equal(completedBefore.status, "completed");
+      assert.equal(completedBefore.scheduled_at?.toISOString(), "2026-12-01T15:00:00.000Z");
+      const completedHistoryBefore = await scopedPool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM match_schedule_history WHERE match_id = $1",
+        [draftMatch.id],
+      );
+
+      const mutateCompletedMatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/matches/${draftMatch.id}/schedule`,
+        headers,
+        payload: {
+          scheduledAt: "2026-12-08T15:00:00.000Z",
+          status: "postponed",
+          reason: "Must not change a completed match",
+        },
+      });
+      assert.equal(mutateCompletedMatch.statusCode, 400);
+      assert.deepEqual(mutateCompletedMatch.json(), { error: "completed_match_schedule_is_immutable" });
+
+      const completedAfterResult = await scopedPool.query<{ scheduled_at: Date | null; status: string }>(
+        "SELECT scheduled_at, status FROM matches WHERE id = $1",
+        [draftMatch.id],
+      );
+      const completedAfter = completedAfterResult.rows[0];
+      assert.ok(completedAfter, "completed fixture must still exist in PostgreSQL");
+      assert.equal(completedAfter.status, "completed");
+      assert.equal(completedAfter.scheduled_at?.toISOString(), completedBefore.scheduled_at?.toISOString());
+      const completedHistoryAfter = await scopedPool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM match_schedule_history WHERE match_id = $1",
+        [draftMatch.id],
+      );
+      assert.equal(completedHistoryAfter.rows[0]?.count, completedHistoryBefore.rows[0]?.count);
+
       const publicTeam = await app.inject({ method: "GET", url: "/api/v1/public/team" });
       assert.equal(publicTeam.statusCode, 200, publicTeam.payload);
       assert.equal(publicTeam.json<{ currentSeason: { id: string } }>().currentSeason.id, season.id);

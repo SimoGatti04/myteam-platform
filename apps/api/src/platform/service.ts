@@ -692,6 +692,9 @@ export class PlatformService {
         [id],
       )).rows[0];
       if (!current) throw new DomainError(404, "match_not_found");
+      if (current.status === "completed") {
+        throw new DomainError(400, "completed_match_schedule_is_immutable");
+      }
 
       const nextScheduledAt = Object.hasOwn(input, "scheduledAt")
         ? input.scheduledAt ?? null
