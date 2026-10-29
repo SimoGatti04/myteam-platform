@@ -64,3 +64,44 @@ Questo documento distingue funzionalità effettive, decisioni confermate e lavor
 - La correzione e il relativo stato di undo sono persistiti in SwiftData prima di essere presentati come confermati.
 
 La copertura di test C3.3 è sintetica, automatizzata e su iOS Simulator. Non costituisce una verifica con dati reali del dispositivo né una validazione su dispositivo fisico/lock.
+
+## Piattaforma `myteam-platform` — Specifiche e regole approvate (27 ottobre 2026)
+
+Riferimenti: ADR-0008, Registro decisioni myteam-platform e Addendum 27 ottobre 2026.
+
+### Sincronizzazione offline-first e persistenza locale
+- L'app iOS privata mantiene la piena indipendenza operativa: il salvataggio locale su SwiftData avviene a prescindere dallo stato di rete.
+- Le modifiche operative vengono accodate in una coda locale persistente, con identificativi operativi univoci e ritrasmissione HTTPS con conferme (ACK) senza duplicazioni.
+- Il backend gestisce la riconciliazione delle fonti e pubblica gli aggiornamenti in tempo reale via SSE senza ricaricamento della pagina web.
+- Il ripristino dello stato completo dopo disconnessioni è garantito sia per l'app iOS che per i client web/PWA.
+- Dettagli dei payload, autenticazione, versionamento e schemi della coda persistente rimangono da progettare prima dell'implementazione.
+
+### Gerarchia delle fonti a 4 livelli (Priorità su Recenza)
+La riconciliazione avviene per singolo campo/dato secondo l'ordine di priorità decrescente:
+1. **Correzioni manuali dell'amministratore** (massima autorità, revocabili solo esplicitamente).
+2. **CSI o fonte esterna ufficiale** (omologazione referto/risultato ufficiale).
+3. **CSI o fonte esterna ufficiosa** (risultati temporanei non omologati).
+4. **App iOS privata** (dati live/operativi raccolti durante la gara).
+
+- La priorità prevale sempre sulla recenza temporale: dati di livello inferiore pervenuti successivamente non possono sovrascrivere dati di livello superiore.
+- I campi non coperti dalla fonte superiore mantengono i valori acquisiti dalla fonte inferiore.
+- Ogni dato originale resta tracciabile nello storico del backend.
+- Le correzioni operative nell'app iOS non costituiscono automaticamente un override amministrativo.
+
+### Regole per statistiche e confini di visibilità
+- Le statistiche aggregate (squadra, giocatori e classifiche interne) considerano esclusivamente le partite concluse.
+- Il flusso LIVE aggiorna risultato ed eventi nella Home e nel dettaglio partita, ma non altera le statistiche aggregate.
+- Il ricalcolo delle statistiche interessate si attiva alla conclusione della gara e dopo ogni correzione manuale o importazione prevalente.
+- **Riservatezza dei dati**:
+  - *Dati pubblici*: dettaglio dei singoli gol (incluso assistman del gol se registrato).
+  - *Dati privati*: minutaggi complessivi individuali, statistiche aggregate sugli assist (totale, media) e relative classifiche.
+
+### Riconoscimenti e pari merito
+- POTM e Player of the Month sono gestiti dal sistema unificato di votazioni.
+- Sono ammessi esplicitamente più vincitori in caso di pari merito.
+- Ogni vincitore condiviso riceve l'attribuzione completa del riconoscimento (+1) nelle statistiche individuali, preservando lo storico condiviso.
+
+### Integrazione CSI opzionale
+- Subordinata alla verifica empirica di semplicità e affidabilità tecnica.
+- Polling mirato post-partita: controllo iniziale a intervalli crescenti; importazione ufficiosa e continuazione verifiche; importazione definitiva all'ufficializzazione con arresto immediato dei controlli automatici.
+- In alternativa, gestione esclusiva tramite app iOS e area amministrativa.

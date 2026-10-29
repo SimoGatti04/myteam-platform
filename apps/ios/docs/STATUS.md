@@ -73,3 +73,39 @@ C3.2-V-SUPP resta `PARTIAL` perché il lock/unlock reale non è stato eseguibile
 - Il result bundle segnala due warning runtime `Invalid frame dimension (negative or non-finite).` durante due XCUITest; le asserzioni passano, ma la causa resta da isolare. Nessuna prova su dispositivo fisico o lock/unlock reale è stata svolta. Non sono stati usati dati personali o store reali.
 
 **Confini non coperti:** il recovery dopo terminazione è verificato dal simulatore XCUITest e da fixture sintetiche, non da un dispositivo fisico; lock/unlock reale resta requisito pre-release. La compatibilità con specifici payload reali legacy non è attestata da fixture sintetiche. Backend, sincronizzazione, CloudKit, modifiche grafiche e migrazioni ulteriori non fanno parte di C3.3.
+
+## myteam-platform — Decisioni architetturali approvate (27 ottobre 2026)
+
+**Stato delle decisioni: APPROVATO dall'utente.**
+Riferimenti: ADR-0008, Registro decisioni myteam-platform e Addendum architetturale 27 ottobre 2026.
+
+### Quadro di classificazione (Regole di handoff)
+- **IMPLEMENTATO e VERIFICATO (C3.3)**:
+  - App iOS nativa offline-capable con SwiftData V3 (rosa, calendario, storico, aggregate live in V2, metadati di correzione storica in V3).
+  - Motore temporale deterministico e timeline delle presenze con coordinate di tempo effettivo di gioco, frazioni e sequenza stabile.
+  - Flussi di correzione contestuale live e storico con ricalcolo derivato e undo limitato.
+  - Suite di test su iOS Simulator: 122 PASS (119 APPTests + 3 XCUITest), 0 FAIL, 0 SKIPPED. Commit HEAD `2bb9459` su branch `main`.
+- **APERTO (Residui pre-release C3.3)**:
+  - Verifica su dispositivo fisico e comportamento reale di lock/unlock schermo.
+  - Diagnosi e isolamento dei due warning SwiftUI runtime `Invalid frame dimension (negative or non-finite)`.
+- **APPROVATO (in attesa di progettazione ed esecuzione)**:
+  - **Sincronizzazione offline-first**: app iOS autonoma con salvataggio locale indipendente; coda persistente locale delle modifiche; trasmissione HTTPS con identificativi univoci, conferme (ACK) e ritrasmissione senza duplicazioni; backend responsabile della riconciliazione e della pubblicazione pubblica via Server-Sent Events (SSE); recupero dello stato completo coerente dopo disconnessioni.
+  - **Gerarchia delle fonti a 4 livelli con priorità prevalente sulla recenza**:
+    1. Correzioni manuali dell'amministratore (massima priorità, revocabili solo esplicitamente).
+    2. CSI o fonte esterna ufficiale (omologazione referti/risultati).
+    3. CSI o fonte esterna ufficiosa (risultati provvisori/non omologati).
+    4. App iOS privata (dati operativi dal campo).
+    Riconciliazione per singolo campo/dato; i campi non coperti dalla fonte superiore conservano il valore della fonte inferiore. Tracciabilità storica di tutti i dati originali. Correzioni iOS operative non equivalenti ad override amministrativo.
+  - **Integrazione CSI opzionale e condizionata**: sviluppo subordinato a verifica positiva di semplicità e affidabilità; polling mirato post-partita con stop immediato all'ufficializzazione; fallback su app iOS + admin.
+  - **Regole statistiche e riservatezza**: statistiche aggregate (squadra, singoli, classifiche interne) limitate rigorosamente a partite concluse; LIVE isolato dalle statistiche aggregate; ricalcolo reattivo a fine gara e post-correzioni; dettagli singoli gol (con assistman) pubblici; minutaggi complessivi individuali e statistiche aggregate assist (totali, medie, classifiche) rigorosamente privati.
+  - **Riconoscimenti**: POTM e Player of the Month dal sistema unificato di votazioni; pari merito pienamente ammessi con attribuzione completa (+1) per ciascun vincitore nelle statistiche.
+- **PROPOSTO (non ancora deliberato come piano esecutivo)**:
+  - Specifiche dettagliate dei contratti OpenAPI/JSON Schema di sincronizzazione e autenticazione client-server.
+  - Modello e migrazione SwiftData Schema V4 per `SyncQueue` e attributi estesi (cartellini, stagione, competizione).
+  - Piano operativo di riorganizzazione monorepo (`myteam-platform` con `apps/ios`, `apps/web`, `services/backend`).
+  - Scelta stack tecnologico backend/frontend.
+
+### Vincoli operativi attivi
+- Nessuna modifica a SwiftData, modelli o codice applicativo senza preventivo piano verificato e suite di test aggiornata.
+- Preservazione assoluta dell'autonomia operativa offline dell'app iOS.
+- Tutte le future comunicazioni adotteranno la nomenclatura di stato: APPROVATO, PROPOSTO, IMPLEMENTATO, VERIFICATO e APERTO.

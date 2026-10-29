@@ -52,3 +52,54 @@ La timeline distingue copertura completa dall'inizio e copertura parziale. Per s
 La sessione live usa payload Codable schema 3 (migrazione esplicita dai precedenti payload 1 e 2); il sotto-snapshot `MatchTiming` è schema 2, la metadata di correzione temporale è schema 2, la timeline è schema 1 e la metadata di correzione eventi live è schema 1. SwiftData passa a `MatchManagerSchemaV3`, aggiungendo `StoredMatchCorrectionMetadata` con migrazione leggera V2→V3; V1 e V2 restano dichiarati e immutati. La metadata storica è memorizzata separatamente dal record base per non riscrivere o reinterpretare i dati legacy.
 
 **Limiti:** undo è intenzionalmente limitato e non è event sourcing generale. La correzione di conflitti temporali non ricostruisce automaticamente eventi futuri. Non è stata eseguita una prova su dispositivo fisico, né una prova reale di lock/unlock. La suite su simulatore riporta due warning SwiftUI di frame non valido, pur con tutti i test passati: non vanno considerati risolti finché non isolati.
+
+## myteam-platform — Sincronizzazione, gerarchia delle fonti e regole di piattaforma (27 ottobre 2026)
+
+**Stato: APPROVATO (in attesa di progettazione ed esecuzione).**
+Riferimenti: ADR-0008, Registro delle decisioni myteam-platform e Addendum 27 ottobre 2026.
+
+### 1. Confine architetturale dell'app iOS e sincronizzazione offline-first
+L'app iOS privata mantiene il modello operativo offline-first e il proprio ciclo vitale locale in SwiftData (attualmente V3 da C3.3):
+- Nessuna operazione di campo (avvio tempo, cambi, gol, correzioni, pause, finalizzazione) dipende dalla connettività di rete o da risposte del server.
+- Le mutazioni operative generano elementi accodati in una coda locale persistente (`SyncQueue`), memorizzata in modo affidabile prima della trasmissione.
+- La trasmissione verso il backend avviene via HTTPS con identificativi operativi univoci, conferme esplicite (ACK) e ritrasmissione idempotente senza duplicazioni.
+- In caso di riapertura dell'app o ripristino post-disconnessione, la coda garantisce la continuità senza perdita di eventi locali.
+- I dettagli dei payload, dell'autenticazione, delle versioni e delle strutture di persistenza della coda rimangono da progettare prima dell'implementazione.
+
+### 2. Backend autoritativo e distribuzione SSE
+Il backend è l'autorità per la memorizzazione condivisa, la riconciliazione delle fonti concorrenti e la distribuzione pubblica:
+- Riceve ed elabora gli aggiornamenti dalla coda dell'app iOS.
+- Notifica in tempo reale i client web/PWA mediante Server-Sent Events (SSE) senza ricaricamento della pagina.
+- Applica una maschera di proiezione (Public DTO) prima di esporre i dati ai visitatori pubblici.
+- Gestisce la riconnessione dei client web consentendo il recupero dello stato completo coerente.
+
+### 3. Gerarchia delle fonti e riconciliazione per campo
+La convergenza dei dati di partita segue una gerarchia rigida a 4 livelli:
+1. **Correzioni manuali dell'amministratore** (priorità massima, non sovrascrivibili automaticamente).
+2. **CSI o fonte esterna ufficiale** (omologazione risultati/referto ufficiale).
+3. **CSI o fonte esterna ufficiosa** (risultati provvisori/non omologati).
+4. **App iOS privata** (dati operativi dal campo).
+
+Principi vincolanti:
+- **La priorità prevale sempre sulla recenza**: una fonte di livello inferiore non può sovrascrivere un dato già stabilito da una fonte di livello superiore, anche se pervenuta con timestamp successivo.
+- **Riconciliazione granulare per singolo dato/campo**: se una fonte superiore fornisce solo alcuni campi (es. CSI fornisce solo il risultato finale 4-2 ma non i marcatori e gli assist), i campi non coperti mantengono il valore fornito dalla fonte inferiore (app iOS).
+- **Tracciabilità e revocabilità**: ogni dato originario rimane tracciabile nello storico del backend; le correzioni amministrative non vengono sovrascritte automaticamente e possono essere revocate solo esplicitamente dall'amministratore.
+- Le correzioni operative dell'app iOS non equivalgono automaticamente a un override amministrativo: ruolo e autorizzazione saranno definiti nei contratti di sincronizzazione.
+
+### 4. Statistiche aggregate e confini di visibilità
+- **Solo partite concluse**: le statistiche aggregate di squadra (partite giocate, vittorie, pareggi, sconfitte, gol fatti/subiti, differenza reti, percentuale vittorie, andamento, posizione) e dei singoli giocatori (presenze, gol, cartellini, premi vinti, relative classifiche) considerano esclusivamente le gare concluse.
+- **Isolamento LIVE**: gli eventi della partita in corso aggiornano la Home e la schermata di dettaglio partita (via SSE), ma non modificano alcuna statistica aggregata.
+- **Ricalcolo reattivo**: alla conclusione della gara e dopo ogni correzione manuale o importazione prevalente, le statistiche aggregate coinvolte vengono ricalcolate.
+- **Riservatezza dei dati**:
+  - *Pubblici*: dettaglio dei singoli gol (inclusi marcatore, minuto, tempo e assistman del gol).
+  - *Privati*: minutaggi complessivi individuali, statistiche aggregate sugli assist (totale, media) e relative classifiche.
+
+### 5. Riconoscimenti (POTM e Player of the Month)
+- Assegnati tramite il modulo unificato di votazioni.
+- Ammissione esplicita dei pari merito: più vincitori possono condividere lo stesso riconoscimento.
+- Ogni vincitore condiviso riceve l'attribuzione completa (+1) nelle statistiche individuali, preservando lo storico condiviso.
+
+### 6. Integrazione CSI opzionale
+- Subordinata alla verifica empirica di semplicità e affidabilità.
+- Controlli mirati post-partita con intervalli progressivi e cessazione immediata all'acquisizione del risultato ufficiale.
+- In caso di impraticabilità, la piattaforma opera unicamente tramite app iOS e area amministrativa.

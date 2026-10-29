@@ -1,6 +1,6 @@
-# AURINFORMATC — Istruzioni per gli agenti
+# iOS (`apps/ios`) — istruzioni per gli agenti
 
-Le convenzioni generali e dell'ambiente sono mantenute nel repository fratello `../../development-environment/`. Per attività non banali leggere gli indici e le norme specialistiche pertinenti; non modificare quel repository per incarichi limitati ad AURINFORMATC.
+Le convenzioni generali e dell'ambiente sono mantenute nel repository fratello `../../development-environment/`. Per attività non banali leggere gli indici e le norme specialistiche pertinenti; non modificare quel repository per incarichi limitati al modulo iOS. Il contesto di prodotto e le decisioni approvate della piattaforma sono in `../../docs/platform/`; gli ADR iOS condivisi sono snapshot in `../../docs/decisions/ios/`.
 
 ## Contesto e lettura iniziale
 
@@ -18,5 +18,5 @@ Le convenzioni generali e dell'ambiente sono mantenute nel repository fratello `
 - `MatchTiming` mantiene il contratto temporale validato in C2. Per modificare semantica, snapshot o recovery servono uno scope esplicito e test deterministici sul motore reale.
 - Preservare UI, navigazione, asset e palette quando non esplicitamente richiesto. Evitare backend, sincronizzazione, CloudKit, autenticazione, PWA o modelli multi-tenant fuori da uno scope approvato.
 - Gli errori di apertura, migrazione, decodifica, verifica e salvataggio devono restare distinguibili da dati assenti; non inizializzare silenziosamente uno store vuoto né presentare scritture fallite come riuscite.
-- Git è locale alla root `AURINFORMATC/`; non è configurato alcun remote. Non aggiungere remote né fare push senza richiesta esplicita.
+- Il modulo è versionato nel monorepo `myteam-platform` sotto `apps/ios/`; la storia deriva da `AURINFORMATC`, che resta immutato. Non creare un repository Git annidato, non configurare remote separati e non fare push o merge senza richiesta esplicita.
 - Usare fixture sintetiche e anonime. Non leggere, copiare o versionare dati personali del dispositivo nei test.

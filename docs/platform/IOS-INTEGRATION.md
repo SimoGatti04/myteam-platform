@@ -2,11 +2,11 @@
 
 **Stato:** iOS fino a C3.3 IMPLEMENTATO (come da report e documenti iOS); integrazione backend e autenticazione NON implementate.
 
-**Target di collocazione APPROVATO (29/10/2026):** il repository iOS locale `AURINFORMATC` sarà importato nel monorepo sotto `apps/ios/` preservando la storia pertinente e senza modificare lo stile MAPI. La migrazione **non è ancora eseguita**: prima del push verso GitHub pubblico è obbligatorio l'audit dell'intera storia da importare. Vedi [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md) e [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md).
+**Target di collocazione APPROVATO (29/10/2026):** il candidato iOS R1-A3 è integrato localmente sotto `apps/ios/` con cronologia riscritta per mantenere la navigazione per percorso. Il branch deriva dalla base GitHub pubblicata `docs/ios-c4-platform-decisions-20261029` (`7fd81044…`); **non è stato pubblicato**. L'audit e lo stato dei test, legati al commit effettivamente verificato, sono in [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md). Vedi anche [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md).
 
 ## Fonte autorevole dello stato
 
-Fonte autorevole ancora separata: repository sorella `../AURINFORMATC`, file `app/AGENTS.md`, `app/docs/ARCHITECTURE.md`, `app/docs/STATUS.md` e `app/docs/TESTING.md`. Gli ADR-0003, 0006, 0007 e 0008 sono disponibili come snapshot locali in `../decisions/ios/`; prima di modifiche iOS consultare sempre gli originali. Questo documento riguarda **l’integrazione futura**, non sostituisce lo stato del codice.
+Per questo branch candidato, la fonte operativa è `../../apps/ios/`: `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/STATUS.md`, `docs/TESTING.md` e `docs/decisions/`. Gli ADR iOS condivisi restano snapshot canonici in `../decisions/ios/`; le decisioni di piattaforma sono in questo dossier. `AURINFORMATC` rimane immutato come origine/backup. L’integrazione con backend e autenticazione resta **non implementata**.
 
 Al checkpoint C3.3 (report del 27/10/2026), SwiftData **V3** è l'archivio operativo (rosa, calendario, storico, sessione live, metadata correzioni). Payload live versione 3, timeline ingressi/uscite con sequenza e copertura verificabile, motore unico del tempo `MatchTiming`, proposte di correzione/undo limitato. Esito riportato: **122 PASS, 0 FAIL, 0 SKIPPED** (119 APPTests, 3 XCUITest) su simulatore. **NOT RUN:** device reale e lock/unlock fisico. **Aperti:** due warning SwiftUI `Invalid frame dimension (negative or non-finite)`. Ultimo HEAD riportato `2bb9459` sul branch locale `main`, senza remote; verificare lo stato corrente prima di operare.
 

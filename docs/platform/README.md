@@ -10,7 +10,7 @@ Questo dossier è una copia iniziale trasferita il 28 ottobre 2026 dalla working
 - [ADMIN-WEB.md](ADMIN-WEB.md) — navigazione amministrativa definitiva a sei sezioni, Panoramica operativa e sezione Partite unificata.
 - [IOS-INTEGRATION.md](IOS-INTEGRATION.md) — app iOS esistente, stato C3.3 e requisiti offline-first.
 - [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md) — **decisioni APPROVATE 29/10/2026** per app iOS generica, branding e asset MAPI preservati, responsabilità Core/PWA/iOS, ruoli e distinte, calendario, LIVE e **numero/durata dei tempi configurabili per competizione con override di gara**. Non ancora implementate.
-- [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md) — **migrazione iOS approvata** nel monorepo `apps/ios/`, con preservazione della cronologia, audit preventivo del repository pubblico, struttura, test e piano di rollback. Non ancora eseguita.
+- [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md) — **migrazione iOS approvata**, candidata localmente in R1-A3 su un branch isolato da base GitHub; nessun push. Il rapporto registra storia per percorso, audit e stato reale dei test.
 - [BACKEND-DATA.md](BACKEND-DATA.md) — dati condivisi, differenza tra inserimento/override, sincronizzazione e provider.
 - [ACCESS-DEPLOYMENT.md](ACCESS-DEPLOYMENT.md) — Logto, Cloudflare Access, K3s e gestione operativa.
 - [MVP-HANDOFF.md](MVP-HANDOFF.md) — primo MVP, **roadmap approvata a quattro fasi**, modalità operativa multi-agente/parallela, checkpoint visibili, decisioni aperte e handoff.

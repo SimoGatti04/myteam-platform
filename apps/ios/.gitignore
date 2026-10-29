@@ -1,0 +1,45 @@
+# macOS Finder metadata and custom folder-icon files
+.DS_Store
+Icon?
+
+# Xcode user state and build products
+**/xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+DerivedData/
+**/DerivedData/
+build/
+**/build/
+*.xcresult
+*.dSYM/
+*.dSYM.zip
+*.ipa
+*.hmap
+
+# SwiftPM generated build state (keep Package.resolved versionable if introduced)
+.build/
+
+# Local backups and editor/temp files (kept on disk, not canonical source)
+/backups/
+*.bak
+*.bak_*
+*.backup
+*.orig
+*.swp
+*.tmp
+
+# Local runtime/log/database artifacts
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Local environment and signing credentials
+.env
+.env.*
+!.env.example
+*.mobileprovision
+*.p12
+*.p8
+*.pem
+*.key
