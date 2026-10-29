@@ -296,7 +296,7 @@ dispositivo reale restano gate separati e **NOT RUN**.
 | Branch QA pubblicato | `qa/q2-b-w2r2-verification` |
 | Commit base (parent) | `390faa578a3a04fef8d6cc8e83527fefa0ab6a33` (Q2-A-R1) |
 | Contenuto dei commit | solo `docs/qa/` (report + evidenze); nessun file applicativo |
-| Commit | `e09f75b` (prima pubblicazione), `7fe91f3` (rettifica F2/OBS-02), `<v2>` (esiti reali PostgreSQL + browser) |
+| Commit | `e09f75b` (prima pubblicazione), `7fe91f3` (rettifica F2/OBS-02), `03824da` (esiti reali PostgreSQL + browser) |
 | Branch di verifica integrato | `qa/q2-b-integration-c12` @ `869023cecdb66e21635837356b34e1f381f1cf86` |
 | Force push | nessuno (fast-forward sullo stesso branch) |
 | Merge su main | nessuno |
@@ -311,7 +311,7 @@ dispositivo reale restano gate separati e **NOT RUN**.
 | `/Users/gatti/Workspace/myteam-platform-mvp-i1` | `e8b90b4` | `qa/mvp-i1-integration` |
 | `/Users/gatti/Workspace/myteam-platform-q2-a` | `8c02c9f` | `qa/q2-a-w2-integration` |
 | `/Users/gatti/Workspace/myteam-platform-qa` | `0437b93` | `qa/q1-suite-consolidation` |
-| `/Users/gatti/Workspace/myteam-platform-q2-b` | `<v2>` | `qa/q2-b-w2r2-verification` (worktree usato per l'integrazione) |
+| `/Users/gatti/Workspace/myteam-platform-q2-b` | `03824da` | `qa/q2-b-w2r2-verification` (worktree usato per l'integrazione) |
 
 **Pubblicazione:** il branch è nato da `390faa5` tramite API GitHub (la shell in sandbox
 non può scrivere su `.git` né risolvere `github.com`), poi è stato completato via `git`
