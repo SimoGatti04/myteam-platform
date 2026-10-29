@@ -25,7 +25,7 @@ Tutti e quattro i finding oggetto del checkpoint risultano chiusi o classificati
 | Base QA (Q2-C) | `qa/q2-c-w2r3-integration` | `72de50961de51609a209a176f45a60cdb7389c3a` |
 | Merge d'integrazione QA | `qa/q2-d-w2r4-verification` | `0db5b6b53ce7558ef68a53cec587be8b570f5bc7` |
 | Core C1.2 | `codex/core-persistent-flow` | `1ab71792929bef1009e3ecab57adf3d333d58ceb` |
-| Commit QA di questo rapporto | `qa/q2-d-w2r4-verification` | vedi §11 |
+| Commit QA di verifica (test + evidenze + rapporto) | `qa/q2-d-w2r4-verification` | `16cfe7d1df51539de62431f02d3b00a63bf57ac5` |
 
 ### 2.1 Ancestry verificata
 
@@ -190,6 +190,6 @@ Tutti i finding oggetto del checkpoint sono chiusi o classificati in modo esplic
 - Evidenze Q2-D: `docs/qa/evidence/q2-d/` (8 artefatti di log + 13 screenshot)
 - Evidenze Q2-C riutilizzate: `docs/qa/evidence/q2-c/`
 - Test QA aggiunti in questo checkpoint: `tests/q1/11-web-w2-r4-logout-failclosed.vitest.ts`, `tests/q1/12-web-w2-r4-metadata-injection.vitest.ts`, `tests/q1/13-web-w2-r4-timeout.vitest.ts`, `tests/q1/14-web-w2-r4-scope.vitest.ts`
-- Branch pubblicato: `qa/q2-d-w2r4-verification` — commit di verifica `0db5b6b53ce7558ef68a53cec587be8b570f5bc7` (questo file è aggiornato da un commit successivo, solo documentale, per registrarne lo SHA)
+- Branch pubblicato: `qa/q2-d-w2r4-verification` — commit di verifica `16cfe7d1df51539de62431f02d3b00a63bf57ac5`
 
 Nessun merge su `main`, nessun force push, nessun deploy. Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`.
