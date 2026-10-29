@@ -151,7 +151,7 @@ export const Navbar: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {adminMode && isAuthenticated && !isDemoData && (
             <button
-              onClick={logoutAdmin}
+              onClick={() => { void logoutAdmin({ redirect: true }); }}
               style={{
                 background: 'none',
                 border: 'none',

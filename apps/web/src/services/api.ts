@@ -54,11 +54,15 @@ class ApiService {
   ): Promise<ApiResult<T>> {
     try {
       const headers = new Headers(options.headers || {});
-      // Inietta Authorization header se disponibile
-      const authHeaders = authService.getAuthHeaders();
-      for (const [k, v] of Object.entries(authHeaders)) {
-        if (!headers.has(k)) {
-          headers.set(k, v);
+      // Inietta Authorization header SOLO per endpoint amministrativi riservati (/admin)
+      // NESSUN token amministrativo deve essere inviato nelle richieste pubbliche!
+      const isAdminEndpoint = url.includes("/api/v1/admin");
+      if (isAdminEndpoint) {
+        const authHeaders = authService.getAuthHeaders();
+        for (const [k, v] of Object.entries(authHeaders)) {
+          if (!headers.has(k)) {
+            headers.set(k, v);
+          }
         }
       }
 
@@ -86,11 +90,18 @@ class ApiService {
         // Nessun body json d'errore
       }
 
+      const errorMessage = this.mapErrorMessage(res.status, errorCode);
+
+      // Gestione automatica 401 su endpoint admin: invalida la sessione
+      if (res.status === 401 && isAdminEndpoint) {
+        authService.handleUnauthorized(errorMessage);
+      }
+
       return {
         success: false,
         status: res.status,
         errorCode,
-        message: this.mapErrorMessage(res.status, errorCode),
+        message: errorMessage,
       };
     } catch (networkError: any) {
       // Backend offline o errore di rete
@@ -123,7 +134,7 @@ class ApiService {
         }
         return `Parametri non validi (${code}).`;
       case 401:
-        return 'Autenticazione richiesta. Effettua l\'accesso con token autorizzato.';
+        return 'Autenticazione richiesta (HTTP 401). Effettua l\'accesso con token autorizzato.';
       case 403:
         return 'Accesso negato. Permessi insufficienti per questa operazione.';
       case 404:

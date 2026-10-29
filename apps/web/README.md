@@ -65,6 +65,55 @@ Checkpoint W1-R2: Correzioni per integrazione MVP, consumazione contratti ed end
 - **Impostazioni:** Configurazione squadra (Nome e Stemma obbligatori per pubblicare), selettore palette dinamica con preview e azione di pubblicazione sul server Core `@myteam/api`.
 - *Votazioni & Contenuti:* Visibili solo in modalità dimostrativa/sviluppo come anteprime architetturali Opzione B (sponsor multi-stagione e motore di voto legato alla distinta). Nascosti in modalità reale per evitare pagine operative fittizie.
 
+
+## Autenticazione Amministrativa Logto OIDC (W2)
+
+A partire dal checkpoint **W2**, l'area amministrativa adotta l'autenticazione federata ufficiale con **Logto Identity Provider** basata su **OpenID Connect (OIDC)** e **Authorization Code Flow con PKCE (RFC 7636)**.
+
+### Architettura e Flusso di Autenticazione
+1. **Public SPA Client (Nessun Client Secret):**
+   - L'applicazione web è un client pubblico di tipo Single Page Application.
+   - Non viene utilizzato né memorizzato alcun client secret nel frontend o nel bundle client.
+2. **Authorization Code Flow con PKCE (RFC 7636):**
+   - Avvio login: il client genera un `code_verifier` ad alta entropia crittograficamente sicuro (`crypto.getRandomValues`) e ne deriva il `code_challenge` con algoritmo SHA-256 (`S256`).
+   - Viene generato un parametro `state` casuale ad ogni sessione per prevenire attacchi CSRF.
+   - Redirect dell'utente all'endpoint di autorizzazione Logto (`/oidc/auth`) con i parametri:
+     - `client_id`: ID applicazione SPA registrato in Logto
+     - `redirect_uri`: URI di callback autorizzato
+     - `response_type`: `code`
+     - `scope`: `openid profile offline_access platform:admin`
+     - `resource`: URI risorsa API indicata da `VITE_LOGTO_API_RESOURCE` (corrispondente a `LOGTO_AUDIENCE` di Core)
+     - `code_challenge`: hash S256 calcolato
+     - `code_challenge_method`: `S256`
+     - `state`: token CSRF
+3. **Elaborazione Callback & Scambio Token:**
+   - Logto reindirizza all'applicazione con i parametri `code` e `state` (o `error`).
+   - L'applicazione verifica rigorosamente la corrispondenza del parametro `state` salvato per scongiurare attacchi CSRF.
+   - Invia una richiesta `POST /oidc/token` scambiando `code` e `code_verifier` con un access token JWT per le API Core.
+   - I parametri query OIDC vengono rimossi immediatamente dalla barra degli indirizzi tramite `history.replaceState`.
+4. **Verifica dei Ruoli e Permessi con Core (HTTP 401 / 403):**
+   - L'applicazione effettua una verifica immediata con Core chiamando `GET /api/v1/admin/team`.
+   - Se il server risponde **HTTP 403 (`insufficient_permissions`)**, significa che l'utente è autenticato su Logto ma non gli è stato assegnato il ruolo o lo scope `platform:admin`. L'utente viene avvisato con un messaggio chiaro e non accede al pannello.
+   - Se il server risponde **HTTP 401 (`invalid_access_token` o `authentication_required`)**, la sessione locale viene invalidata.
+5. **Modello di Sessione e Sicurezza:**
+   - I token non vengono **MAI** memorizzati in `localStorage` permanente o cookie non protetti.
+   - La sessione è mantenuta in memoria React e sincronizzata con `sessionStorage` (per consentire il reload della pagina/F5 all'interno dello stesso tab). `sessionStorage` viene distrutto automaticamente alla chiusura della finestra/scheda.
+   - La scadenza del token (`expires_at`) viene controllata proattivamente prima di ogni chiamata: se il token è scaduto, viene invalidato e l'utente reindirizzato al login.
+6. **Disabilitazione in Produzione del Form Manuale:**
+   - In produzione (`MODE='production'` o `VITE_APP_ENV='production'`), il form manuale JWT è categoricamente disabilitato.
+   - In ambienti di sviluppo locale o staging autorizzati (`isManualAuthAllowed`), il form manuale è conservato come strumento secondario di collaudo tecnico.
+
+### Variabili d'Ambiente di Configurazione OIDC
+
+| Variabile | Obbligatoria | Descrizione | Valore Tipico / Default |
+|---|---|---|---|
+| `VITE_LOGTO_ENDPOINT` | Sì (per OIDC) | URL base dell'istanza Logto OIDC | `https://auth.myteam.org/oidc` |
+| `VITE_LOGTO_APP_ID` | Sì (per OIDC) | Client ID pubblico dell'applicazione SPA creata in Logto | es. `k492msldkf9203js` |
+| `VITE_LOGTO_API_RESOURCE` | No | Resource indicator API registrato in Logto (corrisponde a `LOGTO_AUDIENCE` di Core) | `https://api.myteam.local` |
+| `VITE_LOGTO_SCOPES` | No | Scope OIDC e permessi API richiesti | `openid profile offline_access platform:admin` |
+| `VITE_LOGTO_REDIRECT_URI` | No | URI di callback post-login autorizzato | `${window.location.origin}/callback` |
+| `VITE_LOGTO_POST_LOGOUT_REDIRECT_URI` | No | URI di redirect dopo il logout | `${window.location.origin}` |
+
 ## Istruzioni per Avviare e Visualizzare Localmente
 
 1. **Installazione dipendenze e build contratti:**
