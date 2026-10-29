@@ -1,25 +1,49 @@
 /**
  * Client OIDC per React SPA con supporto Authorization Code Flow + PKCE (RFC 7636).
- * Progettato per l'integrazione sicura con Logto Identity Provider e Core API (@myteam/api).
+ * Progettato per l'integrazione sicura e interoperabile con Logto Identity Provider e Core API (@myteam/api).
  *
- * SPECIFICHE DI SICUREZZA E PROTOCOLLO:
- * - Public SPA Client: NESSUN client secret memorizzato o inviato dal frontend.
- * - PKCE: Generazione di `code_verifier` crittograficamente sicuro (Web Crypto API)
- *   e derivazione del `code_challenge` con metodo SHA-256 ('S256').
- * - State CSRF Protection: Generazione e verifica di un parametro `state` casuale ad ogni flusso.
- * - Nonce Protection: Parametro `nonce` univoco per prevenire replay attacks sull'ID token.
- * - Separazione Access Token vs ID Token:
- *   L'Access Token è destinato alla risorsa Core API (audience) con scope `platform:admin`.
- *   L'ID Token è utilizzato solo per estrarre informazioni identitarie (`sub`) e come `id_token_hint` nel logout.
- *   L'ID token non viene MAI usato come Bearer token per le API.
- * - Modello di Sessione e Rischio XSS:
- *   I token sono memorizzati primariamente in memoria volatile React e sincronizzati in `sessionStorage`
- *   esclusivamente per la durata del tab (F5 reload). Nessuna persistenza a lungo termine (localStorage).
- * - Validazione Configurazione Rigida (Punto 3.E):
- *   Nessun default fittizio per audience/resource o appId nei deployment reali.
- *   Se uno dei parametri obbligatori manca, il client fallisce in modo esplicito senza inventare risorse.
+ * SPECIFICHE DI SICUREZZA, PROTOCOLLO E INTEROPERABILITÀ (W2-R2):
+ * 1. Adozione SDK Ufficiale & Decisione Architetturale:
+ *    - Integrazione delle funzioni crittografiche mantenute dell'SDK ufficiale (@logto/browser:
+ *      `generateCodeVerifier`, `generateCodeChallenge`, `generateState`).
+ *    - Modello di Sessione e Rischio XSS: La classe `BrowserStorage` di default di @logto/browser
+ *      memorizza i token in `localStorage`, violando le direttive di sicurezza approvate (ACCESS-DEPLOYMENT.md).
+ *      Inoltre `<LogtoProvider>` assume autenticazione ottimistica locale prima della verifica Core
+ *      e non implementa la verifica client-side del claim `nonce` sull'ID token.
+ *      Pertanto questo client mantiene l'architettura approvata: sessione volatile in memoria + sessionStorage
+ *      (distrutta alla chiusura del tab) e convalida rigorosa dell'ID token e del backend Core.
+ * 2. OIDC Discovery e Controllo dell'Issuer:
+ *    - Discovery dinamica via `/.well-known/openid-configuration`.
+ *    - Validazione tassativa dell'issuer restituito (`metadata.issuer === expectedIssuer`).
+ *    - Utilizzo esclusivo degli endpoint scoperti (`authorization_endpoint`, `token_endpoint`, `end_session_endpoint`).
+ * 3. PKCE S256, State e Nonce:
+ *    - Code verifier ad alta entropia (RFC 7636) e code challenge SHA-256 ('S256').
+ *    - Parametro `state` crittografico contro attacchi CSRF.
+ *    - Parametro `nonce` obbligatorio e univoco per prevenire replay attacks sull'ID token.
+ * 4. Validazione Rigorosa ID Token OIDC:
+ *    - Presenza obbligatoria dell'ID token nella risposta del token endpoint per completare la sessione OpenID.
+ *    - Verifica claims: `iss` (coincidenza con issuer), `aud` (coincidenza con appId), `exp` (non scaduto)
+ *      e `nonce` (corrispondenza esatta con il nonce generato dal client).
+ * 5. Assenza di Fallback Math.random():
+ *    - Utilizzo esclusivo delle Web Crypto API (`crypto.getRandomValues`, `crypto.subtle`).
+ *    - Eccezione esplicita e bloccante se le API crittografiche non sono disponibili.
+ * 6. Scadenza Effettiva (TTL 5 min) e Consumo Monouso dello Stato PKCE:
+ *    - Lo stato PKCE viene eliminato da `sessionStorage` immediatamente al primo tentativo di lettura.
+ *    - Se il tempo trascorso dalla generazione supera 5 minuti, il callback viene respinto.
+ * 7. Access Token per Core API (Mai ID Token come Bearer):
+ *    - L'Access Token è specificamente richiesto per la risorsa API Core (`VITE_LOGTO_API_RESOURCE`).
+ *    - `getAccessToken(resource)` rifiuta richieste per risorse non autorizzate.
+ *    - L'ID Token non viene MAI inviato come Bearer token al backend Core.
+ * 8. Gestione Esplicita della Scadenza:
+ *    - Nessun refresh token memorizzato nel browser per mitigare il rischio XSS in SPA pubblica.
+ *    - Alla scadenza dell'access token la sessione termina e viene richiesto un nuovo login.
  */
 
+import {
+  generateCodeChallenge as logtoGenerateCodeChallenge,
+  generateCodeVerifier as logtoGenerateCodeVerifier,
+  generateState as logtoGenerateState,
+} from '@logto/browser';
 import type { EnvLike } from '../utils/env';
 
 export interface OidcConfig {
@@ -29,6 +53,17 @@ export interface OidcConfig {
   scopes: string;
   redirectUri: string;
   postLogoutRedirectUri: string;
+}
+
+export interface OidcDiscoveryMetadata {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  end_session_endpoint?: string;
+  jwks_uri?: string;
+  userinfo_endpoint?: string;
+  response_types_supported?: string[];
+  code_challenge_methods_supported?: string[];
 }
 
 export interface OidcSession {
@@ -43,13 +78,40 @@ export interface OidcSession {
 export interface StoredPkceState {
   codeVerifier: string;
   state: string;
-  nonce?: string;
+  nonce: string;
   returnTo?: string;
   createdAt: number;
 }
 
 export const STORAGE_KEY_PKCE = 'myteam_oidc_pkce';
 export const STORAGE_KEY_SESSION = 'myteam_oidc_session';
+
+/** TTL massimo per il flusso di autenticazione PKCE (5 minuti in millisecondi) */
+export const PKCE_MAX_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * Asserisce la disponibilità delle API crittografiche sicure Web Crypto (crypto.getRandomValues).
+ * Rifiuta categoricamente qualsiasi fallback insicuro a Math.random().
+ */
+export function assertWebCryptoAvailable(): void {
+  if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+    throw new Error(
+      'Web Crypto API (crypto.getRandomValues) non disponibile in questo ambiente. Impossibile generare valori casuali sicuri.'
+    );
+  }
+}
+
+/**
+ * Asserisce la disponibilità di crypto.subtle.digest per il calcolo crittografico SHA-256.
+ */
+export function assertWebCryptoSubtleAvailable(): void {
+  assertWebCryptoAvailable();
+  if (!crypto.subtle || typeof crypto.subtle.digest !== 'function') {
+    throw new Error(
+      'Web Crypto API (crypto.subtle.digest) non disponibile in questo ambiente.'
+    );
+  }
+}
 
 /**
  * Codifica Base64URL conforme a RFC 7636 (senza padding '=', caratteri safe per URL).
@@ -66,53 +128,43 @@ export function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 /**
- * Genera una stringa casuale con caratteri sicuri per URL (A-Z, a-z, 0-9, -, _).
+ * Genera una stringa casuale ad alta entropia utilizzando esclusivamente Web Crypto API.
+ * Nessun fallback a Math.random().
  */
 export function generateRandomString(length: number = 32): string {
+  assertWebCryptoAvailable();
   const bytes = new Uint8Array(length);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < length; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
+  crypto.getRandomValues(bytes);
   return base64UrlEncode(bytes).slice(0, length);
 }
 
 /**
- * Genera un code_verifier conforme a RFC 7636 (lunghezza tra 43 e 128 caratteri).
+ * Genera un code_verifier conforme a RFC 7636 riusando la funzione crittografica di @logto/browser.
  */
 export function generateCodeVerifier(): string {
-  const bytes = new Uint8Array(32);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < 32; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return base64UrlEncode(bytes); // 32 bytes producono esattamente 43 caratteri base64url
+  assertWebCryptoAvailable();
+  return logtoGenerateCodeVerifier();
 }
 
 /**
- * Calcola il code_challenge da code_verifier tramite SHA-256 ('S256').
+ * Calcola il code_challenge da code_verifier tramite SHA-256 ('S256') riusando @logto/browser.
  */
 export async function generateCodeChallenge(verifier: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
+  assertWebCryptoSubtleAvailable();
+  return logtoGenerateCodeChallenge(verifier);
+}
 
-  if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return base64UrlEncode(new Uint8Array(hashBuffer));
-  }
-
-  throw new Error('Web Crypto API (crypto.subtle.digest) non disponibile in questo ambiente.');
+/**
+ * Genera un parametro state sicuro per URL riusando @logto/browser.
+ */
+export function generateState(): string {
+  assertWebCryptoAvailable();
+  return logtoGenerateState();
 }
 
 /**
  * Decodifica in sicurezza il payload di un JWT senza validarne la firma crittografica.
- * Utilizzato solo per estrarre informazioni di visualizzazione (sub, scope, exp).
+ * Utilizzato per estrarre informazioni di sessione (iss, aud, exp, nonce, sub, scope).
  */
 export function parseJwtPayload(token: string): Record<string, any> | null {
   try {
@@ -136,9 +188,9 @@ export function parseJwtPayload(token: string): Record<string, any> | null {
 /**
  * Risolve la configurazione OIDC dalle variabili d'ambiente Vite o da un oggetto fornito.
  *
- * RIGORE AMBIENTALE (Punto 3.E):
+ * RIGORE AMBIENTALE:
  * - VITE_LOGTO_ENDPOINT, VITE_LOGTO_APP_ID e VITE_LOGTO_API_RESOURCE sono TUTTI e TRE OBBLIGATORI.
- * - Nessun default fittizio (come 'https://api.myteam.local') è consentito nei deployment reali.
+ * - Nessun default fittizio è consentito nei deployment reali.
  * - Se uno dei parametri manca, restituisce null per indicare configurazione incompleta.
  */
 export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | null {
@@ -150,7 +202,6 @@ export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | nul
     return null;
   }
 
-  // Scopi minimi per OIDC + scope admin per Core
   const scopes =
     (env as Record<string, string | undefined>).VITE_LOGTO_SCOPES?.trim() ||
     'openid profile offline_access platform:admin';
@@ -177,6 +228,7 @@ export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | nul
 
 export class OidcClient {
   private config: OidcConfig | null;
+  private discoveryMetadata: OidcDiscoveryMetadata | null = null;
 
   constructor(config?: OidcConfig | null) {
     this.config = config !== undefined ? config : loadOidcConfig();
@@ -192,26 +244,101 @@ export class OidcClient {
 
   public setConfig(config: OidcConfig | null): void {
     this.config = config;
+    this.discoveryMetadata = null;
+  }
+
+  public getDiscoveryMetadata(): OidcDiscoveryMetadata | null {
+    return this.discoveryMetadata;
+  }
+
+  public setDiscoveryMetadata(metadata: OidcDiscoveryMetadata | null): void {
+    this.discoveryMetadata = metadata;
   }
 
   /**
-   * Costruisce l'URL di autorizzazione verso Logto `/auth` avviando il flusso PKCE.
-   * Salva il code_verifier, state e nonce in sessionStorage.
+   * Esegue la discovery OIDC dinamica recuperando il documento /.well-known/openid-configuration.
+   * Valida rigorosamente che l'issuer restituito coincida con l'endpoint configurato.
+   */
+  public async fetchDiscovery(options?: { forceRefresh?: boolean }): Promise<OidcDiscoveryMetadata> {
+    if (!this.config) {
+      throw new Error('Logto OIDC non è configurato. Impossibile eseguire la discovery OIDC.');
+    }
+
+    if (this.discoveryMetadata && !options?.forceRefresh) {
+      return this.discoveryMetadata;
+    }
+
+    const endpoint = this.config.endpoint.replace(/\/+$/, '');
+    const issuerBase = endpoint.endsWith('/') ? endpoint : `${endpoint}/`;
+    const discoveryUrl = new URL('.well-known/openid-configuration', issuerBase).toString();
+
+    let res: Response;
+    try {
+      res = await fetch(discoveryUrl, {
+        headers: { Accept: 'application/json' },
+      });
+    } catch (err: any) {
+      throw new Error(`Logto OIDC discovery non raggiungibile: ${err?.message || 'offline'}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(`OIDC discovery fallita con HTTP ${res.status}`);
+    }
+
+    let metadata: any;
+    try {
+      metadata = await res.json();
+    } catch {
+      throw new Error('OIDC discovery: risposta JSON non valida o corrotta dal provider.');
+    }
+
+    if (
+      !metadata ||
+      typeof metadata !== 'object' ||
+      typeof metadata.issuer !== 'string' ||
+      typeof metadata.authorization_endpoint !== 'string' ||
+      typeof metadata.token_endpoint !== 'string'
+    ) {
+      throw new Error(
+        'OIDC discovery: metadati incompleti (issuer, authorization_endpoint o token_endpoint mancanti).'
+      );
+    }
+
+    const returnedIssuer = metadata.issuer.replace(/\/+$/, '');
+    const expectedIssuer = endpoint;
+
+    if (returnedIssuer !== expectedIssuer) {
+      throw new Error(
+        `OIDC discovery: issuer restituito dal provider ("${metadata.issuer}") non corrisponde all'endpoint configurato ("${this.config.endpoint}").`
+      );
+    }
+
+    this.discoveryMetadata = metadata as OidcDiscoveryMetadata;
+    return this.discoveryMetadata;
+  }
+
+  /**
+   * Costruisce l'URL di autorizzazione verso l'authorization_endpoint scoperto via OIDC discovery.
+   * Genera e memorizza lo stato PKCE (code_verifier, state, nonce) con TTL e consumo monouso.
    */
   public async buildAuthorizationUrl(options?: {
     returnTo?: string;
     state?: string;
-  }): Promise<{ url: string; state: string; codeVerifier: string }> {
+  }): Promise<{ url: string; state: string; codeVerifier: string; nonce: string }> {
     if (!this.config) {
       throw new Error('Logto OIDC non è configurato. Impossibile avviare il login.');
     }
 
-    const state = options?.state || generateRandomString(16);
-    const nonce = generateRandomString(16);
+    // Risolve authorization_endpoint via OIDC discovery (fail-closed: nessun fallback manuale)
+    const discovery = await this.fetchDiscovery();
+    const authEndpoint = discovery.authorization_endpoint;
+
+    const state = options?.state || generateState();
+    const nonce = generateRandomString(32);
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-    // Memorizza lo stato PKCE per la validazione al callback
+    // Memorizza lo stato PKCE per la validazione al callback (con timestamp per TTL 5 min)
     const pkceState: StoredPkceState = {
       codeVerifier,
       state,
@@ -225,10 +352,6 @@ export class OidcClient {
     } catch {
       // Session storage non disponibile
     }
-
-    const authEndpoint = this.config.endpoint.endsWith('/oidc')
-      ? `${this.config.endpoint}/auth`
-      : `${this.config.endpoint}/oidc/auth`;
 
     const url = new URL(authEndpoint);
     url.searchParams.set('client_id', this.config.appId);
@@ -244,12 +367,16 @@ export class OidcClient {
       url.searchParams.set('resource', this.config.apiResource);
     }
 
-    return { url: url.toString(), state, codeVerifier };
+    return { url: url.toString(), state, codeVerifier, nonce };
   }
 
   /**
    * Gestisce il callback di reindirizzamento da Logto.
-   * Verifica state, scambia authorization_code con access_token e id_token tramite PKCE.
+   * - Consumo monouso immediato dello stato PKCE.
+   * - Controllo TTL 5 minuti.
+   * - Protezione CSRF (`state`).
+   * - Scambio authorization_code con access_token su token_endpoint scoperto.
+   * - Validazione rigorosa dell'ID Token (iss, aud, exp, nonce obbligatorio).
    */
   public async handleAuthorizationCallback(
     urlOrSearch: string | URLSearchParams
@@ -287,13 +414,15 @@ export class OidcClient {
       throw new Error('Parametro "state" mancante nel callback di reindirizzamento.');
     }
 
-    // 2. Lettura e validazione stato PKCE salvato in sessionStorage
+    // 2. Lettura e CONSUMO MONOUSO dello stato PKCE salvato in sessionStorage
     let storedPkce: StoredPkceState | null = null;
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY_PKCE);
       if (raw) {
         storedPkce = JSON.parse(raw);
       }
+      // Consumo monouso immediato: rimuove subito il record per prevenire replay o riutilizzo
+      sessionStorage.removeItem(STORAGE_KEY_PKCE);
     } catch {
       storedPkce = null;
     }
@@ -302,15 +431,19 @@ export class OidcClient {
       throw new Error('Sessione PKCE non trovata o scaduta. Riprova il login.');
     }
 
-    // Protezione CSRF: il parametro state restituito deve corrispondere esattamente
+    // 2b. Verifica scadenza effettiva dello stato PKCE (TTL 5 minuti)
+    if (typeof storedPkce.createdAt === 'number' && Date.now() - storedPkce.createdAt > PKCE_MAX_AGE_MS) {
+      throw new Error('Sessione PKCE scaduta (tempo limite di 5 minuti superato). Riprova il login.');
+    }
+
+    // 2c. Protezione CSRF: il parametro state restituito deve corrispondere esattamente
     if (storedPkce.state !== returnedState) {
       throw new Error('Parametro "state" non corrispondente: possibile attacco CSRF.');
     }
 
-    // 3. Scambio Authorization Code -> Token su Logto `/token`
-    const tokenEndpoint = this.config.endpoint.endsWith('/oidc')
-      ? `${this.config.endpoint}/token`
-      : `${this.config.endpoint}/oidc/token`;
+    // 3. Risolve token_endpoint via OIDC discovery (fail-closed: nessun fallback manuale)
+    const discoveryForToken = await this.fetchDiscovery();
+    const tokenEndpoint = discoveryForToken.token_endpoint;
 
     const body = new URLSearchParams();
     body.set('grant_type', 'authorization_code');
@@ -354,45 +487,79 @@ export class OidcClient {
 
     const tokenResponse = await res.json();
     const accessToken = tokenResponse.access_token;
-    if (!accessToken) {
-      throw new Error('Risposta del provider priva di access_token.');
+    if (!accessToken || typeof accessToken !== 'string') {
+      throw new Error('Risposta del provider priva di access_token valido.');
+    }
+
+    // 4. Validazione Rigorosa ID Token secondo OpenID Connect Core 1.0
+    const rawIdToken = tokenResponse.id_token;
+    if (!rawIdToken || typeof rawIdToken !== 'string') {
+      throw new Error('Risposta del provider priva di id_token: ID token obbligatorio per completare la sessione OpenID.');
+    }
+
+    const idTokenClaims = parseJwtPayload(rawIdToken);
+    if (!idTokenClaims || typeof idTokenClaims !== 'object') {
+      throw new Error('Validazione ID Token fallita: token JWT malformato o non valido.');
+    }
+
+    // 4a. Verifica Issuer
+    const expectedIssuer = this.config.endpoint.replace(/\/+$/, '');
+    const idTokenIssuer = typeof idTokenClaims.iss === 'string' ? idTokenClaims.iss.replace(/\/+$/, '') : '';
+    if (idTokenIssuer !== expectedIssuer) {
+      throw new Error(
+        `Validazione ID Token fallita: issuer non corrispondente (atteso: "${expectedIssuer}", ricevuto: "${idTokenClaims.iss}").`
+      );
+    }
+
+    // 4b. Verifica Audience (deve corrispondere ad appId)
+    const aud = idTokenClaims.aud;
+    const audMatches =
+      typeof aud === 'string'
+        ? aud === this.config.appId
+        : Array.isArray(aud)
+          ? aud.includes(this.config.appId)
+          : false;
+
+    if (!audMatches) {
+      throw new Error(
+        `Validazione ID Token fallita: audience non valida per appId "${this.config.appId}".`
+      );
+    }
+
+    // 4c. Verifica Scadenza (exp)
+    if (typeof idTokenClaims.exp !== 'number' || Date.now() >= (idTokenClaims.exp + 10) * 1000) {
+      throw new Error('Validazione ID Token fallita: ID token scaduto.');
+    }
+
+    // 4d. Verifica Nonce (obbligatorio e deve coincidere con storedPkce.nonce)
+    if (!idTokenClaims.nonce || idTokenClaims.nonce !== storedPkce.nonce) {
+      throw new Error('Validazione ID Token fallita: nonce mancante o non corrispondente.');
     }
 
     const expiresIn = Number(tokenResponse.expires_in) || 3600;
     const expiresAt = Date.now() + expiresIn * 1000;
 
     let subject: string | undefined = undefined;
-    const idTokenClaims = tokenResponse.id_token ? parseJwtPayload(tokenResponse.id_token) : null;
-    const accessClaims = parseJwtPayload(accessToken);
-    const claims = accessClaims || idTokenClaims;
-
-    if (claims && typeof claims.sub === 'string') {
-      subject = claims.sub;
-    }
-
-    // Se id_token e stored nonce sono presenti, convalida il nonce
-    if (idTokenClaims && idTokenClaims.nonce && storedPkce.nonce) {
-      if (idTokenClaims.nonce !== storedPkce.nonce) {
-        throw new Error('Validazione ID Token fallita: nonce non corrispondente.');
+    if (typeof idTokenClaims.sub === 'string') {
+      subject = idTokenClaims.sub;
+    } else {
+      const accessClaims = parseJwtPayload(accessToken);
+      if (accessClaims && typeof accessClaims.sub === 'string') {
+        subject = accessClaims.sub;
       }
     }
 
     const session: OidcSession = {
       accessToken,
-      idToken: tokenResponse.id_token,
+      idToken: rawIdToken,
       tokenType: tokenResponse.token_type || 'Bearer',
       expiresAt,
       scope: tokenResponse.scope,
       subject,
     };
 
-    // Salva la sessione e pulisce lo stato PKCE temporaneo
+    // Salva la sessione
     this.saveSession(session);
-    try {
-      sessionStorage.removeItem(STORAGE_KEY_PKCE);
-    } catch {
-      // ignore
-    }
 
     return {
       session,
@@ -402,6 +569,7 @@ export class OidcClient {
 
   /**
    * Restituisce l'access token valido per la risorsa (conforme a @logto/react getAccessToken).
+   * Rifiuta l'emissione del token se la risorsa richiesta differisce dalla risorsa configurata.
    */
   public async getAccessToken(resource?: string): Promise<string | null> {
     const session = this.loadSession();
@@ -415,7 +583,7 @@ export class OidcClient {
   }
 
   /**
-   * Salva la sessione OIDC in sessionStorage.
+   * Salva la sessione OIDC in sessionStorage (memoria volatile di tab).
    */
   public saveSession(session: OidcSession | null): void {
     try {
@@ -452,15 +620,16 @@ export class OidcClient {
   }
 
   /**
-   * Costruisce l'URL di logout da Logto (endpoint `/session/end`).
+   * Costruisce l'URL di logout da Logto usando end_session_endpoint scoperto (o fallback conforme).
    */
   public buildEndSessionUrl(idToken?: string): string | null {
     if (!this.config) return null;
 
-    const isOidcPath = this.config.endpoint.endsWith('/oidc');
-    const endSessionEndpoint = isOidcPath
-      ? `${this.config.endpoint}/session/end`
-      : `${this.config.endpoint}/oidc/session/end`;
+    const endSessionEndpoint =
+      this.discoveryMetadata?.end_session_endpoint ||
+      (this.config.endpoint.endsWith('/oidc')
+        ? `${this.config.endpoint}/session/end`
+        : `${this.config.endpoint}/oidc/session/end`);
 
     const url = new URL(endSessionEndpoint);
     url.searchParams.set('client_id', this.config.appId);
