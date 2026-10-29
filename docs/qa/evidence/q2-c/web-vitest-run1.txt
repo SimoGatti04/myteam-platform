@@ -1,0 +1,13 @@
+
+> @myteam/web@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+> vitest run
+
+
+ RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+
+
+ Test Files  7 passed (7)
+      Tests  87 passed (87)
+   Start at  18:46:29
+   Duration  1.62s (transform 315ms, setup 0ms, import 774ms, tests 677ms, environment 5.10s)
+

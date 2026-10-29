@@ -49,8 +49,13 @@ test("6.2 Web Build Artifacts Verification", {
   assert.match(distHtml, /<div id="root">/i, "Built index.html must mount root container");
 });
 
-test("6.3 Live Browser Responsive E2E Gate (Mobile & Desktop Viewports)", {
-  skip: "NOT RUN: Live headless browser execution blocked by environment constraints (no display daemon / loopback browser socket in sandbox). Requires manual or staging browser verification before production release."
+// 6.3 è deliberatamente NON eseguito in questa suite Node: il gate browser reale
+// (desktop + viewport mobile, onboarding, 401/403/offline, bozza/pubblicazione) è
+// implementato in `tests/browser/browser-e2e.py` ed eseguito separatamente con
+// Playwright, con log e screenshot in `docs/qa/evidence/<checkpoint>/`.
+// Lo skip NON è una prova e NON va conteggiato come PASS.
+test("6.3 Live Browser Responsive E2E Gate (delegated to tests/browser/browser-e2e.py)", {
+  skip: "NOT RUN in TAP: gate browser reale delegato a tests/browser/browser-e2e.py (Playwright, desktop + mobile), eseguito e rendicontato separatamente. Questo SKIP non è un esito PASS."
 }, () => {
-  // Gateplaceholder tracciato esplicitamente come non eseguito / bloccato
+  // Placeholder: nessuna asserzione qui, per non produrre un falso positivo.
 });

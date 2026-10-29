@@ -1,0 +1,9 @@
+
+ RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  18:48:50
+   Duration  500ms (transform 28ms, setup 0ms, import 15ms, tests 61ms, environment 355ms)
+

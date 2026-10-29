@@ -367,3 +367,80 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL Real: non-completed match remains reschedulable after C1.2 guard (no regression)",
+  { skip: !testDbUrl ? "TEST_DATABASE_URL not set; skipping real PostgreSQL test" : false },
+  async (t) => {
+    let ctx;
+    try {
+      ctx = await createScopedPostgresContext();
+    } catch (err: any) {
+      if (isEnvironmentalConnectionError(err)) {
+        t.skip(`PostgreSQL unreachable in current sandbox environment (${err.code || err.message}); gate marked NOT RUN per protocol`);
+        return;
+      }
+      throw err;
+    }
+    if (!ctx) return;
+
+    const { scopedPool, cleanup } = ctx;
+    let app: ReturnType<typeof createApp> | undefined;
+
+    try {
+      app = createApp({
+        logger: false,
+        pool: scopedPool,
+        verifyAdminToken: async (h) => {
+          if (h === "Bearer pg-admin") return { subject: "pg-admin-user" };
+          throw new DomainError(401, "authentication_required");
+        },
+      });
+      const headers = { authorization: "Bearer pg-admin" };
+
+      const seasonRes = await app.inject({
+        method: "POST", url: "/api/v1/admin/seasons", headers, payload: realisticSeasonFixture,
+      });
+      assert.equal(seasonRes.statusCode, 201);
+      const seasonId = seasonRes.json<{ id: string }>().id;
+
+      const oppRes = await app.inject({
+        method: "POST", url: "/api/v1/admin/opponents", headers, payload: realisticOpponentsFixture[0],
+      });
+      assert.equal(oppRes.statusCode, 201);
+      const opponentId = oppRes.json<{ id: string }>().id;
+
+      const matchRes = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/matches",
+        headers,
+        payload: { seasonId, opponentId, isOfficial: true, scheduledAt: "2026-10-10T15:00:00.000Z" },
+      });
+      assert.equal(matchRes.statusCode, 201);
+      const matchId = matchRes.json<{ id: string }>().id;
+
+      // Una partita NON completata deve restare rinviabile: la guardia C1.2 non deve bloccare oltre.
+      const patchRes = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/matches/${matchId}/schedule`,
+        headers,
+        payload: { status: "postponed", scheduledAt: "2026-10-25T15:00:00.000Z", reason: "Rinvio legittimo" },
+      });
+      assert.equal(patchRes.statusCode, 200, `rinvio di partita non completata deve riuscire, ottenuto ${patchRes.statusCode}`);
+
+      const after = await scopedPool.query<{ status: string; scheduled_at: string }>(
+        "SELECT status, scheduled_at FROM matches WHERE id = $1", [matchId],
+      );
+      assert.equal(after.rows[0].status, "postponed");
+      assert.equal(new Date(after.rows[0].scheduled_at).toISOString(), "2026-10-25T15:00:00.000Z");
+
+      const hist = await scopedPool.query<{ c: string }>(
+        "SELECT COUNT(*) as c FROM match_schedule_history WHERE match_id = $1", [matchId],
+      );
+      assert.ok(Number(hist.rows[0].c) >= 1, "il rinvio legittimo deve produrre una riga di storico");
+    } finally {
+      if (app) await app.close();
+      await cleanup();
+    }
+  },
+);

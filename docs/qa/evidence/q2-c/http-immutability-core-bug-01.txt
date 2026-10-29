@@ -1,0 +1,18 @@
+QA HTTP immutability regression -> http://127.0.0.1:3000 (schema test_qa_0be50b97d65d413cb1fb8e8cad19c9cf)
+  PASS  API attiva e database vuoto (public/team 404)
+  PASS  stagione creata (85bf2389-2679-4008-8d0f-76012a823cb5)
+  PASS  squadra configurata e pubblicata
+  PASS  avversaria creata
+  PASS  partita creata come scheduled (8183cccf-1df3-4af8-9853-23ffbdf18123)
+  PASS  stato forzato a completed nel database di test (data=2026-11-0115:00:00+00, storico=1, audit=1)
+  PASS  PATCH su partita completata rifiutato con HTTP 400
+  PASS  codice errore corretto: completed_match_schedule_is_immutable
+  PASS  stato invariato (completed)
+  PASS  data invariata (2026-11-0115:00:00+00)
+  PASS  nessuna nuova riga di storico (1)
+  PASS  nessun nuovo evento audit (1)
+  PASS  secondo tentativo rifiutato con HTTP 400 (idempotenza del rifiuto)
+  PASS  contatori invariati dopo il secondo tentativo (1|1)
+  PASS  nessuna regressione: partita non completata modificabile (200, status=postponed)
+
+QA HTTP immutability regression: ALL CHECKS PASSED

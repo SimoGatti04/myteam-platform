@@ -1,0 +1,16 @@
+  ➜  Local:   http://127.0.0.1:4180/
+6:46:01 PM [vite] http proxy error: /api/v1/public/matches
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1864:16)
+6:46:01 PM [vite] http proxy error: /api/v1/public/team
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1864:16)
+6:46:02 PM [vite] http proxy error: /api/v1/public/team
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1864:16)
+6:46:03 PM [vite] http proxy error: /api/v1/public/matches
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1864:16)
+6:46:03 PM [vite] http proxy error: /api/v1/public/team
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1864:16)
