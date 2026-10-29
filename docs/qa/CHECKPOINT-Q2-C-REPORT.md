@@ -33,7 +33,7 @@ Non è autorizzazione al merge su `main`. Le condizioni sono in §10 e richiedon
 | Core C1.2 | `codex/core-persistent-flow` | `1ab71792929bef1009e3ecab57adf3d333d58ceb` |
 | Base QA (Q2-B) | `qa/q2-b-w2r2-verification` | `87e664893b92b5df9da28b4e2d2be9b5a0ca4172` |
 | Merge d'integrazione QA | `qa/q2-c-w2r3-integration` | `fada57a784773bdc627e8113e60719cac1e1d23c` |
-| Commit QA di questo rapporto | `qa/q2-c-w2r3-integration` | vedi §12 (commit successivo) |
+| Commit QA di verifica (test + evidenze + rapporto) | `qa/q2-c-w2r3-integration` | `f950904b1768bbabf8225da09e33a5e1b2a449a6` |
 
 ### 2.1 Ancestry verificata (comandi eseguiti)
 
@@ -298,5 +298,6 @@ cd apps/web && VITE_ENABLE_DEMO=true VITE_APP_ENV=production ./node_modules/.bin
 
 - Finding precedenti: `docs/qa/CHECKPOINT-Q2-B-REPORT.md`
 - Evidenze: `docs/qa/evidence/q2-c/` (21 artefatti di log + 14 screenshot)
+- Branch pubblicato: `qa/q2-c-w2r3-integration` — commit di verifica `f950904b1768bbabf8225da09e33a5e1b2a449a6` (questo file è aggiornato da un commit successivo, solo documentale, per registrarne lo SHA)
 - Script QA aggiunti in questo checkpoint: `tests/browser/schedule-immutability-http.sh`, `tests/q1/10-web-w2-r3-oidc-failclosed.vitest.ts`, `tests/vitest.qa.config.ts`
 - Test QA modificati: `tests/browser/start-test-api.ts` (marker/sweep anti-schema orfano, porta configurabile), `tests/integration/postgres-real-concurrency-and-rollback.test.ts` (non-regressione C1.2), `tests/q1/06-web-responsive-audit.test.ts` (motivazione SKIP 6.3)
