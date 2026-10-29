@@ -1,0 +1,15 @@
+
+> myteam-platform@0.1.0 typecheck /Users/gatti/Workspace/myteam-platform-q2-d-int
+> pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck
+
+
+> @myteam/contracts@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-d-int/packages/contracts
+> tsc -p tsconfig.json
+
+Scope: 3 of 4 workspace projects
+packages/contracts typecheck$ tsc -p tsconfig.json --noEmit
+packages/contracts typecheck: Done
+apps/web typecheck$ tsc --noEmit
+apps/api typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json
+apps/web typecheck: Done
+apps/api typecheck: Done
