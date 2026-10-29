@@ -81,7 +81,7 @@ A partire dal checkpoint **W2**, l'area amministrativa adotta l'autenticazione f
      - `client_id`: ID applicazione SPA registrato in Logto
      - `redirect_uri`: URI di callback autorizzato
      - `response_type`: `code`
-     - `scope`: `openid profile offline_access platform:admin`
+     - `scope`: `openid profile platform:admin`
      - `resource`: URI risorsa API indicata da `VITE_LOGTO_API_RESOURCE` (corrispondente a `LOGTO_AUDIENCE` di Core)
      - `code_challenge`: hash S256 calcolato
      - `code_challenge_method`: `S256`
@@ -111,7 +111,7 @@ A partire dal checkpoint **W2**, l'area amministrativa adotta l'autenticazione f
 | `VITE_LOGTO_ENDPOINT` | **Sì** (per OIDC) | URL base dell'istanza Logto OIDC (corrisponde a `LOGTO_ISSUER` di Core) | `https://auth.myteam.org/oidc` |
 | `VITE_LOGTO_APP_ID` | **Sì** (per OIDC) | Client ID pubblico dell'applicazione SPA creata in Logto | es. `k492msldkf9203js` |
 | `VITE_LOGTO_API_RESOURCE` | **Sì** (per OIDC) | Resource indicator API registrato in Logto (corrisponde tassativamente a `LOGTO_AUDIENCE` di Core) | `https://api.myteam.local` |
-| `VITE_LOGTO_SCOPES` | No | Scope OIDC e permessi API richiesti | `openid profile offline_access platform:admin` |
+| `VITE_LOGTO_SCOPES` | No | Scope OIDC e permessi API richiesti | `openid profile platform:admin` |
 | `VITE_LOGTO_REDIRECT_URI` | No | URI di callback post-login autorizzato | `${window.location.origin}/callback` |
 | `VITE_LOGTO_POST_LOGOUT_REDIRECT_URI` | No | URI di redirect dopo il logout | `${window.location.origin}` |
 

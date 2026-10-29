@@ -22,7 +22,7 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
     endpoint: 'https://auth.simogatti.it/oidc',
     appId: 'myteam-web-app-client',
     apiResource: 'https://api.simogatti.it',
-    scopes: 'openid profile offline_access platform:admin',
+    scopes: 'openid profile platform:admin',
     redirectUri: 'https://myteam.simogatti.it/callback',
     postLogoutRedirectUri: 'https://myteam.simogatti.it',
   };
@@ -33,6 +33,7 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
     sessionStorage.clear();
     authService.logout();
     oidcClient.setConfig(mockConfig);
+    oidcClient.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token`, end_session_endpoint: `${mockConfig.endpoint}/session/end` });
 
     locationAssignMock = vi.fn();
     delete (window as any).location;
