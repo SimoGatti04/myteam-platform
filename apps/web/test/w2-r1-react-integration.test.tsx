@@ -1,3 +1,4 @@
+import { createValidMockIdToken } from './test-jwt';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { useEffect } from 'react';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
@@ -125,13 +126,18 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
   it('2. Callback valido: scambia authorization code, valida Core e conferma autenticazione', async () => {
     const codeVerifier = 'valid-code-verifier-1234567890-test-verifier';
     const state = 'valid-state-abc';
+    const nonce = 'valid-nonce-abc';
     sessionStorage.setItem(
       STORAGE_KEY_PKCE,
-      JSON.stringify({ codeVerifier, state, returnTo: 'partite', createdAt: Date.now() })
+      JSON.stringify({ codeVerifier, state, nonce, returnTo: 'partite', createdAt: Date.now() })
     );
 
     const fakeAccessToken = 'logto-access-token-adm';
-    const fakeIdToken = 'logto-id-token';
+    const fakeIdToken = createValidMockIdToken({
+      issuer: mockConfig.endpoint,
+      appId: mockConfig.appId,
+      nonce,
+    });
 
     globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
       if (url.includes('/token')) {
@@ -219,10 +225,17 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
   it('4. Nessun accesso ottimistico: se Core fallisce la verifica permessi, isAuthenticated resta false', async () => {
     const codeVerifier = 'valid-code-verifier';
     const state = 'legitimate-state';
+    const nonce = 'legitimate-nonce-4';
     sessionStorage.setItem(
       STORAGE_KEY_PKCE,
-      JSON.stringify({ codeVerifier, state, createdAt: Date.now() })
+      JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
     );
+
+    const validIdToken = createValidMockIdToken({
+      issuer: mockConfig.endpoint,
+      appId: mockConfig.appId,
+      nonce,
+    });
 
     globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
       if (url.includes('/token')) {
@@ -231,11 +244,12 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
           status: 200,
           json: async () => ({
             access_token: 'valid-logto-token',
-            id_token: 'valid-id-token',
+            id_token: validIdToken,
             token_type: 'Bearer',
             expires_in: 3600,
           }),
         };
+
       }
       if (url.includes('/api/v1/admin/team')) {
         // Backend Core offline o errore 500
@@ -272,10 +286,17 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
   it('5. Errore 403: mostra errore visibile per mancanza di platform:admin e nessun accesso', async () => {
     const codeVerifier = 'valid-code-verifier';
     const state = 'legitimate-state';
+    const nonce = 'legitimate-nonce-5';
     sessionStorage.setItem(
       STORAGE_KEY_PKCE,
-      JSON.stringify({ codeVerifier, state, createdAt: Date.now() })
+      JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
     );
+
+    const validIdToken = createValidMockIdToken({
+      issuer: mockConfig.endpoint,
+      appId: mockConfig.appId,
+      nonce,
+    });
 
     globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
       if (url.includes('/token')) {
@@ -284,7 +305,7 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
           status: 200,
           json: async () => ({
             access_token: 'user-token-without-admin-scope',
-            id_token: 'id-token',
+            id_token: validIdToken,
             token_type: 'Bearer',
             expires_in: 3600,
           }),

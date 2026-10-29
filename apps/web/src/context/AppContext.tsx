@@ -140,7 +140,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // Autenticazione (W2-R1: nessun accesso ottimistico non confermato)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => authService.isAuthenticated());
+  // W2-R2: Ripristino F5 subordinato alla verifica Core prima di presentare la dashboard come autorizzata
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [oidcLoading, setOidcLoading] = useState<boolean>(false);
   const [oidcError, setOidcError] = useState<string | null>(null);
 

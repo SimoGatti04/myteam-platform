@@ -107,12 +107,24 @@ A partire dal checkpoint **W2**, l'area amministrativa adotta l'autenticazione f
 
 | Variabile | Obbligatoria | Descrizione | Valore Tipico / Default |
 |---|---|---|---|
-| `VITE_LOGTO_ENDPOINT` | Sì (per OIDC) | URL base dell'istanza Logto OIDC | `https://auth.myteam.org/oidc` |
-| `VITE_LOGTO_APP_ID` | Sì (per OIDC) | Client ID pubblico dell'applicazione SPA creata in Logto | es. `k492msldkf9203js` |
-| `VITE_LOGTO_API_RESOURCE` | No | Resource indicator API registrato in Logto (corrisponde a `LOGTO_AUDIENCE` di Core) | `https://api.myteam.local` |
+| `VITE_LOGTO_ENDPOINT` | **Sì** (per OIDC) | URL base dell'istanza Logto OIDC (corrisponde a `LOGTO_ISSUER` di Core) | `https://auth.myteam.org/oidc` |
+| `VITE_LOGTO_APP_ID` | **Sì** (per OIDC) | Client ID pubblico dell'applicazione SPA creata in Logto | es. `k492msldkf9203js` |
+| `VITE_LOGTO_API_RESOURCE` | **Sì** (per OIDC) | Resource indicator API registrato in Logto (corrisponde tassativamente a `LOGTO_AUDIENCE` di Core) | `https://api.myteam.local` |
 | `VITE_LOGTO_SCOPES` | No | Scope OIDC e permessi API richiesti | `openid profile offline_access platform:admin` |
 | `VITE_LOGTO_REDIRECT_URI` | No | URI di callback post-login autorizzato | `${window.location.origin}/callback` |
 | `VITE_LOGTO_POST_LOGOUT_REDIRECT_URI` | No | URI di redirect dopo il logout | `${window.location.origin}` |
+
+### Valutazione Adozione SDK Ufficiale (@logto/react / @logto/browser) e Decisione Architetturale (W2-R2)
+
+In conformità al gate di sicurezza e interoperabilità W2-R2, sono stati installati ed esaminati nel dettaglio i package ufficiali `@logto/react` (^4.1.2) e `@logto/browser` (^3.1.2).
+L'analisi del codice sorgente dell'SDK ha rilevato i seguenti vincoli critici:
+1. **Modello di Sessione e Rischio XSS:** `@logto/browser` implementa `BrowserStorage` che salva sistematicamente tutti i token (access token, ID token e refresh token) in `localStorage`. Questa persistenza a lungo termine viola il modello di sicurezza approvato in `ACCESS-DEPLOYMENT.md`, che vieta storage permanente non protetto per SPA pubbliche.
+2. **Replay Protection sull'ID Token:** L'implementazione client di `@logto/client` non trasmette né convalida il parametro standard `nonce` nei flussi authorization code, omettendo una difesa essenziale di OIDC Core 1.0.
+3. **Controllo Ottimistico dell'Accesso:** `<LogtoProvider>` assume `isAuthenticated = true` al montaggio appena rileva un token nello storage locale, prima ancora che il backend Core (`GET /api/v1/admin/team`) abbia confermato l'effettiva validità del token e il permesso `platform:admin`.
+4. **Scadenza e Gestione Refresh Token:** Nessun refresh token viene memorizzato nel browser per mitigare il rischio XSS in SPA pubblica. Alla scadenza del token, la sessione viene distrutta e l'utente reindirizzato al login; non viene fittiziamente dichiarato il supporto a refresh token non protetti.
+
+**Decisione:**
+Vengono riusate direttamente le funzioni crittografiche mantenute dell'SDK (`generateCodeVerifier`, `generateCodeChallenge`, `generateState`), affiancate da un client OIDC integrato pienamente conforme a OIDC Core 1.0 (discovery dinamica RFC 8414 con verifica rigorosa dell'issuer, consumo monouso PKCE con TTL 5 minuti, validazione tassativa di iss, aud, exp e nonce sull'ID token, e ripristino F5 rigorosamente subordinato a Core prima di presentare la dashboard).
 
 ## Istruzioni per Avviare e Visualizzare Localmente
 
