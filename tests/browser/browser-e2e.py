@@ -61,11 +61,10 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
     async with async_playwright() as p:
         try:
-            executable_path = os.environ.get(
-                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
-                "/Users/gatti/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell"
-            )
-            if not os.path.exists(executable_path):
+            # Nessun percorso assoluto hardcoded: usa l'override esplicito se fornito,
+            # altrimenti il browser installato da Playwright (cache utente).
+            executable_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or None
+            if executable_path and not os.path.exists(executable_path):
                 executable_path = None
 
             browser = await p.chromium.launch(

@@ -26,16 +26,29 @@ async function main() {
   const address = await app.listen({ host: "127.0.0.1", port: 3000 });
   console.log("FASTIFY_API_READY at", address);
 
+  // Shutdown idempotente: un secondo Ctrl+C non deve interrompere il cleanup dello schema.
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Rete di sicurezza: se il cleanup si blocca, esce comunque dopo 15 s.
+    const hardExit = setTimeout(() => process.exit(1), 15_000);
+    hardExit.unref();
     try {
-      await app.close();
+      await Promise.race([
+        app.close(),
+        new Promise((resolve) => setTimeout(resolve, 3_000)),
+      ]);
+    } catch {}
+    try {
       await ctx.cleanup();
     } catch {}
+    clearTimeout(hardExit);
     process.exit(0);
   };
 
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", () => void shutdown());
+  process.on("SIGINT", () => void shutdown());
 }
 
 main().catch(err => {

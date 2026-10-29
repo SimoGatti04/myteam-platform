@@ -131,6 +131,11 @@ branch Web che non contiene C1.2.
   8. Viewport mobile 390×844: drawer hamburger e lista pubblica corretti.
 - **Evidenze:** 11 screenshot in `docs/qa/evidence/q2-b/screenshots/` + log completo in
   `docs/qa/evidence/q2-b/browser-e2e-desktop-mobile.txt`.
+- **Correzione QA applicata e riverificata:** `browser-e2e.py` conteneva un percorso assoluto
+  hardcoded (`/Users/gatti/Library/Caches/...`) come fallback dell'eseguibile Chromium.
+  Rimosso (ora solo `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` opzionale, altrimenti browser
+  Playwright predefinito) e **gate rieseguito**: exit 0, tutti gli scenari di nuovo PASS
+  (`browser-e2e-desktop-mobile-run2-after-path-fix.txt`).
 - **Limite dichiarato:** l'API di test usa un **verificatore admin sostitutivo**
   (`start-test-api.ts`: `test-admin-token` → admin, `forbidden-token` → 403). Il gate
   dimostra UI + persistenza PostgreSQL + flussi; **non** dimostra JWT crittografico né Logto OIDC.
@@ -241,6 +246,7 @@ per non richiedere consensi non necessari.
 - QA suite completa su `qa/q2-b-integration-c12`: exit **0** — `tests 67, pass 66, fail 0, skipped 1`
 - QA pg suites su `qa/q2-b-integration-c12`: exit **0** — `tests 5, pass 5, fail 0`
 - Browser E2E su `qa/q2-b-integration-c12`: exit **0** — 7 scenari + mobile, tutti PASS
+- Browser E2E dopo la rimozione del percorso assoluto: exit **0** — stessi scenari, tutti PASS
 - Vitest su clone pulito del branch integrato: exit **1** — `Test Files 3 failed | 4 passed (7)`, `Tests 1 failed | 56 passed (57)`
 - **Totale QA su `web/w2-logto-auth`: 65 PASS / 1 FAIL / 6 SKIPPED (72 test)**
 - **Totale QA su `qa/q2-b-integration-c12`: 66 PASS / 0 FAIL / 1 SKIPPED (67 test)**
@@ -257,6 +263,7 @@ per non richiedere consensi non necessari.
 | QA-B-OBS-02 | Osservazione | `fetchDiscovery()` non ha `AbortController`/timeout: in un browser reale con rete che non risponde il login può restare in attesa | `oidc.ts` `fetchDiscovery` (nessun limite di tempo); suggerito `AbortSignal.timeout(ms)` e fallback esplicito |
 | QA-B-OBS-01 | Osservazione | Scope `offline_access` richiesto ma refresh token scartato | Coerente con README; valutare rimozione dallo scope default |
 | QA-B-LIM-01 | Limite verifica | Firma ID token non verificata via JWKS (affidamento a TLS + validazione Core) | Codice ispezionato; gate JWKS/Logto reale NOT RUN |
+| QA-B-OBS-03 | Bassa (corretto in QA) | Lo shutdown di `start-test-api.ts` non era idempotente: un secondo `SIGINT` poteva interrompere `DROP SCHEMA`, lasciando uno schema orfano | Riprodotto (1 schema residuo dopo Ctrl+C) e corretto: handler idempotente + budget 3 s per `app.close()` + hard-exit 15 s. Riverificato: `BEFORE=1 DURING=2 AFTER=1` → nessun nuovo residuo |
 | QA-B-F4 | Bassa (risolto) | 6 schemi `test_qa_*` residui da sessioni precedenti | Rimossi con `DROP SCHEMA ... CASCADE`; verificato che le esecuzioni correnti (anche quelle **fallite**) non lasciano residui: conteggio invariato prima/dopo |
 | QA-B-LIM-02 | Limite verifica | Logto reale non eseguito; browser E2E con verificatore admin sostitutivo | Nessuna credenziale/autorizzazione; `start-test-api.ts` accetta `test-admin-token`. Nessun esito attribuito a JWT reale o OIDC remoto |
 
@@ -296,7 +303,7 @@ dispositivo reale restano gate separati e **NOT RUN**.
 | Branch QA pubblicato | `qa/q2-b-w2r2-verification` |
 | Commit base (parent) | `390faa578a3a04fef8d6cc8e83527fefa0ab6a33` (Q2-A-R1) |
 | Contenuto dei commit | solo `docs/qa/` (report + evidenze); nessun file applicativo |
-| Commit | `e09f75b` (prima pubblicazione), `7fe91f3` (rettifica F2/OBS-02), `03824da` (esiti reali PostgreSQL + browser) |
+| Commit | `e09f75b` (prima pubblicazione), `7fe91f3` (rettifica F2/OBS-02), `03824da` (esiti reali PostgreSQL + browser), `a0951c5` (registrazione SHA), + commit finale: correzioni QA (percorso assoluto browser, shutdown SIGINT) ed evidenze run 2 |
 | Branch di verifica integrato | `qa/q2-b-integration-c12` @ `869023cecdb66e21635837356b34e1f381f1cf86` |
 | Force push | nessuno (fast-forward sullo stesso branch) |
 | Merge su main | nessuno |
@@ -328,7 +335,8 @@ soli file QA e `push` fast-forward. Nessuna riscrittura di storia, nessun force 
 | `pg-real-webbranch-4pass-1fail.txt` | PostgreSQL reale su `478b742` — 4 pass / 1 fail (CORE-BUG-01) |
 | `pg-real-integrated-5pass.txt` | PostgreSQL reale su `qa/q2-b-integration-c12` — 5/5 pass |
 | `qa-suite-integrated-66pass.txt` | suite QA integrata — 66 pass / 0 fail / 1 skip |
-| `browser-e2e-desktop-mobile.txt` | log completo del gate browser (exit 0) |
+| `browser-e2e-desktop-mobile.txt` | log completo del gate browser, run 1 (exit 0) |
+| `browser-e2e-desktop-mobile-run2-after-path-fix.txt` | run 2 dopo la rimozione del percorso assoluto (exit 0) |
 | `screenshots/*.png` | 11 screenshot desktop + mobile |
 | `build-integrated.txt`, `typecheck-integrated.txt` | build e typecheck del checkout integrato |
 | `web-vitest-clean-install-57collected.txt` | clone pulito: 57 test raccolti, 2 suite non caricate (F3) |
@@ -346,4 +354,5 @@ soli file QA e `push` fast-forward. Nessuna riscrittura di storia, nessun force 
 | Server di test (API 3000, Vite 5173) | **fermati**; `lsof` su 3000/5173 → nessun listener |
 | Schemi PostgreSQL `test_qa_*` | **0 residui** (6 storici rimossi; nessun nuovo residuo) |
 | Container PostgreSQL | preesistente, lasciato in esecuzione (non creato da QA) |
-| File tracciati modificati fuori da `docs/qa/` | nessuno |
+| File tracciati modificati fuori da `docs/qa/` e `tests/` | nessuno |
+| `apps/` (Core/Web) | **non modificato** (verificato con `git diff --stat 390faa5..HEAD`) |
