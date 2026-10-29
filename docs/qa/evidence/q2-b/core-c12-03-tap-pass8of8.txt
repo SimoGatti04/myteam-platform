@@ -1,0 +1,16 @@
+✔ 3.1 Create match in draft state with date and official status (109.868875ms)
+✔ 3.2 Draft match is isolated and NOT visible in public matches list (23.398334ms)
+✔ 3.3 Create match without date requires to_be_scheduled status (22.802125ms)
+✔ 3.4 Reschedule match updates history, logs audit, and handles postponed state (21.307584ms)
+✔ 3.5 Completed match schedule is immutable and transitions to completed are guarded (CORE-BUG-01) (20.384917ms)
+✔ 3.6 Publishing matches exposes them in public list separated by scheduled vs toBeScheduled (22.176541ms)
+✔ 3.7 Match Detail: Single public match detail endpoint GET /api/v1/public/matches/:id status and contract (20.208625ms)
+✔ 3.8 Match reschedule chain preserves stable match UUID identity across multiple changes (22.131125ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 451.346208

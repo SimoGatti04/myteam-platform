@@ -32,7 +32,8 @@ della regressione CORE-BUG-01. Suite QA presa dal worktree Q2-A
 | :--- | :--- | :--- |
 | Build monorepo | `pnpm build` | **PASS** (contracts+api+web; bundle 420.44 kB, gzip 109.43 kB) |
 | Typecheck | `pnpm typecheck` | **PASS** (0 errori) |
-| Web Vitest | `pnpm --filter @myteam/web test` | **87 PASS / 0 FAIL** (7 file) |
+| Web Vitest (esecuzione 1) | `pnpm --filter @myteam/web test` | **87 PASS / 0 FAIL** (7 file) |
+| Web Vitest (esecuzione 2, stessa revisione) | idem | **86 PASS / 1 FAIL** — `w2-oidc-auth.test.ts` §3 in timeout a 5 s: test non ermetico, cfr. **QA-B-F2** |
 | QA suite su `web/w2-logto-auth` | `node --import tsx --test tests/...` | **65 PASS / 1 FAIL / 6 SKIPPED** |
 | QA 03 su Core C1.2 | stesso comando su worktree `1ab7179` con test Q2-A | **8 PASS / 0 FAIL** |
 | PostgreSQL reale | suite `postgres-real-*` | **NOT RUN** (5 SKIPPED: no TEST_DATABASE_URL / no binari server) |
@@ -151,7 +152,7 @@ per non richiedere consensi non necessari.
 
 | Livello | Stato | Dettaglio |
 | :--- | :--- | :--- |
-| Mock (Vitest jsdom) | **87 PASS** | 7 file inclusi i 19 W2-R2; fetch/sessionStorage/WebCrypto mockati |
+| Mock (Vitest jsdom) | **87 PASS** (run 1) / **86 PASS + 1 FAIL** (run 2) | 7 file inclusi i 19 W2-R2; la maggior parte mocka fetch/sessionStorage/WebCrypto, **ma `w2-oidc-auth.test.ts` §3 no** (cfr. QA-B-F2) |
 | SQLite in-memory (Node runner) | **65 PASS / 1 FAIL / 1 SKIP(+5 pg)** | Suite QA su checkout Web (senza C1.2): 1 FAIL = 3.5 |
 | PostgreSQL reale | **NOT RUN** | 5 SKIPPED: `TEST_DATABASE_URL` non impostato + binari server assenti (`pg_ctl`/`postgres` non trovati; esiste solo data-dir `/opt/homebrew/var/postgresql@16`) |
 | Browser reale | **NOT RUN** | `playwright` python non installato in sandbox (`ModuleNotFoundError`); EPERM loopback impedisce anche server di test (`listen EPERM 127.0.0.1`) |
@@ -162,12 +163,15 @@ per non richiedere consensi non necessari.
 
 - `pnpm build`: exit **0**
 - `pnpm typecheck`: exit **0**
-- `pnpm --filter @myteam/web test`: exit **0** — `Test Files 7 passed, Tests 87 passed`
+- `pnpm --filter @myteam/web test` (run 1): exit **0** — `Test Files 7 passed, Tests 87 passed`
+- `pnpm --filter @myteam/web test` (run 2, stessa revisione `478b742`): exit **1** — `Test Files 1 failed | 6 passed (7)`, `Tests 1 failed | 86 passed (87)`, durata 5.81 s
+- `npx vitest run test/w2-oidc-auth.test.ts` ×3: exit **1** in tutti e 3 i tentativi — `Tests 1 failed | 22 passed (23)`, sempre timeout 5 s sul test §3
 - QA (no-03 + contracts/auth/pipeline) su web branch: exit **0** — `tests 59, pass 58, skipped 1 (6.3)`
 - QA `03-match-lifecycle` su web branch: exit **1** — `tests 8, pass 7, fail 1 (3.5)`
 - QA `03-match-lifecycle` (test Q2-A) con cwd Core C1.2: exit **0** — `pass 8, fail 0`
 - QA pg suites: exit **0** — `tests 5, skipped 5`
 - **Totale QA su `web/w2-logto-auth`: 65 PASS / 1 FAIL / 6 SKIPPED (72 test)**
+- **Totale Web Vitest: non stabile** — 87/87 in un'esecuzione, 86/87 (1 timeout) in un'altra sulla **stessa** revisione
 
 ## 11. Finding classificati
 
@@ -175,21 +179,33 @@ per non richiedere consensi non necessari.
 | :--- | :--- | :--- | :--- |
 | **QA-B-CORE-01** | **Alta (bloccante integrazione)** | Branch Web W2-R2 non contiene il fix Core C1.2 (`1ab7179`); regressione CORE-BUG-01 riproducibile | Test 3.5 FAIL (200 vs 400); `merge-base --is-ancestor` = NO; controprova 8/8 PASS su worktree C1.2 |
 | **QA-B-F1** | **Media** | Fallback a endpoint OIDC hardcoded su discovery 5xx/offline invece di abortire | `oidc.ts` buildAuthorizationUrl/exchangeCodeForTokens: catch-all tranne issuer-mismatch |
+| **QA-B-F2** | **Media** | Test Web non ermetico: `w2-oidc-auth.test.ts` §3 dipende da una `fetch` reale al discovery (`https://auth.myteam.local/...`) senza mock | Con DNS che fallisce subito il test passa (87/87); con DNS che resta in attesa va **timeout a 5 s** e diventa FAIL (86/87, 4/4 esecuzioni in questa sessione). Il fallback catch-all di `buildAuthorizationUrl` rende verde il test solo se l'errore arriva in tempo |
+| QA-B-OBS-02 | Osservazione | `fetchDiscovery()` non ha `AbortController`/timeout: in un browser reale con rete che non risponde il login può restare in attesa | `oidc.ts` `fetchDiscovery` (nessun limite di tempo); suggerito `AbortSignal.timeout(ms)` e fallback esplicito |
 | QA-B-OBS-01 | Osservazione | Scope `offline_access` richiesto ma refresh token scartato | Coerente con README; valutare rimozione dallo scope default |
 | QA-B-LIM-01 | Limite verifica | Firma ID token non verificata via JWKS (affidamento a TLS + validazione Core) | Codice ispezionato; gate JWKS/Logto reale NOT RUN |
 | QA-B-LIM-02 | Limite verifica | PostgreSQL/browser/Logto reale NOT RUN in sandbox | EPERM loopback, no binari pg, no playwright, no credenziali |
 
 ## 12. Verdetto
 
-**STOP all'integrazione Web W2-R2 così come committata (`478b742`):** il branch non include
-il fix Core C1.2 e fallisce la regressione CORE-BUG-01 (1 FAIL su 72 QA). Il gate Q2-B
-può passare a **PASS** solo dopo integrazione di `1ab7179` nel branch Web (merge/cherry-pick)
-e riesecuzione della suite QA con esito 66+ PASS / 0 FAIL (fermi i NOT RUN ambientali).
+**STOP all'integrazione Web W2-R2 così come committata (`478b742`).** Due condizioni,
+entrambe a carico di Web, prima di poter dichiarare PASS:
+
+1. **QA-B-CORE-01 (alta)** — integrare `1ab7179` (Core C1.2) nel branch Web: oggi la
+   regressione CORE-BUG-01 fallisce (test 3.5, `200 !== 400`).
+2. **QA-B-F2 (media)** — rendere ermetico `w2-oidc-auth.test.ts` §3 (mockare la discovery
+   o iniettare `fetch`): oggi l'esito dipende dal comportamento DNS dell'ambiente, quindi
+   la suite Web non è riproducibile (87/87 vs 86/87 sulla stessa revisione).
+
+A integrazione avvenuta, il gate si ripete con attesi: QA **66+ PASS / 0 FAIL** e
+Vitest Web **87/87 stabile su ≥2 esecuzioni consecutive** (fermi i NOT RUN ambientali
+PostgreSQL/browser/Logto).
 
 **Lavoro Web W2-R2 in sé (OIDC client): verificato positivamente nei limiti mock:**
 19/19 nuovi test PASS, discovery/issuer/incompletezza/5xx gestiti a livello `fetchDiscovery`,
 PKCE/state/nonce/TTL/monouso/F5/logout/resource/Bearer conformi alle dichiarazioni,
-refresh dichiaratamente assente e assente nel codice. Resta il finding medio F1 sul fallback.
+refresh dichiaratamente assente e assente nel codice. Restano i finding medi F1 (fallback
+hardcoded) e F2 (test non ermetico); nessuno dei due è un difetto funzionale dimostrato
+del flusso OIDC, ma entrambi impediscono una certificazione pulita.
 
 **Consegna:** nessun file applicativo modificato; nessun merge su main; nessun deploy;
 nessun test su Logto reale. Report presente in `docs/qa/CHECKPOINT-Q2-B-REPORT.md`
@@ -203,8 +219,9 @@ sul branch `qa/q2-b-w2r2-verification`; TAP originali conservati localmente
 | :--- | :--- |
 | Branch QA pubblicato | `qa/q2-b-w2r2-verification` |
 | Commit base (parent) | `390faa578a3a04fef8d6cc8e83527fefa0ab6a33` (Q2-A-R1) |
-| Contenuto del commit | solo `docs/qa/CHECKPOINT-Q2-B-REPORT.md` (nessun file applicativo) |
-| Force push | nessuno (branch nuovo) |
+| Contenuto dei commit | solo `docs/qa/CHECKPOINT-Q2-B-REPORT.md` (nessun file applicativo) |
+| Commit | `e09f75b` (prima pubblicazione) + commit di rettifica (finding F2, OBS-02, conteggi Vitest) |
+| Force push | nessuno (fast-forward sullo stesso branch) |
 | Merge su main | nessuno |
 | Deploy | nessuno |
 
@@ -217,12 +234,25 @@ sul branch `qa/q2-b-w2r2-verification`; TAP originali conservati localmente
 | `/Users/gatti/Workspace/myteam-platform-mvp-i1` | `e8b90b4` | `qa/mvp-i1-integration` |
 | `/Users/gatti/Workspace/myteam-platform-q2-a` | `8c02c9f` | `qa/q2-a-w2-integration` |
 | `/Users/gatti/Workspace/myteam-platform-qa` | `0437b93` | `qa/q1-suite-consolidation` |
+| `/Users/gatti/Workspace/myteam-platform-q2-b` | `e09f75b` | `qa/q2-b-w2r2-verification` |
 
-**Limite operativo di pubblicazione:** la sandbox non consente scrittura su `.git`
-(`Operation not permitted`), `git fetch/push` né risoluzione DNS verso `github.com`;
-la pubblicazione è avvenuta tramite API GitHub (creazione branch da `390faa5` +
-commit del solo file di report). Nessuna riscrittura di storia.
+**Pubblicazione:** il branch è nato da `390faa5` tramite API GitHub (la shell in sandbox
+non può scrivere su `.git` né risolvere `github.com`), poi è stato completato via `git`
+in un worktree dedicato con accesso di rete autorizzato: `fetch` del branch, commit dei
+soli file QA e `push` fast-forward. Nessuna riscrittura di storia, nessun force push.
 
-**Risorse temporanee:** `/tmp/q2-b-report/` (report + TAP + script di riproduzione),
-mantenuta per riproducibilità; nessun processo, container o schema PostgreSQL
-residuo (PG/browser non eseguiti in sandbox).
+**Evidenze pubblicate (sanitizzate, percorsi assoluti sostituiti):** `docs/qa/evidence/q2-b/`
+
+| File | Contenuto |
+| :--- | :--- |
+| `qa-nocore3-tap.txt` | suite QA su `478b742` senza 03 — 59 test: 58 pass / 1 skip |
+| `qa03-tap.txt` | `03-match-lifecycle` su `478b742` — 8 test: 7 pass / 1 fail (3.5) |
+| `qa-pg-tap.txt` | suite PostgreSQL — 5 test: 0 pass / 5 skipped (NOT RUN) |
+| `core-c12-03-tap-pass8of8.txt` | controprova `03` con cwd Core C1.2 `1ab7179` — 8/8 pass |
+| `web-vitest-run1-pass87.txt` | Vitest Web run 1 — 7 file, 87/87 pass |
+| `web-vitest-run2-fail86.txt` | Vitest Web run 2 (stessa revisione) — 86 pass / 1 fail |
+| `w2-oidc-single-run1..3-fail22of23.txt` | 3 riesecuzioni del singolo file — sempre 22/23, timeout 5 s |
+
+**Risorse temporanee:** `/tmp/q2-b-report/` e `/tmp/q2-b-session/` (TAP grezzi + script di
+riproduzione), conservate per riproducibilità; nessun processo, container o schema
+PostgreSQL residuo (PG/browser non eseguiti in sandbox).

@@ -1,0 +1,13 @@
+﹣ PostgreSQL Real: Concurrency serialization on roster membership via pg_advisory_xact_lock (0.270708ms) # TEST_DATABASE_URL not set; skipping real PostgreSQL concurrency test
+﹣ PostgreSQL Real: Atomic transaction rollback on constraint / business validation failure (0.04325ms) # TEST_DATABASE_URL not set; skipping real PostgreSQL rollback test
+﹣ PostgreSQL Real: Native check constraints and enum integrity (0.034083ms) # TEST_DATABASE_URL not set; skipping real PostgreSQL constraint test
+﹣ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (0.029292ms) # TEST_DATABASE_URL not set; skipping real PostgreSQL test
+﹣ PostgreSQL Real: Complete Onboarding & Match Lifecycle (12-step path) (0.262917ms) # TEST_DATABASE_URL not set; skipping real PostgreSQL lifecycle test
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 5
+ℹ todo 0
+ℹ duration_ms 150.313375
