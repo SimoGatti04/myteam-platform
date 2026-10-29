@@ -61,7 +61,18 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
     async with async_playwright() as p:
         try:
-            browser = await p.chromium.launch(headless=True)
+            executable_path = os.environ.get(
+                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
+                "/Users/gatti/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+            )
+            if not os.path.exists(executable_path):
+                executable_path = None
+
+            browser = await p.chromium.launch(
+                executable_path=executable_path,
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
         except Exception as launch_err:
             code, diag = classify_launch_error(launch_err)
             print("\n" + "!" * 75)
@@ -146,16 +157,19 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             await expect(login_heading).to_be_visible()
 
             # Strict UI assertion: error alert must be visible on screen
-            error_401_alert = page.locator("text=Errore di autenticazione")
+            # In W2-R1, AdminLoginView renders:
+            # - 401: Header 'Errore di Autenticazione', detail 'Autenticazione richiesta (HTTP 401)'
+            # - 403: Header 'Permessi Insufficienti (HTTP 403)', detail 'platform:admin'
+            error_401_alert = page.locator("text=Errore di Autenticazione").first
+            error_401_detail = page.locator("text=HTTP 401").first
             try:
                 await expect(error_401_alert).to_be_visible(timeout=3000)
-                print("  -> PASS: 401 error alert is visible in UI.")
+                await expect(error_401_detail).to_be_visible(timeout=3000)
+                print("  -> PASS: 401 error alert is visible in UI (WEB-BUG-01 RESOLVED in W2-R1).")
+                await page.screenshot(path=os.path.join(screenshots_dir, "02a-auth-401-error-displayed.png"))
                 scenario_results["02a_auth_401_ui"] = "PASS"
             except AssertionError:
-                print("  -> FAIL (WEB-BUG-01): 401 error alert 'Errore di autenticazione' was NOT displayed in UI!")
-                print("     Root Cause: In AppContext.tsx loginAdminWithToken sets setIsAuthenticated(true) before API call.")
-                print("     In App.tsx showAdminLogin flips to false -> AdminLoginView unmounts -> API 401 -> setIsAuthenticated(false)")
-                print("     -> AdminLoginView remounts fresh with errorMsg=null, wiping out the error alert.")
+                print("  -> FAIL (WEB-BUG-01): 401 error alert was NOT displayed in UI!")
                 await page.screenshot(path=os.path.join(screenshots_dir, "02a-auth-401-error-lost.png"))
                 scenario_results["02a_auth_401_ui"] = "FAIL (WEB-BUG-01: AdminLoginView unmounts, wiping errorMsg)"
                 failed_scenarios.append("02a_auth_401_ui")
@@ -170,14 +184,16 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             await expect(login_heading).to_be_visible()
 
             # Strict UI assertion: error alert must be visible on screen
-            error_403_alert = page.locator("text=Errore di autenticazione")
+            error_403_alert = page.locator("text=Permessi Insufficienti (HTTP 403)").first
+            error_403_detail = page.locator("text=platform:admin").first
             try:
                 await expect(error_403_alert).to_be_visible(timeout=3000)
-                print("  -> PASS: 403 error alert is visible in UI.")
+                await expect(error_403_detail).to_be_visible(timeout=3000)
+                print("  -> PASS: 403 error alert is visible in UI (WEB-BUG-01 RESOLVED in W2-R1).")
+                await page.screenshot(path=os.path.join(screenshots_dir, "02b-auth-403-error-displayed.png"))
                 scenario_results["02b_auth_403_ui"] = "PASS"
             except AssertionError:
-                print("  -> FAIL (WEB-BUG-01): 403 error alert 'Errore di autenticazione' was NOT displayed in UI!")
-                print("     Root Cause: Same unmount/remount cycle in AdminLoginView wipes errorMsg.")
+                print("  -> FAIL (WEB-BUG-01): 403 error alert was NOT displayed in UI!")
                 await page.screenshot(path=os.path.join(screenshots_dir, "02b-auth-403-error-lost.png"))
                 scenario_results["02b_auth_403_ui"] = "FAIL (WEB-BUG-01: AdminLoginView unmounts, wiping errorMsg)"
                 failed_scenarios.append("02b_auth_403_ui")
