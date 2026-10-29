@@ -22,7 +22,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
     endpoint: 'https://auth.myteam.local/oidc',
     appId: 'myteam-web-app-client-id',
     apiResource: 'https://api.myteam.local',
-    scopes: 'openid profile offline_access platform:admin',
+    scopes: 'openid profile platform:admin',
     redirectUri: 'https://myteam.local/callback',
     postLogoutRedirectUri: 'https://myteam.local',
   };
@@ -372,7 +372,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('buildEndSessionUrl builds valid Logto end session URL with post_logout_redirect_uri', () => {
       const client = new OidcClient(mockConfig);
-      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token`, end_session_endpoint: `${mockConfig.endpoint}/session/end` });
       const url = client.buildEndSessionUrl('my-id-token');
 
       expect(url).toBeDefined();

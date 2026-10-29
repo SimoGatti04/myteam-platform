@@ -30,7 +30,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
     endpoint: 'https://auth.myteam.local/oidc',
     appId: 'myteam-web-app-client-id',
     apiResource: 'https://api.myteam.local',
-    scopes: 'openid profile offline_access platform:admin',
+    scopes: 'openid profile platform:admin',
     redirectUri: 'https://myteam.local/callback',
     postLogoutRedirectUri: 'https://myteam.local',
   };

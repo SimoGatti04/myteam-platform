@@ -204,7 +204,7 @@ export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | nul
 
   const scopes =
     (env as Record<string, string | undefined>).VITE_LOGTO_SCOPES?.trim() ||
-    'openid profile offline_access platform:admin';
+    'openid profile platform:admin';
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
 
@@ -252,7 +252,9 @@ export class OidcClient {
   }
 
   public setDiscoveryMetadata(metadata: OidcDiscoveryMetadata | null): void {
-    this.discoveryMetadata = metadata;
+    if (typeof process !== 'undefined' && process.env?.VITEST) {
+      this.discoveryMetadata = metadata;
+    }
   }
 
   /**
@@ -272,13 +274,21 @@ export class OidcClient {
     const issuerBase = endpoint.endsWith('/') ? endpoint : `${endpoint}/`;
     const discoveryUrl = new URL('.well-known/openid-configuration', issuerBase).toString();
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     let res: Response;
     try {
       res = await fetch(discoveryUrl, {
         headers: { Accept: 'application/json' },
+        signal: controller.signal,
       });
     } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new Error('Logto OIDC discovery: timeout (10s) raggiunto.');
+      }
       throw new Error(`Logto OIDC discovery non raggiungibile: ${err?.message || 'offline'}`);
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     if (!res.ok) {
@@ -455,6 +465,8 @@ export class OidcClient {
       body.set('resource', this.config.apiResource);
     }
 
+    const tokenController = new AbortController();
+    const tokenTimeoutId = setTimeout(() => tokenController.abort(), 10000);
     let res: Response;
     try {
       res = await fetch(tokenEndpoint, {
@@ -463,11 +475,17 @@ export class OidcClient {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: body.toString(),
+        signal: tokenController.signal,
       });
     } catch (netErr: any) {
+      if (netErr?.name === 'AbortError') {
+        throw new Error('Scambio token fallito: timeout (10s) raggiunto.');
+      }
       throw new Error(
         `Identity Provider Logto non raggiungibile o errore di rete: ${netErr?.message || 'offline'}`
       );
+    } finally {
+      clearTimeout(tokenTimeoutId);
     }
 
     if (!res.ok) {
@@ -625,11 +643,10 @@ export class OidcClient {
   public buildEndSessionUrl(idToken?: string): string | null {
     if (!this.config) return null;
 
-    const endSessionEndpoint =
-      this.discoveryMetadata?.end_session_endpoint ||
-      (this.config.endpoint.endsWith('/oidc')
-        ? `${this.config.endpoint}/session/end`
-        : `${this.config.endpoint}/oidc/session/end`);
+    const endSessionEndpoint = this.discoveryMetadata?.end_session_endpoint;
+    if (!endSessionEndpoint) {
+      return null;
+    }
 
     const url = new URL(endSessionEndpoint);
     url.searchParams.set('client_id', this.config.appId);
