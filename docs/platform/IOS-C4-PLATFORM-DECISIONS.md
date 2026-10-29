@@ -74,3 +74,11 @@
 L'ordine abilita prototipi indipendenti in parallelo, ma non consente di rimuovere funzioni legacy o cambiare lo schema SwiftData senza verifica preventiva.
 
 **Gate:** nessun merge su `main`, nessun remote iOS creato, nessuna implementazione o deployment autorizzati da questa sola registrazione.
+
+## 9. Collocazione iOS nel monorepo — APPROVATO (29/10/2026)
+
+- L'app iOS nativa sarà trasferita dal repository Git locale `AURINFORMATC` al monorepo `myteam-platform` sotto `apps/ios/`, accanto a `apps/api/` e `apps/web/`. Il progetto Xcode resta nativo e indipendente dal workspace pnpm.
+- **Preservazione della storia:** il trasferimento deve mantenere navigabile la storia di sviluppo che riguarda l'app, con autori, date, messaggi e modifiche, senza ridurla a un commit di copia. Se si filtra il sottoprogetto `app/`, gli SHA Git possono cambiare: documentare mapping e conservare il repository originale immutato.
+- **Gate obbligatorio di sicurezza:** `myteam-platform` è pubblico, `AURINFORMATC` finora solo locale. Verificare **tutta la storia importabile** per segreti, dati personali, backup, calendari reali, signing e blob prima di qualunque push; non pubblicare una storia non bonificata. Il materiale storico escluso resta conservato privatamente.
+- Non trasferire automaticamente `AURINFORMATC/backups/` o la documentazione `AURINFORMATC/docs/platform/` già consolidata. La migrazione di codice, test, script e asset avviene senza redesign, migrazioni SwiftData o modifiche al bundle ID.
+- **Runbook:** [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md). **Stato:** decisione approvata, migrazione non ancora eseguita; nessun merge su `main`.
