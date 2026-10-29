@@ -124,6 +124,12 @@ Default scope `openid profile offline_access platform:admin`. Documentato come i
 ### QA-C-06 (corretto da QA) — Motivazione dello SKIP 6.3 non veritiera — *Bassa*
 `tests/q1/06-web-responsive-audit.test.ts` dichiarava il blocco ambientale del browser; in questa sessione il browser reale è stato eseguito con successo. Messaggio corretto: lo SKIP 6.3 ora dichiara che il gate browser è delegato a `tests/browser/browser-e2e.py` ed **è conteggiato come NOT RUN**, non come PASS.
 
+### QA-C-07 — Artefatti QA non tracciati nel checkout Web — *Igiene, preesistenti*
+`/Users/gatti/Workspace/myteam-platform` (branch `web/w2-logto-auth` @ `860bc5b`) contiene directory **non tracciate** `docs/qa/`, `tests/` (`auth/`, `browser/`, `contracts/`, `fixtures/`, `helpers/`, `integration/`, `api/`, `README.md`, `AGENTS.md`), con date 2026-10-28/29 **precedenti** a questa sessione: residui di checkpoint QA eseguiti nel worktree Web.
+Nessun file di questa sessione è stato scritto lì (nessuna modifica tracciata: `git status` del checkout Web mostra solo questi untracked preesistenti).
+Rischio: audit statici che risolvono percorsi relativi possono leggere test di un worktree diverso da quello sotto verifica (già vietato dalle regole QA). In questo checkpoint ogni verifica è stata eseguita **dentro** `myteam-platform-q2-c-int`.
+Azione consigliata: rimuovere gli untracked dal checkout Web (a cura del proprietario) o spostarli nel worktree QA.
+
 ---
 
 ## 6. Verifica di sicurezza OIDC (revisione del codice + test)
