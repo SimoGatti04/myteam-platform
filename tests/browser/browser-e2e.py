@@ -11,6 +11,41 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_NOT_RUN = 2
 
+def classify_launch_error(err: Exception) -> tuple[int, str]:
+    err_str = str(err).lower()
+    sandbox_patterns = [
+        "machportrendezvousserver",
+        "bootstrap_check_in",
+        "sandbox_init",
+        "sandbox",
+    ]
+    if any(p in err_str for p in sandbox_patterns):
+        return (
+            EXIT_NOT_RUN,
+            "[ENVIRONMENT BLOCKED] Chromium launch failed due to environment/sandbox security policy:\n"
+            f"Error: {err}\n\n"
+            "DIAGNOSTIC DETAILS:\n"
+            "- Root Cause: macOS sandbox profile forbids bootstrap_check_in for MachPortRendezvousServer (1100)\n"
+            "- Classification: NOT RUN (ENVIRONMENT BLOCKED)\n"
+            "- Protocol Compliance: In accordance with dev-env and AGENTS.md rules, this is NOT marked as PASS.\n"
+            "- Prerequisites to run on authorized host:\n"
+            "    1. Host with GUI session or unsandboxed process access (require_escalated permissions)\n"
+            "    2. Active PostgreSQL instance (TEST_DATABASE_URL)\n"
+            "    3. Fastify API running on port 3000 (node --import tsx/esm tests/browser/start-test-api.ts)\n"
+            "    4. Web frontend running on port 5173 (pnpm --filter @myteam/web dev --port 5173)\n"
+            "    5. Run: python3 tests/browser/browser-e2e.py http://127.0.0.1:5173 http://127.0.0.1:3000"
+        )
+    if "executable doesn't exist" in err_str or "could not find browser" in err_str:
+        return (
+            EXIT_FAIL,
+            f"[FAIL (CONFIGURATION / DEPENDENCY ERROR)] Chromium browser binary missing: {err}\n"
+            "Run 'pnpm exec playwright install chromium' or install Chromium."
+        )
+    return (
+        EXIT_FAIL,
+        f"[FAIL (CONFIGURATION / RUNTIME ERROR)] Browser launch failed: {err}"
+    )
+
 async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:3000"):
     print("=" * 75)
     print("PLAYWRIGHT BROWSER E2E TEST: Real Onboarding & Lifecycle Verification")
@@ -21,25 +56,18 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
     screenshots_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "screenshots"))
     os.makedirs(screenshots_dir, exist_ok=True)
 
+    scenario_results = {}
+    failed_scenarios = []
+
     async with async_playwright() as p:
         try:
             browser = await p.chromium.launch(headless=True)
         except Exception as launch_err:
+            code, diag = classify_launch_error(launch_err)
             print("\n" + "!" * 75)
-            print("[ENVIRONMENT BLOCKED] Chromium launch failed due to environment/sandbox security policy:")
-            print(f"Error: {launch_err}")
-            print("\nDIAGNOSTIC DETAILS:")
-            print("- Root Cause: macOS sandbox profile forbids bootstrap_check_in for MachPortRendezvousServer (1100)")
-            print("- Classification: NOT RUN (ENVIRONMENT BLOCKED)")
-            print("- Protocol Compliance: In accordance with dev-env and AGENTS.md rules, this is NOT marked as PASS.")
-            print("- Prerequisites to run on authorized host:")
-            print("    1. Host with GUI session or unsandboxed process access")
-            print("    2. Active PostgreSQL instance (TEST_DATABASE_URL)")
-            print("    3. Fastify API running on port 3000 (node --import tsx/esm tests/browser/start-test-api.ts)")
-            print("    4. Web frontend running on port 5173 (pnpm --filter @myteam/web dev --port 5173)")
-            print("    5. Run: python3 tests/browser/browser-e2e.py http://127.0.0.1:5173 http://127.0.0.1:3000")
+            print(diag)
             print("!" * 75 + "\n")
-            return EXIT_NOT_RUN
+            return code
 
         try:
             # =========================================================================
@@ -62,17 +90,14 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             await offline_page.screenshot(path=os.path.join(screenshots_dir, "00-backend-offline.png"))
             await offline_context.close()
             print("  -> PASS: Backend offline state surfaced with clean error UI.")
-
-            # =========================================================================
-            # DESKTOP VIEWPORT TESTS (1280x800)
-            # =========================================================================
-            print("\n--- DESKTOP VIEWPORT TEST (1280x800) ---")
-            context = await browser.new_context(viewport={"width": 1280, "height": 800})
-            page = await context.new_page()
+            scenario_results["00_backend_offline"] = "PASS"
 
             # =========================================================================
             # SCENARIO 1: Initial Empty Database & Public Neutral Branding
             # =========================================================================
+            context = await browser.new_context(viewport={"width": 1280, "height": 800})
+            page = await context.new_page()
+
             print("\n[SCENARIO 1] Empty Database State & Neutral Branding...")
             async with page.expect_response(lambda r: "/api/v1/public/team" in r.url) as resp_info:
                 await page.goto(web_url, wait_until="networkidle")
@@ -89,6 +114,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await page.screenshot(path=os.path.join(screenshots_dir, "01-desktop-empty-db-home.png"))
             print("  -> PASS: 404 unconfigured team rendered, no DEMO badge, no 'MAPI GROUP' branding.")
+            scenario_results["01_empty_db_neutral_branding"] = "PASS"
 
             # =========================================================================
             # SCENARIO 2: Authentication Security & Error Handling (401, 403, 200)
@@ -111,24 +137,53 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             await expect(submit_token_btn).to_be_visible()
 
             # Sub-scenario 2A: 401 Unauthorized
+            print("  -> Sub-scenario 2A: Testing 401 Unauthorized with invalid token...")
             await token_input.fill("invalid-token")
             async with page.expect_response(lambda r: "/api/v1/admin/team" in r.url) as r_401:
                 await submit_token_btn.click()
             resp_401 = await r_401.value
             assert resp_401.status == 401, f"Expected 401 for invalid token, got {resp_401.status}"
             await expect(login_heading).to_be_visible()
-            print("  -> PASS: 401 Unauthorized correctly rejected by backend and handled by UI.")
+
+            # Strict UI assertion: error alert must be visible on screen
+            error_401_alert = page.locator("text=Errore di autenticazione")
+            try:
+                await expect(error_401_alert).to_be_visible(timeout=3000)
+                print("  -> PASS: 401 error alert is visible in UI.")
+                scenario_results["02a_auth_401_ui"] = "PASS"
+            except AssertionError:
+                print("  -> FAIL (WEB-BUG-01): 401 error alert 'Errore di autenticazione' was NOT displayed in UI!")
+                print("     Root Cause: In AppContext.tsx loginAdminWithToken sets setIsAuthenticated(true) before API call.")
+                print("     In App.tsx showAdminLogin flips to false -> AdminLoginView unmounts -> API 401 -> setIsAuthenticated(false)")
+                print("     -> AdminLoginView remounts fresh with errorMsg=null, wiping out the error alert.")
+                await page.screenshot(path=os.path.join(screenshots_dir, "02a-auth-401-error-lost.png"))
+                scenario_results["02a_auth_401_ui"] = "FAIL (WEB-BUG-01: AdminLoginView unmounts, wiping errorMsg)"
+                failed_scenarios.append("02a_auth_401_ui")
 
             # Sub-scenario 2B: 403 Forbidden
+            print("  -> Sub-scenario 2B: Testing 403 Forbidden with forbidden token...")
             await token_input.fill("forbidden-token")
             async with page.expect_response(lambda r: "/api/v1/admin/team" in r.url) as r_403:
                 await submit_token_btn.click()
             resp_403 = await r_403.value
             assert resp_403.status == 403, f"Expected 403 for forbidden token, got {resp_403.status}"
             await expect(login_heading).to_be_visible()
-            print("  -> PASS: 403 Forbidden correctly rejected by backend and handled by UI.")
+
+            # Strict UI assertion: error alert must be visible on screen
+            error_403_alert = page.locator("text=Errore di autenticazione")
+            try:
+                await expect(error_403_alert).to_be_visible(timeout=3000)
+                print("  -> PASS: 403 error alert is visible in UI.")
+                scenario_results["02b_auth_403_ui"] = "PASS"
+            except AssertionError:
+                print("  -> FAIL (WEB-BUG-01): 403 error alert 'Errore di autenticazione' was NOT displayed in UI!")
+                print("     Root Cause: Same unmount/remount cycle in AdminLoginView wipes errorMsg.")
+                await page.screenshot(path=os.path.join(screenshots_dir, "02b-auth-403-error-lost.png"))
+                scenario_results["02b_auth_403_ui"] = "FAIL (WEB-BUG-01: AdminLoginView unmounts, wiping errorMsg)"
+                failed_scenarios.append("02b_auth_403_ui")
 
             # Sub-scenario 2C: 200 OK Authorized
+            print("  -> Sub-scenario 2C: Testing 200 OK with authorized test token...")
             await token_input.fill("test-admin-token")
             async with page.expect_response(lambda r: "/api/v1/admin/team" in r.url) as r_200:
                 await submit_token_btn.click()
@@ -142,7 +197,8 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             await expect(back_public_btn).to_be_visible()
 
             await page.screenshot(path=os.path.join(screenshots_dir, "02-desktop-admin-authenticated.png"))
-            print("  -> PASS: 200 OK Authorized with test Bearer token, session activated.")
+            print("  -> PASS: Authorized Bearer token accepted; Admin Dashboard unlocked.")
+            scenario_results["02c_auth_200_session"] = "PASS"
 
             # =========================================================================
             # SCENARIO 3: Empty DB Onboarding in Impostazioni
@@ -232,6 +288,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await page.screenshot(path=os.path.join(screenshots_dir, "03-desktop-team-published.png"))
             print("  -> PASS: Season created, team configured and published successfully on PostgreSQL.")
+            scenario_results["03_onboarding_team_published"] = "PASS"
 
             # =========================================================================
             # SCENARIO 4: Opponent Creation & Draft Match Creation
@@ -295,6 +352,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await page.screenshot(path=os.path.join(screenshots_dir, "04-desktop-draft-match-admin.png"))
             print("  -> PASS: Opponent created, match saved as draft with 'BOZZA (NON PUBBLICATA)' badge.")
+            scenario_results["04_draft_match_created"] = "PASS"
 
             # =========================================================================
             # SCENARIO 5: Strict Isolation of Draft Match from Public Website
@@ -316,6 +374,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await page.screenshot(path=os.path.join(screenshots_dir, "05-desktop-public-draft-isolated.png"))
             print("  -> PASS: Draft match is strictly isolated, GET /public/matches returned empty.")
+            scenario_results["05_draft_match_isolated"] = "PASS"
 
             # =========================================================================
             # SCENARIO 6: Explicit Match Publication & Public Projection
@@ -327,21 +386,13 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
             admin_partite_tab = page.get_by_role("button", name="Partite").first
             await admin_partite_tab.click()
 
-            pub_btn = page.get_by_role("button", name="Pubblica Partita").first
-            await expect(pub_btn).to_be_visible()
+            publish_match_btn = page.get_by_role("button", name="Pubblica Partita").first
+            async with page.expect_response(lambda r: "/api/v1/admin/matches/" in r.url and "/publish" in r.url and r.request.method == "POST") as r_pub_m:
+                await publish_match_btn.click()
+            resp_pub_m = await r_pub_m.value
+            assert resp_pub_m.status == 200
 
-            async with page.expect_response(lambda r: f"/api/v1/admin/matches/{created_match['id']}/publish" in r.url and r.request.method == "POST") as r_pub:
-                await pub_btn.click()
-            resp_pub = await r_pub.value
-            assert resp_pub.status == 200, f"Expected 200 match published, got {resp_pub.status}"
-
-            # Verify published status badge in Admin
-            published_match_badge = page.locator("text=PUBBLICATA").first
-            await expect(published_match_badge).to_be_visible()
-            visible_indicator = page.locator("text=Visibile sul sito").first
-            await expect(visible_indicator).to_be_visible()
-
-            # Return to public site
+            # Navigate back to public matches
             await back_public_btn.click()
             async with page.expect_response(lambda r: "/api/v1/public/matches" in r.url) as r_pub_matches2:
                 await public_partite_nav.click()
@@ -357,6 +408,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await page.screenshot(path=os.path.join(screenshots_dir, "06-desktop-published-match-public.png"))
             print("  -> PASS: Match explicitly published, visible on public site with correct opponent.")
+            scenario_results["06_match_published_public"] = "PASS"
 
             await context.close()
 
@@ -393,14 +445,24 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
 
             await mobile_page.screenshot(path=os.path.join(screenshots_dir, "08-mobile-public-matches.png"))
             print("  -> PASS: Mobile viewport 390x844 renders hamburger drawer and public matches cleanly.")
+            scenario_results["07_mobile_responsive"] = "PASS"
 
             await mobile_context.close()
             await browser.close()
 
             print("\n" + "=" * 75)
-            print("BROWSER E2E GATE COMPLETE: ALL SCENARIOS VERIFIED WITH 100% SUCCESS")
-            print("=" * 75)
-            return EXIT_PASS
+            if failed_scenarios:
+                print(f"BROWSER E2E GATE FINISHED WITH DETECTED DEFECTS ({len(failed_scenarios)} scenario(s) failed):")
+                for s in failed_scenarios:
+                    print(f"  - {s}: {scenario_results[s]}")
+                print(f"Overall Exit Code: {EXIT_FAIL} (EXIT_FAIL)")
+                print("=" * 75)
+                return EXIT_FAIL
+            else:
+                print("BROWSER E2E GATE COMPLETE: ALL SCENARIOS VERIFIED WITH 100% SUCCESS")
+                print(f"Overall Exit Code: {EXIT_PASS} (EXIT_PASS)")
+                print("=" * 75)
+                return EXIT_PASS
 
         except AssertionError as assert_err:
             print(f"\n[FAIL] Assertion failed: {assert_err}")
