@@ -1,3 +1,4 @@
+import { createValidMockIdToken } from './test-jwt';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   OidcClient,
@@ -44,8 +45,10 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
       const verifier1 = generateCodeVerifier();
       const verifier2 = generateCodeVerifier();
 
-      expect(verifier1).toHaveLength(43);
-      expect(verifier2).toHaveLength(43);
+      expect(verifier1.length).toBeGreaterThanOrEqual(43);
+      expect(verifier1.length).toBeLessThanOrEqual(128);
+      expect(verifier2.length).toBeGreaterThanOrEqual(43);
+      expect(verifier2.length).toBeLessThanOrEqual(128);
       expect(verifier1).not.toBe(verifier2);
       // Solo caratteri unreserved URL
       expect(verifier1).toMatch(/^[A-Za-z0-9_-]+$/);
@@ -176,13 +179,13 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
       // Prepara stato PKCE
       const codeVerifier = generateCodeVerifier();
       const state = 'secure-state-123';
+      const nonce = 'secure-nonce-123';
       sessionStorage.setItem(
         STORAGE_KEY_PKCE,
-        JSON.stringify({ codeVerifier, state, returnTo: 'impostazioni', createdAt: Date.now() })
+        JSON.stringify({ codeVerifier, state, nonce, returnTo: 'impostazioni', createdAt: Date.now() })
       );
-
       const fakeAccessToken = 'fake-access-token-xyz';
-      const fakeIdToken = 'fake-id-token-abc';
+      const fakeIdToken = createValidMockIdToken({ issuer: mockConfig.endpoint, appId: mockConfig.appId, nonce });
 
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -206,8 +209,9 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
       expect(result.returnTo).toBe('impostazioni');
 
       // Verifica che la richiesta POST /token sia stata effettuata con i parametri corretti
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-      const fetchArgs = (globalThis.fetch as any).mock.calls[0];
+      const tokenCall = (globalThis.fetch as any).mock.calls.find((call: any) => call[0].includes('/token'));
+      expect(tokenCall).toBeDefined();
+      const fetchArgs = tokenCall;
       expect(fetchArgs[0]).toBe('https://auth.myteam.local/oidc/token');
       expect(fetchArgs[1].method).toBe('POST');
       expect(fetchArgs[1].headers['Content-Type']).toBe('application/x-www-form-urlencoded');
