@@ -1,10 +1,14 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 27 ottobre 2026 — verifica C3.3 su iPhone 18 Pro Simulator.
+**Aggiornato:** 29 ottobre 2026 — verifica C3.3 sul candidato monorepo R1-A3.
 
 ## Stato corrente — C3.3
 
 **Esito: COMPLETE per lo scope del checkpoint.** Cronologia attendibile delle presenze, correzioni live/storico persistenti e UI contestuale sono integrate; la suite finale è **122 PASS, 0 FAIL, 0 SKIPPED** su iOS Simulator. Due warning SwiftUI di frame non valido restano da diagnosticare; non sono state eseguite prove su device fisico o lock/unlock reale. Dettagli, commit e limiti sono riportati nella sezione C3.3 più avanti.
+
+## Integrazione locale myteam-platform — R1-A3
+
+La cronologia iOS è stata riscritta per il percorso `apps/ios/` e integrata in un branch isolato sulla base GitHub pubblicata. Build e suite C3.3 sono state eseguite sul commit `4568542756051abbadf0c175559f08735cd9eb26`: **build PASS; 122 test PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator. Il commit documentale successivo non è stato testato separatamente e non cambia il codice o il progetto Xcode. Nessun push/merge; `AURINFORMATC` resta immutato. Dettagli e SHA sono nel rapporto `docs/platform/IOS-MONOREPO-MIGRATION.md`.
 
 ## Esito del checkpoint
 

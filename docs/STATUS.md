@@ -1,6 +1,10 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 28 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+**Aggiornato:** 29 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+
+## Integrazione iOS — gate locale R1-A3
+
+Il candidato isolato `codex/ios-r1-a3-publication` integra la storia iOS sotto `apps/ios/` sulla base GitHub pubblicata `docs/ios-c4-platform-decisions-20261029` (`7fd81044e6dab4f6cf732c99d7f2f3019977b665`). Il commit Xcode effettivamente testato è `4568542756051abbadf0c175559f08735cd9eb26` (**build PASS; C3.3: 122 PASS, 0 FAIL, 0 SKIPPED**). Il rapporto di migrazione registra audit, mapping e limiti. Nessun push, merge su `main` o modifica del worktree Web attivo; il gate R1-B locale è PASS, la pubblicazione resta da eseguire separatamente.
 
 ## Baseline C0
 

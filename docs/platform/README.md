@@ -17,7 +17,7 @@ Questo dossier è una copia iniziale trasferita il 28 ottobre 2026 dalla working
 
 ## Fonti autorevoli e precedenza
 
-- **Codice e stato iOS correnti:** restano nella repository sorella `../AURINFORMATC`, nei file `app/docs/ARCHITECTURE.md`, `app/docs/STATUS.md` e `app/docs/TESTING.md`. Non sono stati copiati; questa repository non dichiara lo stato iOS corrente.
+- **Codice e stato iOS nel branch candidato:** la storia bonificata è integrata in `apps/ios/` in R1-A3; lo stato operativo della copia è in `apps/ios/docs/`. `AURINFORMATC` resta origine di provenienza e backup immutata. Il branch candidato non è ancora pubblicato né integrato in `main`.
 - **Gerarchia delle fonti e sincronizzazione:** [ADR-0008, snapshot di riferimento](../decisions/ios/ADR-0008-platform-sync-and-source-hierarchy.md). Gli ADR iOS pertinenti sono conservati in `../decisions/ios/`; sono copie, non l'autorità per implementazioni iOS.
 - **Procedure di deployment reali:** repository separato `infra/` e relativi runbook. Questo dossier documenta requisiti, non sostituisce runbook o configurazione applicata; nessuna configurazione infra è stata copiata o modificata.
 - **Convenzioni di sviluppo:** repository `SimoGatti04/development-environment` (`AGENTS.md` e documenti specialistici pertinenti).

@@ -1,7 +1,8 @@
 # Migrazione Git dell'app iOS nel monorepo
 
 **Decisione:** APPROVATA il 29 ottobre 2026 — l'app nativa iOS sarà un modulo del monorepo `myteam-platform` in `apps/ios/`.  
-**Esecuzione:** NON AVVIATA. Questo è un piano di migrazione con gate di sicurezza, non un'autorizzazione al push della storia originaria senza audit.  
+**Esecuzione:** R1-A/R1-A2 completati; la cronologia iOS è stata finalizzata localmente in R1-A3 nel branch isolato `codex/ios-r1-a3-publication`. Nessun push e nessun merge su `main`.
+**Gate:** R1-B = PASS per la preparazione locale al push, senza autorizzare né eseguire il push in questo incarico.
 **Fonte iOS:** `AURINFORMATC` (Git locale, branch `main`, HEAD verificato `2bb9459c6f5efa7ea9b41c00b1eb658dbbc21e27`, nessun remote).  
 **Destinazione:** `SimoGatti04/myteam-platform` (repository GitHub pubblico).  
 **Base documentale:** `docs/ios-c4-platform-decisions-20261029`; nessun merge su `main`.
@@ -86,3 +87,62 @@ Il trasferimento Git deve essere un checkpoint tecnico isolato. Non combinare in
 Queste modifiche sono progettate nei checkpoint C4/C5 documentati separatamente. La migrazione non deve compromettere le migrazioni SwiftData V1→V2→V3, gli import legacy né la disponibilità offline.
 
 **Gate finale:** il nuovo repository monorepo deve consentire di seguire la cronologia iOS, compilare/eseguire il progetto, ritrovare la documentazione autorevole e preservare l'originale `AURINFORMATC` immutato. Pubblicare la storia solo dopo un giudizio esplicito di sicurezza.
+
+## R1-A3 — Cronologia pubblicabile finalizzata (29 ottobre 2026)
+
+**Verdetto:** PASS per il gate locale R1-B; il push GitHub e il merge su `main` non sono stati eseguiti. Il branch rimane isolato e locale.
+
+### Base, ancestry e rewriting
+
+- Base pubblicata verificata su GitHub: `docs/ios-c4-platform-decisions-20261029` @ `7fd81044e6dab4f6cf732c99d7f2f3019977b665`; parent `d1001e5a4e7f7c5ceecc254cb2cc3233d9fb321d`.
+- Branch R1-A3: `codex/ios-r1-a3-publication`. Merge d'importazione `b871f1a1c4b35229663327efbfbb37b120b3e54f`, parent 1 `7fd81044…`, parent 2 `ab622c0f6884b32a2f126ababebaf5c56a6ce57a` (25 commit iOS filtrati). Il candidato verificato da Xcode è `4568542756051abbadf0c175559f08735cd9eb26`; il commit conclusivo del rapporto R1-A3 è documentale e non modifica codice o progetto Xcode.
+
+| Passaggio | SHA |
+|---|---|
+| AURINFORMATC originale (`main`) | `2bb9459c6f5efa7ea9b41c00b1eb658dbbc21e27` |
+| Clone filtrato R1-A | `3b74e866800763095bc129d81b94d962be3fddf4` |
+| Tip filtrato R1-A2 | `383bfa3e01c1c310d194101b8bbd93c70aac33c2` |
+| Import locale R1-A2 (base non GitHub) | `37d3e26d1fbd4bdaf2aee799460b3adf526b52d0` |
+| Tip iOS con prefisso R1-A3 | `ab622c0f6884b32a2f126ababebaf5c56a6ce57a` |
+| Merge d'importazione R1-A3 | `b871f1a1c4b35229663327efbfbb37b120b3e54f` |
+| Commit candidato testato | `4568542756051abbadf0c175559f08735cd9eb26` |
+- `git-filter-repo` è stato usato soltanto nel clone temporaneo `/private/tmp/myteam-ios-r1a3-rewrite`; tutti i 25 commit iOS hanno il prefisso `apps/ios/`, non solo il merge. Nomi autore/committer, timestamp e messaggi sono preservati; l'email storica è stata normalizzata a `55622211+SimoGatti04@users.noreply.github.com`. Tale indirizzo coincide con quello del commit base pubblicato, che GitHub associa al login `SimoGatti04` (account ID `55622211`). La verifica GitHub del commit base segnala `unsigned`: l'attribuzione GitHub dell'email non equivale a firma crittografica dei commit.
+- Il mapping integrale di 25 righe è in [IOS-MIGRATION-HISTORY-MAP.tsv](IOS-MIGRATION-HISTORY-MAP.tsv): SHA AURINFORMATC → R1-A → R1-A2 → R1-A3. Il mapping privato completo e gli artefatti R1-A3 sono conservati nel backup permanente.
+
+### Motivo della base locale R1-A2
+
+R1-A2 era una prova locale sullo scaffold `ios/import-r1a` e usava il commit `bdeb7d759a50520de793b72a81491a84a1de0c0b` del repository temporaneo `ios-monorepo-import`. L'ispezione del commit conferma un commit root senza parent e tree vuoto (`4b825dc…`); il suo remote `ios-source` puntava al clone filtrato locale, non a GitHub. R1-A3 è stato ricostruito sulla base GitHub pubblicata verificata. `bdeb7d7…` è assente dal database oggetti e dall'ancestry del branch finale.
+
+### Audit della storia e struttura
+
+- `git log -- apps/ios/APP/MyApp.swift`: 5 commit; `git log --follow -- apps/ios/APP/MatchTiming.swift`: 3 commit; `git blame apps/ios/APP/MatchTiming.swift`: 1.472 righe. La navigazione per percorso risale ai commit iOS riscritti.
+- `apps/ios/APP.xcodeproj` e lo scheme condiviso `APP` sono presenti; nessun `.git` annidato; `git fsck --full --strict` termina senza errori. Le regole Xcode in `apps/ios/.gitignore` sono efficaci per `xcuserdata`, DerivedData, build, SwiftPM e credenziali di firma.
+- Nessun oggetto raggiungibile dal candidato contiene `calendario_mapi_2026_2027.csv`, `grafica/` o `IMG_4252.JPG`; nessun path Web/Core/QA inatteso è stato aggiunto rispetto alla base. Il CSV con dati reali resta escluso dalla storia pubblicabile e conservato solo nei backup privati.
+- La verifica del manifest file R1-A2 ha trovato 47 corrispondenze byte-per-byte su 51; le sole 4 differenze sono documentazione intenzionalmente aggiornata (`apps/ios/AGENTS.md`, `apps/ios/README.md`, `apps/ios/docs/STATUS.md`, `apps/ios/docs/decisions/README.md`). I PNG MAPI runtime sono byte-identici ai valori attesi, con gli SHA-256 riportati sotto.
+- Bundle ID `com.aurorabellinipersonalteam.APP` e Team ID `9G4GA2DW9Y` sono invariati. Non è stato fatto refactoring Swift.
+
+### Documenti divergenti
+
+Sono stati confrontati gli snapshot storici divergenti (`BACKEND-DATA.md`, `IOS-INTEGRATION.md`, `MVP-HANDOFF.md`, `README.md`) con le versioni recenti già presenti nella base pubblicata di `myteam-platform`, considerate autorevoli. Non è emerso contenuto storico ancora pertinente e mancante da sovrapporre; sono state mantenute le versioni correnti e aggiornato il solo stato di migrazione necessario. ADR-0008 resta nella posizione canonica `docs/decisions/ios/` senza duplicati in `apps/ios/docs/`.
+
+### Asset e sicurezza dei binari
+
+I tre asset runtime sono byte-identici (SHA-256):
+
+| Asset | SHA-256 |
+|---|---|
+| `FooterGeese` | `14857bffafc30a96aabe14ff240612b55a1bc0ad248eef1df4289408a2113906` |
+| `WelcomeBackground` | `9d7c50168ec62d381b778a62a7cba2b5301242f222bc1a40838a4faeb2981502` |
+| `WelcomeLogo` | `e627da311bb8032dc3579cc1411fe698cba36ba23e92ee0582b4c22901c5166e` |
+
+I PNG contengono il chunk C2PA `caBX`; i CRC sono validi. Il contenuto C2PA viene conservato come **metadato di provenienza non verificato crittograficamente**: non è stata attestata autenticità, catena o firma. La scansione dei chunk non immagine non ha trovato marker di credenziali né campi GPS/telefono; i pattern numerici generici corrispondono a coordinate SVG, timestamp, UUID o dati del certificato, non a contatti telefonici. Un indirizzo email associato al certificato/provenienza C2PA (`ca@trufo.ai`) resta presente nei metadata; non è stato rimosso perché altererebbe l'asset byte-identico.
+
+### Build e test
+
+- Build Xcode 27.0: **PASS** sul commit `4568542756051abbadf0c175559f08735cd9eb26`.
+- Suite C3.3 su iPhone 18 Pro Simulator, iOS 27.0 (runtime build `24A434`): **122 PASS, 0 FAIL, 0 SKIPPED** sullo stesso commit. Result bundle e log sono archiviati nel backup R1-A3. Il commit documentale finale successivo non è stato testato come commit distinto; non cambia Swift, asset o input Xcode.
+- Due warning noti `Invalid frame dimension (negative or non-finite)` compaiono nei test UI di lifecycle già noti, che risultano passati. Il warning AppIntents segnala solo che il framework non è dipendenza del target. Nessuna prova su dispositivo fisico.
+
+### Backup e stato di consegna
+
+R1-A2 rimane intatto in `/Users/gatti/Workspace/backups/myteam-ios-migration-20261029/`; il bundle originale ha SHA-256 `91d9c3598e5395eca7f2447db6973f34509bae938811dc1df7ecd4cdc2554f28` e il manifest R1-A2 ha SHA-256 `ebb2180133c92d1879b6b1185d117ac705a6fcdd86962d75ea93d0b6a4e16d83`. I nuovi materiali R1-A3 sono aggiunti in `/Users/gatti/Workspace/backups/myteam-ios-migration-20261029/R1-A3/`, senza sostituire R1-A2 o gli originali. Il branch finale è conservato nel clone isolato `/Users/gatti/Workspace/myteam-platform-ios-r1a3-final`; SHA finale e checksum del pacchetto sono nel verbale privato di consegna R1-A3.
