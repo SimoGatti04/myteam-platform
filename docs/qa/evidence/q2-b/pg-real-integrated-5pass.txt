@@ -1,0 +1,13 @@
+✔ PostgreSQL Real: Concurrency serialization on roster membership via pg_advisory_xact_lock (324.91625ms)
+✔ PostgreSQL Real: Atomic transaction rollback on constraint / business validation failure (108.440666ms)
+✔ PostgreSQL Real: Native check constraints and enum integrity (83.475042ms)
+✔ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (138.875584ms)
+✔ PostgreSQL Real: Complete Onboarding & Match Lifecycle (12-step path) (403.401417ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1011.73925

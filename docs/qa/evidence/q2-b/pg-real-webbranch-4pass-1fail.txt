@@ -1,0 +1,33 @@
+✔ PostgreSQL Real: Concurrency serialization on roster membership via pg_advisory_xact_lock (288.3815ms)
+✔ PostgreSQL Real: Atomic transaction rollback on constraint / business validation failure (96.88675ms)
+✔ PostgreSQL Real: Native check constraints and enum integrity (91.943416ms)
+✖ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (129.894417ms)
+✔ PostgreSQL Real: Complete Onboarding & Match Lifecycle (12-step path) (336.092084ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 820.824959
+
+✖ failing tests:
+
+test at tests/integration/postgres-real-concurrency-and-rollback.test.ts:1:6553
+✖ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (129.894417ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (/Users/gatti/Workspace/myteam-platform/tests/integration/postgres-real-concurrency-and-rollback.test.ts:349:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
