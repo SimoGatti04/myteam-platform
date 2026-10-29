@@ -13,6 +13,9 @@ async function main() {
     logger: false,
     pool: ctx.scopedPool,
     verifyAdminToken: async (header) => {
+      if (header === "Bearer forbidden-token") {
+        throw new DomainError(403, "insufficient_permissions");
+      }
       if (header === "Bearer test-admin-token") {
         return { subject: "browser-admin-tester" };
       }
