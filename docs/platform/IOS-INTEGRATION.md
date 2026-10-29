@@ -2,6 +2,8 @@
 
 **Stato:** iOS fino a C3.3 IMPLEMENTATO (come da report e documenti iOS); integrazione backend e autenticazione NON implementate.
 
+**Target di collocazione APPROVATO (29/10/2026):** il repository iOS locale `AURINFORMATC` sarà importato nel monorepo sotto `apps/ios/` preservando la storia pertinente e senza modificare lo stile MAPI. La migrazione **non è ancora eseguita**: prima del push verso GitHub pubblico è obbligatorio l'audit dell'intera storia da importare. Vedi [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md) e [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md).
+
 ## Fonte autorevole dello stato
 
 Fonte autorevole ancora separata: repository sorella `../AURINFORMATC`, file `app/AGENTS.md`, `app/docs/ARCHITECTURE.md`, `app/docs/STATUS.md` e `app/docs/TESTING.md`. Gli ADR-0003, 0006, 0007 e 0008 sono disponibili come snapshot locali in `../decisions/ios/`; prima di modifiche iOS consultare sempre gli originali. Questo documento riguarda **l’integrazione futura**, non sostituisce lo stato del codice.
