@@ -9,6 +9,7 @@ Questo dossier è una copia iniziale trasferita il 28 ottobre 2026 dalla working
 - [PUBLIC-WEB.md](PUBLIC-WEB.md) — Home, partite, LIVE, rosa, statistiche, sondaggi, Instagram, sponsor e PWA.
 - [ADMIN-WEB.md](ADMIN-WEB.md) — navigazione amministrativa definitiva a sei sezioni, Panoramica operativa e sezione Partite unificata.
 - [IOS-INTEGRATION.md](IOS-INTEGRATION.md) — app iOS esistente, stato C3.3 e requisiti offline-first.
+- [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md) — **decisioni APPROVATE 29/10/2026** per app iOS generica, branding e asset MAPI preservati, responsabilità Core/PWA/iOS, ruoli e distinte, calendario, LIVE e **numero/durata dei tempi configurabili per competizione con override di gara**. Non ancora implementate.
 - [BACKEND-DATA.md](BACKEND-DATA.md) — dati condivisi, differenza tra inserimento/override, sincronizzazione e provider.
 - [ACCESS-DEPLOYMENT.md](ACCESS-DEPLOYMENT.md) — Logto, Cloudflare Access, K3s e gestione operativa.
 - [MVP-HANDOFF.md](MVP-HANDOFF.md) — primo MVP, **roadmap approvata a quattro fasi**, modalità operativa multi-agente/parallela, checkpoint visibili, decisioni aperte e handoff.
