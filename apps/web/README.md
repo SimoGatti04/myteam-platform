@@ -99,6 +99,7 @@ A partire dal checkpoint **W2**, l'area amministrativa adotta l'autenticazione f
    - I token non vengono **MAI** memorizzati in `localStorage` permanente o cookie non protetti.
    - La sessione è mantenuta in memoria React e sincronizzata con `sessionStorage` (per consentire il reload della pagina/F5 all'interno dello stesso tab). `sessionStorage` viene distrutto automaticamente alla chiusura della finestra/scheda.
    - La scadenza del token (`expires_at`) viene controllata proattivamente prima di ogni chiamata: se il token è scaduto, viene invalidato e l'utente reindirizzato al login.
+   - Nota W2-R3: il rinnovo silenzioso tramite refresh token **non è supportato**. Il scope `offline_access` può essere richiesto ma non viene usato per persistere o ruotare refresh token. Eventuale supporto richiede una decisione architetturale approvata e coordinamento con Core.
 6. **Disabilitazione in Produzione del Form Manuale:**
    - In produzione (`MODE='production'` o `VITE_APP_ENV='production'`), il form manuale JWT è categoricamente disabilitato.
    - In ambienti di sviluppo locale o staging autorizzati (`isManualAuthAllowed`), il form manuale è conservato come strumento secondario di collaudo tecnico.

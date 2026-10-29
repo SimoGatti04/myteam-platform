@@ -329,22 +329,9 @@ export class OidcClient {
       throw new Error('Logto OIDC non è configurato. Impossibile avviare il login.');
     }
 
-    // Risolve authorization_endpoint via OIDC discovery o fallback endpoint standard
-    let authEndpoint: string;
-    try {
-      const discovery = await this.fetchDiscovery();
-      authEndpoint = discovery.authorization_endpoint;
-    } catch (discErr) {
-      // Se discovery non è mockata in test o fallisce, e l'endpoint è configurato:
-      // se l'errore è un disallineamento esplicito di issuer, rilancia
-      if (discErr instanceof Error && discErr.message.includes('issuer restituito dal provider')) {
-        throw discErr;
-      }
-      // Altrimenti usa il percorso standard Logto /oidc/auth o /auth
-      authEndpoint = this.config.endpoint.endsWith('/oidc')
-        ? `${this.config.endpoint}/auth`
-        : `${this.config.endpoint}/oidc/auth`;
-    }
+    // Risolve authorization_endpoint via OIDC discovery (fail-closed: nessun fallback manuale)
+    const discovery = await this.fetchDiscovery();
+    const authEndpoint = discovery.authorization_endpoint;
 
     const state = options?.state || generateState();
     const nonce = generateRandomString(32);
@@ -454,19 +441,9 @@ export class OidcClient {
       throw new Error('Parametro "state" non corrispondente: possibile attacco CSRF.');
     }
 
-    // 3. Risolve token_endpoint via discovery o fallback conforme
-    let tokenEndpoint: string;
-    try {
-      const discovery = await this.fetchDiscovery();
-      tokenEndpoint = discovery.token_endpoint;
-    } catch (discErr) {
-      if (discErr instanceof Error && discErr.message.includes('issuer restituito dal provider')) {
-        throw discErr;
-      }
-      tokenEndpoint = this.config.endpoint.endsWith('/oidc')
-        ? `${this.config.endpoint}/token`
-        : `${this.config.endpoint}/oidc/token`;
-    }
+    // 3. Risolve token_endpoint via OIDC discovery (fail-closed: nessun fallback manuale)
+    const discoveryForToken = await this.fetchDiscovery();
+    const tokenEndpoint = discoveryForToken.token_endpoint;
 
     const body = new URLSearchParams();
     body.set('grant_type', 'authorization_code');

@@ -140,6 +140,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
   describe('3. Login Redirect and Authorization URL Generation', () => {
     it('builds compliant authorization URL with code_challenge and state, storing PKCE context', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const { url, state, codeVerifier } = await client.buildAuthorizationUrl({ returnTo: 'partite' });
 
       expect(url).toContain('https://auth.myteam.local/oidc/auth');
@@ -175,6 +176,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
   describe('4. Callback Handling and Token Exchange', () => {
     it('successfully exchanges code for tokens and saves session', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
 
       // Prepara stato PKCE
       const codeVerifier = generateCodeVerifier();
@@ -233,6 +235,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('rejects callback when IdP returns an error parameter', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const callbackUrl = 'https://myteam.local/callback?error=access_denied&error_description=User+cancelled';
 
       await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
@@ -242,6 +245,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('rejects callback when state does not match (CSRF protection)', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       sessionStorage.setItem(
         STORAGE_KEY_PKCE,
         JSON.stringify({ codeVerifier: 'test-verifier', state: 'original-state', createdAt: Date.now() })
@@ -253,6 +257,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('rejects callback when PKCE session is missing or expired', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const callbackUrl = 'https://myteam.local/callback?code=some-code&state=any-state';
 
       await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(/Sessione PKCE non trovata o scaduta/);
@@ -260,6 +265,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('handles HTTP error during token exchange with server message', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       sessionStorage.setItem(
         STORAGE_KEY_PKCE,
         JSON.stringify({ codeVerifier: 'verifier', state: 'state123', createdAt: Date.now() })
@@ -279,6 +285,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('handles network unreachable / offline IdP gracefully', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       sessionStorage.setItem(
         STORAGE_KEY_PKCE,
         JSON.stringify({ codeVerifier: 'verifier', state: 'state123', createdAt: Date.now() })
@@ -299,6 +306,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
   describe('5. Session Lifetime and Expiration', () => {
     it('loadSession returns null and clears storage when session is expired', () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
 
       // Sessione scaduta 1 minuto fa
       const expiredSession: OidcSession = {
@@ -364,6 +372,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('buildEndSessionUrl builds valid Logto end session URL with post_logout_redirect_uri', () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const url = client.buildEndSessionUrl('my-id-token');
 
       expect(url).toBeDefined();

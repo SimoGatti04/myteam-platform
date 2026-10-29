@@ -165,6 +165,9 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
           }),
         };
       }
+      if (url.includes('openid-configuration')) {
+        return { ok: true, status: 200, json: async () => ({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` }) };
+      }
       return { ok: false, status: 404, json: async () => ({ error: 'not_found' }) };
     });
 
@@ -259,6 +262,9 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
           json: async () => ({ error: 'internal_error' }),
         };
       }
+      if (url.includes('openid-configuration')) {
+        return { ok: true, status: 200, json: async () => ({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` }) };
+      }
       return { ok: false, status: 404, json: async () => ({}) };
     });
 
@@ -317,6 +323,9 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
           status: 403,
           json: async () => ({ error: 'insufficient_permissions' }),
         };
+      }
+      if (url.includes('openid-configuration')) {
+        return { ok: true, status: 200, json: async () => ({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` }) };
       }
       return { ok: false, status: 404, json: async () => ({}) };
     });

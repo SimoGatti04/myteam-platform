@@ -69,6 +69,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
   describe('1. Rigorous ID Token Validation (OIDC Core 1.0)', () => {
     it('rifiuta callback se id_token è mancante nella risposta del token endpoint', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-1';
       const nonce = 'nonce-test-1';
@@ -96,6 +97,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token è una stringa non JWT o malformata', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-2';
       const nonce = 'nonce-test-2';
@@ -123,6 +125,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token ha un issuer difforme da quello configurato', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-3';
       const nonce = 'nonce-test-3';
@@ -156,6 +159,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token ha un audience (aud) che non include client appId', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-4';
       const nonce = 'nonce-test-4';
@@ -189,6 +193,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token è scaduto (claim exp nel passato)', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-5';
       const nonce = 'nonce-test-5';
@@ -223,6 +228,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token è privo del claim nonce obbligatorio', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-6';
       const nonce = 'nonce-test-6';
@@ -259,6 +265,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('rifiuta callback se id_token ha un nonce non coincidente con quello registrato in PKCE', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-test-7';
       const nonce = 'original-expected-nonce';
@@ -297,6 +304,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
   describe('2. PKCE State Lifecycle, Expiration and Single-Use Consumption', () => {
     it('rifiuta callback se la sessione PKCE ha superato il TTL di 5 minuti', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-ttl-test';
       const nonce = 'nonce-ttl-test';
@@ -315,6 +323,7 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
 
     it('garantisce consumo monouso: il secondo tentativo di callback con gli stessi parametri fallisce', async () => {
       const client = new OidcClient(mockConfig);
+      client.setDiscoveryMetadata({ issuer: mockConfig.endpoint, authorization_endpoint: `${mockConfig.endpoint}/auth`, token_endpoint: `${mockConfig.endpoint}/token` });
       const codeVerifier = generateCodeVerifier();
       const state = 'state-single-use';
       const nonce = 'nonce-single-use';
