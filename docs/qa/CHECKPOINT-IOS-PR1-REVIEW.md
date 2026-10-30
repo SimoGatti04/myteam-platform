@@ -16,7 +16,7 @@
 | Base PR | `7fd81044e6dab4f6cf732c99d7f2f3019977b665` |
 | Head PR (verificato) | `42912195b63b401d5c6200f314338ca9a2754d06` |
 | Commit di merge d'integrazione QA | `0db5b6b53ce7558ef68a53cec587be8b570f5bc7` (Q2-D, non coinvolto) |
-| Commit QA di questo rapporto | vedi §12 |
+| Commit QA di questo rapporto | `e1cec1b27fdfe289926043e1a8876993eb62d900` |
 
 **Nota:** la base `7fd8104` non è antenata di `main` (`66b4987`). La PR importa la storia iOS da un repository separato (AURINFORMATC) su una base dedicata. Questo è il comportamento atteso per una migration PR, non un'anomalia.
 
