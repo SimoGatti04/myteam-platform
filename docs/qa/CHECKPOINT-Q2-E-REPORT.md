@@ -145,12 +145,15 @@ Il test "corpo JSON sospeso" è stato aggiornato: ora verifica che `settled` div
 1. **Logto staging reale:** ancora NOT RUN (nessuna istanza/credenziale autorizzata). Tutti i test OIDC usano mock o discovery iniettata.
 2. **Firma ID token via JWKS lato SPA:** ancora NOT IMPLEMENTED (limite dichiarato, mitigazione Core-side).
 3. **Asset con nomi non standard** (da QA-PR1-01): non coinvolto in questo checkpoint.
+4. Il gate browser usa desktop Chromium e viewport mobile emulato (390×844), non un dispositivo fisico.
+5. Installazione pulita con la versione pnpm dichiarata: BLOCKED come riportato in §6.
 
 ---
 
 ## 8. Nuovi finding
 
-Nessuno. W2-R5 chiude entrambi i finding aperti (QA-C-01 e QA-C-08) senza introdurre nuovi problemi.
+- **QA-HARNESS-01 — bassa, test harness:** `tests/browser/browser-e2e.py` presume un database vuoto, ma il server API conserva lo schema e i dati tra esecuzioni. Riproduzione: eseguire il browser gate con API/schema fresco (PASS), poi rilanciarlo senza riavviare `start-test-api.ts`: scenario 1 fallisce con `Expected public team 404 on empty DB, got 200`. Riavviando il server, viene creato un nuovo schema isolato e il gate torna PASS. Non è un difetto applicativo; rende non ripetibile la suite senza il prerequisito di restart. Correzione suggerita a QA: teardown/setup esplicito per ogni esecuzione o fail-fast se lo schema non è vuoto.
+- Nessun nuovo difetto applicativo Web dimostrato. QA-C-01 e QA-C-08 sono verificati nel perimetro automatizzato/locale, con i limiti descritti; Logto staging resta separato.
 
 ---
 
@@ -158,31 +161,30 @@ Nessuno. W2-R5 chiude entrambi i finding aperti (QA-C-01 e QA-C-08) senza introd
 
 - Branch QA: `qa/q2-e-w2r5-verification`
 - Commit di integrazione: `8a5cc9cfa31d7720abd4e1f32dc801ed2055eb89`
-- Commit QA (test + evidenze + rapporto): vedi §11
-- SHA del branch QA: vedi §11
+- Commit QA di test/evidenze: `736d063e589f8b51831fa08034f29481208e74fe`.
+- Il presente follow-up corregge il report e aggiunge il finding QA-HARNESS-01; lo SHA completo del commit finale è riportato nel messaggio di handoff e corrisponde al branch `qa/q2-e-w2r5-verification`. Nessun commit applicativo Core/Web è incluso.
 
 ---
 
 ## 10. Stato worktree e remote
 
-| Worktree | Branch | HEAD | Stato |
+| Worktree | Branch | HEAD al controllo finale | Stato |
 |---|---|---|---|
-| `myteam-platform` | `main` @ `66b4987` | invariato | checkout canonico, non modificato |
-| `myteam-platform-q2-e-int` | `qa/q2-e-w2r5-verification` | commit QA | verifica e pubblicazione |
-| `myteam-platform-q2-d-int` | `qa/q2-d-w2r4-verification` | `4f7732d` | invariato |
-| `myteam-platform-q2-c-int` | `qa/q2-c-w2r3-integration` | `72de509` | invariato |
+| `/Users/gatti/Workspace/myteam-platform` | `main` | `66b49875acbf7d520029730702a03f3abc66bb8c` | invariato; preesistenti file QA/piattaforma non tracciati preservati |
+| `/Users/gatti/Workspace/myteam-platform-q2-e` | `qa/q2-e-w2r5-verification` | commit QA corrente | pulito dopo il commit; node_modules e `dist/` sono output locali ignorati |
+| Core C1.2, MVP-I1, Q2-A, Q2-B, QA Q1 worktrees | branch di proprietà esistenti | invariati | preservati, non modificati |
 
-Nessun merge su `main`, nessun force push, nessun deploy.
+Q2-D è stato verificato tramite riferimento Git remoto/local branch; non esisteva un suo worktree attivo. Il branch remoto QA Q2-E era `99966b04549771f618d8763d280919644924cff1` al momento dell'ultimo controllo; l’ultimo commit locale QA deve essere pubblicato con push fast-forward ordinario se si richiede aggiornamento GitHub. Nessun merge su `main`, nessun force push, nessun deploy.
 
 ---
 
 ## 11. Riferimenti
 
 - Finding precedenti: `docs/qa/CHECKPOINT-Q2-D-REPORT.md`
-- Evidenze Q2-E: `docs/qa/evidence/q2-e/` (8 artefatti di log + 13 screenshot)
-- Evidenze Q2-D riutilizzate: `docs/qa/evidence/q2-d/`
-- Test QA aggiunti in questo checkpoint: `tests/q1/13-web-w2-r4-timeout.vitest.ts` (aggiornato), `tests/q1/15-web-w2-r5-logout-federated.vitest.ts`
-- Branch pubblicato: `qa/q2-e-w2r5-verification` — commit di verifica `7d645a2712e49b945b0b5ad476761ab648cdbe22`
+- Evidenze fresche Q2-E: `docs/qa/evidence/q2-e/` (8 log aggiunti, incluse una prova browser PASS e una ripetizione FAIL del solo harness; 13 screenshot presenti, 11 aggiornati nella run PASS).
+- Evidenze Q2-D riutilizzate come storico: `docs/qa/evidence/q2-d/`.
+- Test QA aggiornati: `tests/q1/15-web-w2-r5-logout-federated.vitest.ts`; `tests/q1/13-web-w2-r4-timeout.vitest.ts` è stato eseguito senza modifiche.
+- Branch QA `qa/q2-e-w2r5-verification`; commit iniziale QA `99966b04549771f618d8763d280919644924cff1`; commit QA test/evidenze `736d063e589f8b51831fa08034f29481208e74fe`; follow-up report pubblicato sullo stesso branch in fast-forward.
 
 Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e `docs/qa/`.
 
