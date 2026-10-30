@@ -1,0 +1,40 @@
+===========================================================================
+PLAYWRIGHT BROWSER E2E TEST: Real Onboarding & Lifecycle Verification
+Target Web: http://127.0.0.1:5173
+Target API: http://127.0.0.1:3000
+===========================================================================
+
+[SCENARIO 0] Backend Offline UI Handling...
+  -> PASS: Backend offline state surfaced with clean error UI.
+
+[SCENARIO 1] Empty Database State & Neutral Branding...
+  -> PASS: 404 unconfigured team rendered, no DEMO badge, no 'MAPI GROUP' branding.
+
+[SCENARIO 2] Authentication & Access Control (401, 403, 200)...
+  -> Sub-scenario 2A: Testing 401 Unauthorized with invalid token...
+  -> PASS: 401 error alert is visible in UI (WEB-BUG-01 RESOLVED in W2-R1).
+  -> Sub-scenario 2B: Testing 403 Forbidden with forbidden token...
+  -> PASS: 403 error alert is visible in UI (WEB-BUG-01 RESOLVED in W2-R1).
+  -> Sub-scenario 2C: Testing 200 OK with authorized test token...
+  -> PASS: Authorized Bearer token accepted; Admin Dashboard unlocked.
+
+[SCENARIO 3] Empty DB Onboarding in Impostazioni...
+  -> PASS: Season created, team configured and published successfully on PostgreSQL.
+
+[SCENARIO 4] Opponent Creation & Draft Match Creation...
+  -> PASS: Opponent created, match saved as draft with 'BOZZA (NON PUBBLICATA)' badge.
+
+[SCENARIO 5] Strict Isolation of Draft Match from Public Website...
+  -> PASS: Draft match is strictly isolated, GET /public/matches returned empty.
+
+[SCENARIO 6] Explicit Match Publication & Public Display...
+  -> PASS: Match explicitly published, visible on public site with correct opponent.
+
+--- MOBILE VIEWPORT TEST (390x844) ---
+  -> PASS: Mobile viewport 390x844 renders hamburger drawer and public matches cleanly.
+
+===========================================================================
+BROWSER E2E GATE COMPLETE: ALL SCENARIOS VERIFIED WITH 100% SUCCESS
+Overall Exit Code: 0 (EXIT_PASS)
+===========================================================================
+EXIT_CODE=0

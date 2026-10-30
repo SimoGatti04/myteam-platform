@@ -10,9 +10,9 @@
 
 ## 1. Verdetto
 
-**QA PASS.**
+**QA PARTIAL.**
 
-Entrambi i finding oggetto del checkpoint (QA-C-01 e QA-C-08) risultano chiusi. Nessuna regressione rilevata. Nessun nuovo finding.
+La verifica applicativa dei finding QA-C-01 e QA-C-08 è positiva nel perimetro sintetico/locale descritto sotto. La reinstallazione pulita con il package manager previsto non è certificata in questo host; Logto staging resta NOT RUN. Il follow-up del 30 ottobre 2026 prevale dove corregge conteggi o classificazioni della prima stesura.
 
 ---
 
@@ -125,18 +125,18 @@ Il test "corpo JSON sospeso" è stato aggiornato: ora verifica che `settled` div
 
 | Verifica | Esito | Note |
 |---|---|---|
-| Installazione pulita (`pnpm install --frozen-lockfile`) | exit 0 | |
-| Web Vitest (8 file / 96 test) | **96/96 ×3** | baseline dichiarata 96/96 confermata |
-| Build (`pnpm build`) | exit 0 | bundle `index-C8xMxBV6.js` 420.80 kB (gzip 109.65 kB) |
-| Typecheck (`pnpm typecheck`) | exit 0 | api + web + contracts |
-| Suite QA Node (12 file, 67 test) | 66 PASS / 0 FAIL / 1 SKIP | invariato |
-| QA Vitest (6 file, 28 test) | 28 PASS / 0 FAIL, 0 unhandled errors | nuovi test Q2-E |
-| Browser E2E (Playwright, desktop + mobile) | **exit 0**, 8 scenari + mobile | nessuna regressione |
-| `git diff --check` | exit 0 | nessun whitespace error |
+| Installazione pulita (`pnpm install --frozen-lockfile`) | **BLOCKED / exit 1** | pnpm disponibile nell’host è 11.25.0, mentre il repository dichiara 10.32.1; l’installazione ha terminato con `ERR_PNPM_IGNORED_BUILDS` per `esbuild`. Dipendenze sono state materializzate, ma questo non è un PASS di installazione pulita. |
+| Web Vitest (8 file / 96 test) | **96/96 ×3 PASS** | ripetuto sul checkout Q2-E; log freschi in `docs/qa/evidence/q2-e/web-vitest-rerun-{1,2,3}-2026-10-30.txt` |
+| Build produzione + typecheck | **PASS / exit 0** | TypeScript contracts/API/Web e Vite production build; esecuzione diretta dei binari, non `pnpm build`/`pnpm typecheck`; log `build-typecheck-rerun-2026-10-30.txt` |
+| Suite QA Node | **68 PASS / 0 FAIL / 1 SKIPPED (69 totali)** | comando documentato, ripetuto sul checkout Q2-E; output in `qa-suite-node-rerun-2026-10-30.txt` |
+| QA Vitest | **28 PASS / 0 FAIL (6 file)** | 10 test focali logout/deadline e 28 suite completa; due assert tautologiche nella stesura originaria sono state sostituite da verifiche runtime; log finale `qa-vitest-rerun-2026-10-30.txt` |
+| Browser E2E Playwright desktop/mobile | **PASS, exit 0** su schema nuovo; un tentativo successivo sullo stesso schema è **FAIL harness** perché il DB non era vuoto | log completi distinti sotto; 13 screenshot presenti, 11 aggiornati nella prova riuscita |
+| `git diff --check` | **PASS / exit 0** | verificato sul diff QA prima della pubblicazione |
 
-**Non rieseguito (riutilizzate evidenze Q2-D, componenti non modificati):**
-- PostgreSQL reale (6/6) e regressione HTTP CORE-BUG-01 (15/15): `apps/api`, migrazioni e `start-test-api.ts` non toccati in W2-R5. Solo `apps/web/src/services/oidc.ts`, `auth.ts`, `AppContext.tsx` e test/docs. Evidenze in `docs/qa/evidence/q2-d/postgres-real-6pass.txt` e `http-immutability-core-bug-01.txt`.
-- Build di produzione DEMO/login manuale (4/4): nessuna modifica ai flussi DEMO. Evidenza Q2-D riutilizzata.
+**Non rieseguito / riuso Q2-D:**
+- La suite dedicata PostgreSQL transazioni/concorrenza (6 casi) e la regressione HTTP CORE-BUG-01 (15 casi) non sono state rieseguite perché `apps/api`, migrazioni e relativo codice sono invariati in W2-R5. Le evidenze Q2-D sono riferimenti storici, non risultati di questa riesecuzione.
+- Il browser gate Q2-E descritto in §8 ha invece usato PostgreSQL 16 reale e schema temporaneo isolato; il verificatore admin era un sostituto sintetico, non verifica JWT crittografica.
+- Il gate produzione DEMO/login manuale è riutilizzato da Q2-D, non rieseguito; il cambiamento Web W2-R5 non tocca quei flussi.
 
 ---
 
@@ -198,3 +198,32 @@ Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e
 ---
 
 **Verdetto: QA PASS.**
+
+
+## 8. Rerun indipendente Q2-E — 30 ottobre 2026
+
+Questa sezione documenta la ripetizione sul checkout esatto, prima della correzione documentale/test-only, a `99966b04549771f618d8763d280919644924cff1` (Q2-E branch). Il commit Web testato è invariato a `667b12bc7cccb428a81803a3b3b4d8877d41ce3b`; base Q2-D `4f7732d62f78e84fe89fdc61d03ddd5cad1f0d9b`; Core `1ab71792929bef1009e3ecab57adf3d333d58ceb`.
+
+### Evidenze aggiornate
+
+- Web Vitest: tre esecuzioni indipendenti, ciascuna 8 file / 96 PASS / 0 FAIL / 0 SKIP; dettagli nei tre log `web-vitest-rerun-*-2026-10-30.txt`.
+- QA Vitest: 6 file / 28 PASS / 0 FAIL, durata finale 0.558 s; eseguiti con include pattern temporaneo perché i file QA terminano in `.vitest.ts` e non rientrano nel pattern Vitest predefinito `*.test.ts`.
+- QA Node: 12 file / 69 test, 68 PASS / 0 FAIL / 1 SKIPPED, exit 0; durata 1299 ms. Il conteggio precedente 67/66 è errato per il checkout verificato. Il file TAP preliminare che selezionava soltanto i tre test API non è usato come evidenza; il log completo con reporter predefinito è `qa-suite-node-rerun-2026-10-30.txt`.
+- Build e typecheck: exit 0 usando TypeScript dei workspace per contracts, API e Web e Vite dalla cartella `apps/web`; log completo `build-typecheck-rerun-2026-10-30.txt`. Il tentativo iniziale di lanciare Vite dalla root è fallito con `Cannot resolve entry module index.html` perché il comando non era eseguito nella directory Web; non è un fallimento del build canonico.
+- PostgreSQL/browser: Docker `myteam-platform-postgres-1` era healthy; l’API QA ha usato `myteam_platform_test`, schema `test_qa_<UUID>` temporaneo e cleanup automatico. Playwright ha verificato Chromium desktop e viewport mobile 390×844: backend offline, database vuoto, 401, 403, accesso admin con verifier sostitutivo, onboarding stagione/squadra, avversaria/bozza, isolamento pubblico della bozza, pubblicazione esplicita e comparsa pubblica. Prova riuscita: `browser-e2e-desktop-mobile-fresh-schema-2026-10-30.txt`, exit 0.
+- Un’esecuzione ripetuta senza riavviare il server API ha fallito allo scenario database vuoto (`Expected public team 404 on empty DB, got 200`): il server manteneva i dati del precedente scenario nello stesso schema. Classificazione: **FAIL del setup/idempotenza del test browser**, non difetto applicativo; la prova è salvata in `browser-e2e-desktop-mobile-rerun-2026-10-30.txt`. Riavviato l’API QA, il nuovo schema ha consentito la prova pulita PASS. Per ripetibilità, riavviare `start-test-api.ts` prima di ogni run.
+- Il marker `/tmp/myteam-qa-test-api-3000.schema` era assente dopo l’arresto; query allo schema di test non ha rilevato `test_qa_*` residui. Server API e Vite sono stati fermati.
+- PostgreSQL dedicated transaction/concurrency suite, browser su device fisico e Logto staging: non rieseguiti / NOT RUN; il browser è reale ma desktop Chromium emulato e viewport mobile, non device mobile reale.
+
+### Correzione della suite QA
+
+In `tests/q1/15-web-w2-r5-logout-federated.vitest.ts` due precedenti `expect(true).toBe(true)` sono stati rimossi. Ora i test chiamano il singleton `authService` e verificano session restore/storage, discovery al logout post-F5, endpoint scoperto, `id_token_hint` presente nel redirect e invalidazione 401 senza fetch/redirect federato. I test sono comunque mockati: non equivalgono a Logto remoto. Il timeout body sospeso e retry sono verificati separatamente in `tests/q1/13-web-w2-r4-timeout.vitest.ts` e nella suite W2-R5 Web.
+
+### Note di classificazione
+
+- Runtime di questa sessione: Node v24.19.0 (ammesso dall’engine `>=22.12 <27`, ma diverso da `.node-version` 26.5.0); Python system 3.14 con Playwright.
+
+- Prova browser: applicazione Web/Core locale + Chromium reale; database PostgreSQL reale; autenticazione admin tramite verifier sostitutivo.
+- JWT crittografico/Logto: non dimostrati dal browser Q2-E; i test JWT locali della suite QA non rappresentano una sessione Logto staging.
+- Il tentativo di installazione pulita non è PASS. L’ambiente ha fornito pnpm 11.25.0 nonostante `packageManager: pnpm@10.32.1`; l’install si è fermato dopo download/link dipendenze per script `esbuild` non approvato. Build/test eseguiti con i binari disponibili dopo il materializzarsi dei pacchetti.
+- Branch QA già pubblicato: il rerun ha introdotto soltanto ownership QA (`tests/`, `docs/qa/`); nessuna modifica a Core/Web/iOS, nessun merge su main e nessun deploy.

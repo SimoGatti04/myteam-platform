@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { OidcClient } from '../../apps/web/src/services/oidc';
-import { AuthService } from '../../apps/web/src/services/auth';
+import { authService } from '../../apps/web/src/services/auth';
+import { oidcClient, type OidcSession } from '../../apps/web/src/services/oidc';
 import type { OidcConfig } from '../../apps/web/src/services/oidc';
 
 const mockConfig: OidcConfig = {
@@ -13,39 +14,57 @@ const mockConfig: OidcConfig = {
 };
 
 describe('Q2-E — QA-C-01: logout federato after F5 (W2-R5)', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  const originalLocation = window.location;
+  let assign: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
     vi.useRealTimers();
+    oidcClient.setConfig(mockConfig);
+    authService.logout();
+    assign = vi.fn();
+    delete (window as any).location;
+    (window as any).location = { ...originalLocation, assign, origin: mockConfig.postLogoutRedirectUri };
   });
 
-  it('con cache discovery vuota (scenario F5), logout federato esegue la discovery e costruisce URL', async () => {
-    const client = new OidcClient(mockConfig);
-    // cache vuota
-    expect(client.getDiscoveryMetadata()).toBeNull();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    delete (window as any).location;
+    (window as any).location = originalLocation;
+  });
 
-    // mock discovery che restituisce end_session_endpoint
-    vi.stubGlobal('fetch', () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            issuer: mockConfig.endpoint,
-            authorization_endpoint: `${mockConfig.endpoint}/auth`,
-            token_endpoint: `${mockConfig.endpoint}/token`,
-            end_session_endpoint: `${mockConfig.endpoint}/session/end`,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    );
+  const session: OidcSession = {
+    accessToken: 'synthetic-access-token',
+    idToken: 'synthetic-id-token-hint',
+    tokenType: 'Bearer',
+    expiresAt: Date.now() + 60_000,
+  };
 
-    // forceRefresh discovery
-    const metadata = await client.fetchDiscovery({ forceRefresh: true });
-    expect(metadata.end_session_endpoint).toBe(`${mockConfig.endpoint}/session/end`);
+  it('dopo F5 ripristina la sessione, rifà discovery e completa il logout federato', async () => {
+    authService.setOidcSession(session);
+    oidcClient.setConfig(mockConfig); // nuova istanza/cache discovery vuota dopo il reload
+    authService.initSession();
+    expect(oidcClient.getDiscoveryMetadata()).toBeNull();
 
-    const url = client.buildEndSessionUrl('my-id-token');
-    expect(url).not.toBeNull();
-    expect(url).toContain('/session/end');
-    expect(url).toContain('id_token_hint=my-id-token');
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      issuer: mockConfig.endpoint,
+      authorization_endpoint: `${mockConfig.endpoint}/auth`,
+      token_endpoint: `${mockConfig.endpoint}/token`,
+      end_session_endpoint: `${mockConfig.endpoint}/session/end`,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await authService.logout({ redirect: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('.well-known/openid-configuration');
+    expect(assign).toHaveBeenCalledTimes(1);
+    const logoutUrl = new URL(assign.mock.calls[0]![0] as string);
+    expect(logoutUrl.origin + logoutUrl.pathname).toBe(`${mockConfig.endpoint}/session/end`);
+    expect(logoutUrl.searchParams.get('id_token_hint')).toBe(session.idToken);
+    expect(authService.getAuthToken()).toBeNull();
+    expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
   });
 
   it('se la discovery fallisce dopo F5, logout locale resta completato e nessun redirect federato', async () => {
@@ -103,16 +122,38 @@ describe('Q2-E — QA-C-01: logout federato after F5 (W2-R5)', () => {
     // In questo caso l'endpoint è quello scoperto, quindi il test è superato.
   });
 
-  it('id_token_hint è acquisito prima della cancellazione della sessione', () => {
-    // Verifica del contratto: AuthService.logout cattura idTokenHint prima di nullare oidcSession.
-    // Test strutturale: il codice cattura hadOidcSession e idTokenHint prima di this.oidcSession = null.
-    // Questo test documenta il contratto; la verifica runtime richiede Logto staging.
-    expect(true).toBe(true);
+  it('preserva id_token_hint nel redirect anche se la sessione locale è già stata cancellata al termine', async () => {
+    oidcClient.setDiscoveryMetadata({
+      issuer: mockConfig.endpoint,
+      authorization_endpoint: `${mockConfig.endpoint}/auth`,
+      token_endpoint: `${mockConfig.endpoint}/token`,
+      end_session_endpoint: `${mockConfig.endpoint}/session/end`,
+    });
+    authService.setOidcSession(session);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      issuer: mockConfig.endpoint,
+      authorization_endpoint: `${mockConfig.endpoint}/auth`,
+      token_endpoint: `${mockConfig.endpoint}/token`,
+      end_session_endpoint: `${mockConfig.endpoint}/session/end`,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    await authService.logout({ redirect: true });
+
+    expect(authService.getAuthToken()).toBeNull();
+    expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(new URL(assign.mock.calls[0]![0] as string).searchParams.get('id_token_hint')).toBe(session.idToken);
   });
 
-  it('nessun redirect federato automatico dopo HTTP 401 (automatic invalidation)', () => {
-    // Il contratto: logout() con options.redirect falsy/undefined non richiede federation.
-    // Verificato nel codice: `if (!options?.redirect || !hadOidcSession || !oidcClient.isConfigured()) return Promise.resolve();`
-    expect(true).toBe(true);
+  it('401 invalida la sessione localmente senza discovery né redirect federato', () => {
+    authService.setOidcSession(session);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    authService.handleUnauthorized('authentication_required');
+
+    expect(authService.getAuthToken()).toBeNull();
+    expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });

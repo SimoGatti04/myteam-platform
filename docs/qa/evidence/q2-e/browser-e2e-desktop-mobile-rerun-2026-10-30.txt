@@ -1,0 +1,13 @@
+===========================================================================
+PLAYWRIGHT BROWSER E2E TEST: Real Onboarding & Lifecycle Verification
+Target Web: http://127.0.0.1:5173
+Target API: http://127.0.0.1:3000
+===========================================================================
+
+[SCENARIO 0] Backend Offline UI Handling...
+  -> PASS: Backend offline state surfaced with clean error UI.
+
+[SCENARIO 1] Empty Database State & Neutral Branding...
+
+[FAIL] Assertion failed: Expected public team 404 on empty DB, got 200
+EXIT_CODE=1
