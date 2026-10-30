@@ -1,6 +1,10 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 28 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+**Aggiornato:** 30 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+
+## Integrazione iOS — stato R1-D
+
+R1-A3 ha completato localmente la preparazione della cronologia iOS sotto `apps/ios/`. R1-B ha pubblicato il branch `codex/ios-r1-a3-publication` su GitHub all'SHA `42912195b63b401d5c6200f314338ca9a2754d06`; R1-C ha aperto la Draft PR #1 sulla base `docs/ios-c4-platform-decisions-20261029` (`7fd81044e6dab4f6cf732c99d7f2f3019977b665`). La revisione QA indipendente è ancora pendente e non è stato eseguito alcun merge su `main`. Build Xcode e suite C3.3: **122 PASS, 0 FAIL, 0 SKIPPED** sul commit effettivamente testato `4568542756051abbadf0c175559f08735cd9eb26`; il tip documentale successivo non è stato testato separatamente. CI remota: **NOT RUN**. Nessun deploy o distribuzione iOS. Il rapporto di migrazione registra audit, mapping e limiti.
 
 ## Baseline C0
 

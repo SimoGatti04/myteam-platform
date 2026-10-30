@@ -1,6 +1,6 @@
 # myteam-platform — Documentazione di prodotto e handoff
 
-**Aggiornato nella fonte:** 27 ottobre 2026. **Stato:** specifiche di prodotto approvate; web/backend non ancora implementati al momento della stesura.
+**Aggiornato nella fonte:** 27 ottobre 2026; **stato migrazione iOS aggiornato:** 30 ottobre 2026. **Stato:** specifiche di prodotto approvate; web/backend non ancora implementati al momento della stesura.
 
 Questo dossier è una copia iniziale trasferita il 28 ottobre 2026 dalla working copy `AURINFORMATC/docs/platform/`; gli originali sono stati lasciati intatti. La fonte locale aveva modifiche e nuovi documenti non ancora committati. Non confondere il progetto con **MyTeam Video**, progetto e servizio K3s separati.
 
@@ -10,14 +10,14 @@ Questo dossier è una copia iniziale trasferita il 28 ottobre 2026 dalla working
 - [ADMIN-WEB.md](ADMIN-WEB.md) — navigazione amministrativa definitiva a sei sezioni, Panoramica operativa e sezione Partite unificata.
 - [IOS-INTEGRATION.md](IOS-INTEGRATION.md) — app iOS esistente, stato C3.3 e requisiti offline-first.
 - [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md) — **decisioni APPROVATE 29/10/2026** per app iOS generica, branding e asset MAPI preservati, responsabilità Core/PWA/iOS, ruoli e distinte, calendario, LIVE e **numero/durata dei tempi configurabili per competizione con override di gara**. Non ancora implementate.
-- [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md) — **migrazione iOS approvata** nel monorepo `apps/ios/`, con preservazione della cronologia, audit preventivo del repository pubblico, struttura, test e piano di rollback. Non ancora eseguita.
+- [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md) — **migrazione iOS approvata**, integrata in R1-A3 e pubblicata in R1-B sul branch `codex/ios-r1-a3-publication`; R1-C ha aperto la Draft PR #1, con revisione QA pendente. Il rapporto registra storia per percorso, audit e stato reale dei test.
 - [BACKEND-DATA.md](BACKEND-DATA.md) — dati condivisi, differenza tra inserimento/override, sincronizzazione e provider.
 - [ACCESS-DEPLOYMENT.md](ACCESS-DEPLOYMENT.md) — Logto, Cloudflare Access, K3s e gestione operativa.
 - [MVP-HANDOFF.md](MVP-HANDOFF.md) — primo MVP, **roadmap approvata a quattro fasi**, modalità operativa multi-agente/parallela, checkpoint visibili, decisioni aperte e handoff.
 
 ## Fonti autorevoli e precedenza
 
-- **Codice e stato iOS correnti:** restano nella repository sorella `../AURINFORMATC`, nei file `app/docs/ARCHITECTURE.md`, `app/docs/STATUS.md` e `app/docs/TESTING.md`. Non sono stati copiati; questa repository non dichiara lo stato iOS corrente.
+- **Codice e stato iOS nel branch candidato:** la storia bonificata è integrata in `apps/ios/` in R1-A3; lo stato operativo della copia è in `apps/ios/docs/`. `AURINFORMATC` resta origine di provenienza e backup immutata. Il branch candidato è pubblicato su GitHub e la Draft PR #1 è aperta; non è ancora integrato in `main` e la revisione QA indipendente è pendente.
 - **Gerarchia delle fonti e sincronizzazione:** [ADR-0008, snapshot di riferimento](../decisions/ios/ADR-0008-platform-sync-and-source-hierarchy.md). Gli ADR iOS pertinenti sono conservati in `../decisions/ios/`; sono copie, non l'autorità per implementazioni iOS.
 - **Procedure di deployment reali:** repository separato `infra/` e relativi runbook. Questo dossier documenta requisiti, non sostituisce runbook o configurazione applicata; nessuna configurazione infra è stata copiata o modificata.
 - **Convenzioni di sviluppo:** repository `SimoGatti04/development-environment` (`AGENTS.md` e documenti specialistici pertinenti).
