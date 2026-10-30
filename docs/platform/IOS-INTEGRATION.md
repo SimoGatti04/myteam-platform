@@ -2,7 +2,7 @@
 
 **Stato:** iOS fino a C3.3 IMPLEMENTATO (come da report e documenti iOS); integrazione backend e autenticazione NON implementate.
 
-**Target di collocazione APPROVATO (29/10/2026):** il candidato iOS R1-A3 è integrato localmente sotto `apps/ios/` con cronologia riscritta per mantenere la navigazione per percorso. Il branch deriva dalla base GitHub pubblicata `docs/ios-c4-platform-decisions-20261029` (`7fd81044…`); **non è stato pubblicato**. L'audit e lo stato dei test, legati al commit effettivamente verificato, sono in [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md). Vedi anche [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md).
+**Target di collocazione APPROVATO (29/10/2026) — stato R1-D (30/10/2026):** R1-A3 ha integrato localmente il candidato iOS sotto `apps/ios/` con cronologia riscritta per mantenere la navigazione per percorso. R1-B ha pubblicato il branch `codex/ios-r1-a3-publication` su GitHub all'SHA `42912195b63b401d5c6200f314338ca9a2754d06`, derivato dalla base `docs/ios-c4-platform-decisions-20261029` (`7fd81044…`); R1-C ha aperto la Draft PR #1 e la revisione QA indipendente è pendente. Build e suite C3.3: **122 PASS, 0 FAIL, 0 SKIPPED** sul commit effettivamente testato `4568542756051abbadf0c175559f08735cd9eb26`; il tip documentale successivo non è stato testato separatamente. CI remota: **NOT RUN**. Nessun merge su `main`, deploy o distribuzione iOS. L'audit e lo stato dei test sono in [IOS-MONOREPO-MIGRATION.md](IOS-MONOREPO-MIGRATION.md). Vedi anche [IOS-C4-PLATFORM-DECISIONS.md](IOS-C4-PLATFORM-DECISIONS.md).
 
 ## Fonte autorevole dello stato
 

@@ -1,8 +1,8 @@
 # Migrazione Git dell'app iOS nel monorepo
 
 **Decisione:** APPROVATA il 29 ottobre 2026 — l'app nativa iOS sarà un modulo del monorepo `myteam-platform` in `apps/ios/`.  
-**Esecuzione:** R1-A/R1-A2 completati; la cronologia iOS è stata finalizzata localmente in R1-A3 nel branch isolato `codex/ios-r1-a3-publication`. Nessun push e nessun merge su `main`.
-**Gate:** R1-B = PASS per la preparazione locale al push, senza autorizzare né eseguire il push in questo incarico.
+**Esecuzione:** R1-A/R1-A2 completati; R1-A3 ha finalizzato localmente la cronologia iOS nel branch isolato `codex/ios-r1-a3-publication`. R1-B ha pubblicato il branch su GitHub all'SHA `42912195b63b401d5c6200f314338ca9a2754d06`; R1-C ha aperto la Draft PR #1. La revisione QA indipendente è pendente e non è stato eseguito alcun merge su `main`.
+**Gate:** R1-B = PASS per la preparazione locale al push; la pubblicazione è stata eseguita in R1-B. R1-C = Draft PR #1 aperta, review QA pendente. Build e suite C3.3: **122 PASS, 0 FAIL, 0 SKIPPED** sul commit testato `4568542756051abbadf0c175559f08735cd9eb26`; il tip documentale successivo non è stato testato separatamente. CI remota: **NOT RUN**. Nessun deploy o distribuzione iOS.
 **Fonte iOS:** `AURINFORMATC` (Git locale, branch `main`, HEAD verificato `2bb9459c6f5efa7ea9b41c00b1eb658dbbc21e27`, nessun remote).  
 **Destinazione:** `SimoGatti04/myteam-platform` (repository GitHub pubblico).  
 **Base documentale:** `docs/ios-c4-platform-decisions-20261029`; nessun merge su `main`.
@@ -90,7 +90,7 @@ Queste modifiche sono progettate nei checkpoint C4/C5 documentati separatamente.
 
 ## R1-A3 — Cronologia pubblicabile finalizzata (29 ottobre 2026)
 
-**Verdetto:** PASS per il gate locale R1-B; il push GitHub e il merge su `main` non sono stati eseguiti. Il branch rimane isolato e locale.
+**Verdetto al termine di R1-A3:** PASS per il gate locale R1-B; in quella fase il push GitHub e il merge su `main` non erano stati eseguiti e il branch era isolato e locale. La pubblicazione è avvenuta successivamente in R1-B.
 
 ### Base, ancestry e rewriting
 

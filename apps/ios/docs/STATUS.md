@@ -1,6 +1,6 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 29 ottobre 2026 — verifica C3.3 sul candidato monorepo R1-A3.
+**Aggiornato:** 30 ottobre 2026 — stato R1-D; verifica C3.3 sul candidato monorepo R1-A3.
 
 ## Stato corrente — C3.3
 
@@ -8,7 +8,9 @@
 
 ## Integrazione locale myteam-platform — R1-A3
 
-La cronologia iOS è stata riscritta per il percorso `apps/ios/` e integrata in un branch isolato sulla base GitHub pubblicata. Build e suite C3.3 sono state eseguite sul commit `4568542756051abbadf0c175559f08735cd9eb26`: **build PASS; 122 test PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator. Il commit documentale successivo non è stato testato separatamente e non cambia il codice o il progetto Xcode. Nessun push/merge; `AURINFORMATC` resta immutato. Dettagli e SHA sono nel rapporto `docs/platform/IOS-MONOREPO-MIGRATION.md`.
+La cronologia iOS è stata riscritta per il percorso `apps/ios/` e integrata in un branch isolato sulla base GitHub pubblicata. Build e suite C3.3 sono state eseguite sul commit `4568542756051abbadf0c175559f08735cd9eb26`: **build PASS; 122 test PASS, 0 FAIL, 0 SKIPPED** su iPhone 18 Pro Simulator. Il commit documentale successivo non è stato testato separatamente e non cambia il codice o il progetto Xcode. In R1-A3 non sono stati eseguiti push o merge; `AURINFORMATC` resta immutato. Dettagli e SHA sono nel rapporto `docs/platform/IOS-MONOREPO-MIGRATION.md`.
+
+**Stato di pubblicazione successivo (R1-D, 30/10/2026):** R1-B ha pubblicato il branch `codex/ios-r1-a3-publication` su GitHub all'SHA `42912195b63b401d5c6200f314338ca9a2754d06`; R1-C ha aperto la Draft PR #1 sulla base `docs/ios-c4-platform-decisions-20261029` (`7fd81044…`). La revisione QA indipendente è ancora pendente e non è stato eseguito alcun merge su `main`. Build e suite C3.3 restano **122 PASS** sul commit testato `4568542756051abbadf0c175559f08735cd9eb26`; il tip documentale non è stato testato separatamente. CI remota: **NOT RUN**. Nessun deploy o distribuzione iOS.
 
 ## Esito del checkpoint
 
@@ -21,7 +23,7 @@ Lo schema V1 C3.1 resta immutato. È stata verificata con fixture sintetiche la 
 ## Stato iniziale e Git
 
 - Baseline richiesta: `bbabf8a` su branch `main`; il working tree iniziale conteneva modifiche non committate relative al tentativo precedente, preservate e verificate prima di proseguire.
-- Nessun remote configurato; nessun push effettuato.
+- Alla baseline iniziale: nessun remote configurato; nessun push effettuato.
 - Non sono stati aperti né modificati i file reali in Application Support o dati UserDefaults dell'utente. I test hanno usato ModelContainer e directory temporanei isolati.
 - Il precedente ADR-0005 e i report C3 sono conservati come evidenza storica, con la decisione JSON operativa ora contrassegnata SUPERSEDED da ADR-0006. Il bundle della riesecuzione XCTest è `/private/tmp/AURINFORMATC-C3R1-Retest.xcresult` (90 passati, 0 falliti, 0 saltati).
 - I commit di implementazione, test e documentazione di questo checkpoint sono locali. Fare riferimento a `git log` per gli identificativi correnti; non è stato creato alcun remote.
@@ -46,7 +48,7 @@ La suite di regressione C1–C3.2-R1 aggiornata è passata: **91 XCTest PASS, 0 
 
 Una prima esecuzione UI ha riprodotto un conflitto di finalizzazione tra la data del record in memoria e quella serializzata nel checkpoint live (JSON a millisecondi). È stata introdotta una tolleranza di 1 microsecondo nella verifica di equivalenza dei record e un test di regressione deterministico; il test prima falliva e ora è incluso nella suite da 91 test. Nessuna chiave o formato persistito è stato cambiato.
 
-**Limiti supplementari:** il controllo Computer Use ha segnalato il Mac bloccato e non è stato aggirato; la modalità XCUITest ha comunque verificato l’app reale e i flussi essenziali richiesti. Il background/foreground è verificato via `.home`/`activate`, ma non il blocco schermo. Non sono stati eseguiti lo scenario di recovery temporale incerto, la verifica UI dell’avvio di una nuova partita dopo la finalizzazione, né l’ispezione diretta dell’UUID della sessione. Queste lacune non sono presentate come test superati. Non sono stati usati store di produzione, dati personali o backup reali. Nessun push o remote.
+**Limiti supplementari:** il controllo Computer Use ha segnalato il Mac bloccato e non è stato aggirato; la modalità XCUITest ha comunque verificato l’app reale e i flussi essenziali richiesti. Il background/foreground è verificato via `.home`/`activate`, ma non il blocco schermo. Non sono stati eseguiti lo scenario di recovery temporale incerto, la verifica UI dell’avvio di una nuova partita dopo la finalizzazione, né l’ispezione diretta dell’UUID della sessione. Queste lacune non sono presentate come test superati. Non sono stati usati store di produzione, dati personali o backup reali. In quella fase non sono stati eseguiti push né configurati remote.
 
 Result bundle mantenuti come evidenza:
 
