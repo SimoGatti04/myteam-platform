@@ -182,7 +182,7 @@ Nessun merge su `main`, nessun force push, nessun deploy.
 - Evidenze Q2-E: `docs/qa/evidence/q2-e/` (8 artefatti di log + 13 screenshot)
 - Evidenze Q2-D riutilizzate: `docs/qa/evidence/q2-d/`
 - Test QA aggiunti in questo checkpoint: `tests/q1/13-web-w2-r4-timeout.vitest.ts` (aggiornato), `tests/q1/15-web-w2-r5-logout-federated.vitest.ts`
-- Branch pubblicato: `qa/q2-e-w2r5-verification` — commit di verifica `8a5cc9cfa31d7720abd4e1f32dc801ed2055eb89` (questo file è aggiornato da un commit successivo, solo documentale, per registrarne lo SHA)
+- Branch pubblicato: `qa/q2-e-w2r5-verification` — commit di verifica `7d645a2712e49b945b0b5ad476761ab648cdbe22`
 
 Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e `docs/qa/`.
 
