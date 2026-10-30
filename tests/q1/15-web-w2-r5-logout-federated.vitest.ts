@@ -67,42 +67,37 @@ describe('Q2-E — QA-C-01: logout federato after F5 (W2-R5)', () => {
     expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
   });
 
-  it('se la discovery fallisce dopo F5, logout locale resta completato e nessun redirect federato', async () => {
-    const client = new OidcClient(mockConfig);
-    expect(client.getDiscoveryMetadata()).toBeNull();
+  it('discovery offline non blocca il logout locale e non genera redirect arbitrario', async () => {
+    authService.setOidcSession(session);
+    const fetchMock = vi.fn(async () => { throw new Error('offline'); });
+    vi.stubGlobal('fetch', fetchMock);
 
-    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')));
+    await authService.logout({ redirect: true });
 
-    // fetchDiscovery deve lanciare
-    await expect(client.fetchDiscovery({ forceRefresh: true })).rejects.toThrow();
-
-    // buildEndSessionUrl resta null (nessun endpoint arbitrario)
-    const url = client.buildEndSessionUrl('my-id-token');
-    expect(url).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(authService.getAuthToken()).toBeNull();
+    expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
+    expect(assign).not.toHaveBeenCalled();
   });
 
-  it('se la discovery va in timeout, logout locale resta completato', async () => {
+  it('logout locale invalida subito lo stato mentre la discovery è sospesa, poi termina al timeout', async () => {
     vi.useFakeTimers();
-    const client = new OidcClient(mockConfig);
-
-    vi.stubGlobal('fetch', (_url: any, init: any) =>
-      new Promise((resolve, reject) => {
-        if (init?.signal) {
-          if (init.signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
-          init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-        }
+    authService.setOidcSession(session);
+    const fetchMock = vi.fn((_url: any, init: any) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
       }),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
-    const promise = client.fetchDiscovery({ forceRefresh: true });
-    promise.catch(() => {});
+    const logoutPromise = authService.logout({ redirect: true });
+    // Il servizio e lo storage sono invalidati prima che la discovery di rete termini.
+    expect(authService.getAuthToken()).toBeNull();
+    expect(sessionStorage.getItem('myteam_oidc_session')).toBeNull();
     await vi.advanceTimersByTimeAsync(10000);
-    await expect(promise).rejects.toThrow(/timeout/i);
-
-    // Nessun endpoint arbitrario
-    expect(client.buildEndSessionUrl('my-id-token')).toBeNull();
-    vi.useRealTimers();
-  });
+    await expect(logoutPromise).resolves.toBeUndefined();
+    expect(assign).not.toHaveBeenCalled();
+  }, 15000);
 
   it('utilizza esclusivamente end_session_endpoint scoperto (no euristici)', () => {
     const client = new OidcClient(mockConfig);

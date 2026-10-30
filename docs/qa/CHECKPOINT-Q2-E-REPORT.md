@@ -129,7 +129,7 @@ Il test "corpo JSON sospeso" è stato aggiornato: ora verifica che `settled` div
 | Web Vitest (8 file / 96 test) | **96/96 ×3 PASS** | ripetuto sul checkout Q2-E; log freschi in `docs/qa/evidence/q2-e/web-vitest-rerun-{1,2,3}-2026-10-30.txt` |
 | Build produzione + typecheck | **PASS / exit 0** | TypeScript contracts/API/Web e Vite production build; esecuzione diretta dei binari, non `pnpm build`/`pnpm typecheck`; log `build-typecheck-rerun-2026-10-30.txt` |
 | Suite QA Node | **68 PASS / 0 FAIL / 1 SKIPPED (69 totali)** | comando documentato, ripetuto sul checkout Q2-E; output in `qa-suite-node-rerun-2026-10-30.txt` |
-| QA Vitest | **28 PASS / 0 FAIL (6 file)** | 10 test focali logout/deadline e 28 suite completa; due assert tautologiche nella stesura originaria sono state sostituite da verifiche runtime; log finale `qa-vitest-rerun-2026-10-30.txt` |
+| QA Vitest | **28 PASS / 0 FAIL (6 file)** | 10 test focali logout/deadline e 28 suite completa; due assert tautologiche sono state sostituite; i test runtime verificano F5, discovery offline/timeout, logout locale immediato, redirect con `id_token_hint` e 401 senza federation; log finale `qa-vitest-rerun-2026-10-30.txt` |
 | Browser E2E Playwright desktop/mobile | **PASS, exit 0** su schema nuovo; un tentativo successivo sullo stesso schema è **FAIL harness** perché il DB non era vuoto | log completi distinti sotto; 13 screenshot presenti, 11 aggiornati nella prova riuscita |
 | `git diff --check` | **PASS / exit 0** | verificato sul diff QA prima della pubblicazione |
 
@@ -161,7 +161,7 @@ Il test "corpo JSON sospeso" è stato aggiornato: ora verifica che `settled` div
 
 - Branch QA: `qa/q2-e-w2r5-verification`
 - Commit di integrazione: `8a5cc9cfa31d7720abd4e1f32dc801ed2055eb89`
-- Commit QA di test/evidenze: `736d063e589f8b51831fa08034f29481208e74fe`.
+- Commit QA test/evidenze iniziale: `736d063e589f8b51831fa08034f29481208e74fe`; follow-up report: `03f0928bf30e6e4b769487a08e6a0885161d9385`.
 - Il presente follow-up corregge il report e aggiunge il finding QA-HARNESS-01; lo SHA completo del commit finale è riportato nel messaggio di handoff e corrisponde al branch `qa/q2-e-w2r5-verification`. Nessun commit applicativo Core/Web è incluso.
 
 ---
@@ -184,7 +184,7 @@ Q2-D è stato verificato tramite riferimento Git remoto/local branch; non esiste
 - Evidenze fresche Q2-E: `docs/qa/evidence/q2-e/` (8 log aggiunti, incluse una prova browser PASS e una ripetizione FAIL del solo harness; 13 screenshot presenti, 11 aggiornati nella run PASS).
 - Evidenze Q2-D riutilizzate come storico: `docs/qa/evidence/q2-d/`.
 - Test QA aggiornati: `tests/q1/15-web-w2-r5-logout-federated.vitest.ts`; `tests/q1/13-web-w2-r4-timeout.vitest.ts` è stato eseguito senza modifiche.
-- Branch QA `qa/q2-e-w2r5-verification`; commit iniziale QA `99966b04549771f618d8763d280919644924cff1`; commit QA test/evidenze `736d063e589f8b51831fa08034f29481208e74fe`; follow-up report pubblicato sullo stesso branch in fast-forward.
+- Branch QA `qa/q2-e-w2r5-verification`; commit iniziale QA `99966b04549771f618d8763d280919644924cff1`; commit QA test/evidenze `736d063e589f8b51831fa08034f29481208e74fe`; follow-up report `03f0928bf30e6e4b769487a08e6a0885161d9385`; aggiornamento dei test logout è il commit finale elencato nell’handoff.
 
 Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e `docs/qa/`.
 
@@ -209,7 +209,7 @@ Questa sezione documenta la ripetizione sul checkout esatto, prima della correzi
 ### Evidenze aggiornate
 
 - Web Vitest: tre esecuzioni indipendenti, ciascuna 8 file / 96 PASS / 0 FAIL / 0 SKIP; dettagli nei tre log `web-vitest-rerun-*-2026-10-30.txt`.
-- QA Vitest: 6 file / 28 PASS / 0 FAIL, durata finale 0.558 s; eseguiti con include pattern temporaneo perché i file QA terminano in `.vitest.ts` e non rientrano nel pattern Vitest predefinito `*.test.ts`.
+- QA Vitest: 6 file / 28 PASS / 0 FAIL, durata finale 0.658 s; eseguiti con include pattern temporaneo perché i file QA terminano in `.vitest.ts` e non rientrano nel pattern Vitest predefinito `*.test.ts`.
 - QA Node: 12 file / 69 test, 68 PASS / 0 FAIL / 1 SKIPPED, exit 0; durata 1299 ms. Il conteggio precedente 67/66 è errato per il checkout verificato. Il file TAP preliminare che selezionava soltanto i tre test API non è usato come evidenza; il log completo con reporter predefinito è `qa-suite-node-rerun-2026-10-30.txt`.
 - Build e typecheck: exit 0 usando TypeScript dei workspace per contracts, API e Web e Vite dalla cartella `apps/web`; log completo `build-typecheck-rerun-2026-10-30.txt`. Il tentativo iniziale di lanciare Vite dalla root è fallito con `Cannot resolve entry module index.html` perché il comando non era eseguito nella directory Web; non è un fallimento del build canonico.
 - PostgreSQL/browser: Docker `myteam-platform-postgres-1` era healthy; l’API QA ha usato `myteam_platform_test`, schema `test_qa_<UUID>` temporaneo e cleanup automatico. Playwright ha verificato Chromium desktop e viewport mobile 390×844: backend offline, database vuoto, 401, 403, accesso admin con verifier sostitutivo, onboarding stagione/squadra, avversaria/bozza, isolamento pubblico della bozza, pubblicazione esplicita e comparsa pubblica. Prova riuscita: `browser-e2e-desktop-mobile-fresh-schema-2026-10-30.txt`, exit 0.
