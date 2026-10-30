@@ -89,6 +89,36 @@ export const STORAGE_KEY_SESSION = 'myteam_oidc_session';
 /** TTL massimo per il flusso di autenticazione PKCE (5 minuti in millisecondi) */
 export const PKCE_MAX_AGE_MS = 5 * 60 * 1000;
 
+export const OIDC_REQUEST_TIMEOUT_MS = 10_000;
+
+class OidcRequestTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OidcRequestTimeoutError';
+  }
+}
+
+/** Deadline covers fetch headers and full body consumption, including JSON parsing. */
+async function withOidcRequestDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMessage: string
+): Promise<T> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(new OidcRequestTimeoutError(timeoutMessage));
+    }, OIDC_REQUEST_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Asserisce la disponibilità delle API crittografiche sicure Web Crypto (crypto.getRandomValues).
  * Rifiuta categoricamente qualsiasi fallback insicuro a Math.random().
@@ -274,31 +304,30 @@ export class OidcClient {
     const issuerBase = endpoint.endsWith('/') ? endpoint : `${endpoint}/`;
     const discoveryUrl = new URL('.well-known/openid-configuration', issuerBase).toString();
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    let res: Response;
+    let discoveryResponse: { response: Response; body: any };
     try {
-      res = await fetch(discoveryUrl, {
-        headers: { Accept: 'application/json' },
-        signal: controller.signal,
-      });
+      discoveryResponse = await withOidcRequestDeadline(async signal => {
+        const response = await fetch(discoveryUrl, {
+          headers: { Accept: 'application/json' },
+          signal,
+        });
+        if (!response.ok) return { response, body: null };
+        try {
+          return { response, body: await response.json() };
+        } catch {
+          return { response, body: null };
+        }
+      }, 'Logto OIDC discovery: timeout (10s) durante la risposta completa.');
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        throw new Error('Logto OIDC discovery: timeout (10s) raggiunto.');
-      }
+      if (err instanceof OidcRequestTimeoutError) throw err;
       throw new Error(`Logto OIDC discovery non raggiungibile: ${err?.message || 'offline'}`);
-    } finally {
-      clearTimeout(timeoutId);
     }
 
+    const { response: res, body: metadata } = discoveryResponse;
     if (!res.ok) {
       throw new Error(`OIDC discovery fallita con HTTP ${res.status}`);
     }
-
-    let metadata: any;
-    try {
-      metadata = await res.json();
-    } catch {
+    if (metadata === null) {
       throw new Error('OIDC discovery: risposta JSON non valida o corrotta dal provider.');
     }
 
@@ -465,45 +494,39 @@ export class OidcClient {
       body.set('resource', this.config.apiResource);
     }
 
-    const tokenController = new AbortController();
-    const tokenTimeoutId = setTimeout(() => tokenController.abort(), 10000);
-    let res: Response;
+    let tokenResult: { response: Response; body: any };
     try {
-      res = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: body.toString(),
-        signal: tokenController.signal,
-      });
+      tokenResult = await withOidcRequestDeadline(async signal => {
+        const response = await fetch(tokenEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+          signal,
+        });
+        let responseBody: any = null;
+        try {
+          responseBody = await response.json();
+        } catch {
+          // HTTP error details are optional; success with an invalid body is rejected below.
+        }
+        return { response, body: responseBody };
+      }, 'Scambio token fallito: timeout (10s) durante la risposta completa.');
     } catch (netErr: any) {
-      if (netErr?.name === 'AbortError') {
-        throw new Error('Scambio token fallito: timeout (10s) raggiunto.');
-      }
+      if (netErr instanceof OidcRequestTimeoutError) throw netErr;
       throw new Error(
         `Identity Provider Logto non raggiungibile o errore di rete: ${netErr?.message || 'offline'}`
       );
-    } finally {
-      clearTimeout(tokenTimeoutId);
     }
 
+    const { response: res, body: tokenResponse } = tokenResult;
     if (!res.ok) {
       let errorMsg = `HTTP ${res.status}`;
-      try {
-        const errorJson = await res.json();
-        if (errorJson && errorJson.error_description) {
-          errorMsg = errorJson.error_description;
-        } else if (errorJson && errorJson.error) {
-          errorMsg = errorJson.error;
-        }
-      } catch {
-        // ignore
+      if (tokenResponse && typeof tokenResponse === 'object') {
+        if (tokenResponse.error_description) errorMsg = tokenResponse.error_description;
+        else if (tokenResponse.error) errorMsg = tokenResponse.error;
       }
       throw new Error(`Scambio token fallito con il provider OIDC: ${errorMsg}`);
     }
-
-    const tokenResponse = await res.json();
     const accessToken = tokenResponse.access_token;
     if (!accessToken || typeof accessToken !== 'string') {
       throw new Error('Risposta del provider priva di access_token valido.');

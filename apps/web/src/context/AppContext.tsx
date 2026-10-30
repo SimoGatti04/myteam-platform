@@ -466,11 +466,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logoutAdmin = async (options?: { redirect?: boolean }): Promise<void> => {
-    authService.logout(options);
+    const federation = authService.logout(options);
     setIsAuthenticated(false);
     setAdminTeam(null);
     setAdminTeamState({ status: 'idle', error: null });
     setOidcError(null);
+    await federation;
   };
 
   return (

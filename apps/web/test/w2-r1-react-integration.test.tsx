@@ -415,6 +415,16 @@ describe('Web W2-R1 — React Integration & Auth Flows (Prompt Verification)', (
       expiresAt: Date.now() + 3600_000,
     };
     authService.setOidcSession(session);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        issuer: mockConfig.endpoint,
+        authorization_endpoint: `${mockConfig.endpoint}/auth`,
+        token_endpoint: `${mockConfig.endpoint}/token`,
+        end_session_endpoint: `${mockConfig.endpoint}/session/end`,
+      }),
+    });
     expect(authService.isAuthenticated()).toBe(true);
 
     render(
