@@ -260,11 +260,14 @@ class AuthService {
    * Effettua il logout: invalida sessione in memoria e sessionStorage,
    * ed eventualmente reindirizza all'endpoint federato di logout IdP.
    */
-  public logout(options?: { redirect?: boolean }): void {
-    const idToken = this.oidcSession?.idToken;
+  public logout(options?: { redirect?: boolean }): Promise<void> {
+    // Capture only the hint needed for this explicit federated logout before clearing local state.
+    const hadOidcSession = this.oidcSession !== null;
+    const idTokenHint = this.oidcSession?.idToken;
     this.oidcSession = null;
     this.manualToken = null;
 
+    // Local logout is synchronous and unconditional; automatic invalidation never requests federation.
     oidcClient.logout();
     try {
       sessionStorage.removeItem(STORAGE_KEY_MANUAL_TOKEN);
@@ -272,12 +275,20 @@ class AuthService {
       // ignore
     }
 
-    if (options?.redirect && oidcClient.isConfigured()) {
-      const logoutUrl = oidcClient.buildEndSessionUrl(idToken);
-      if (logoutUrl && typeof window !== 'undefined') {
-        window.location.assign(logoutUrl);
-      }
+    if (!options?.redirect || !hadOidcSession || !oidcClient.isConfigured()) {
+      return Promise.resolve();
     }
+
+    // Discovery is repeated after F5; any provider failure leaves the user locally logged out.
+    return oidcClient
+      .fetchDiscovery({ forceRefresh: true })
+      .then(() => {
+        const logoutUrl = oidcClient.buildEndSessionUrl(idTokenHint);
+        if (logoutUrl && typeof window !== 'undefined') window.location.assign(logoutUrl);
+      })
+      .catch(() => {
+        // Fail closed for federation. Local session has already been removed and UI can proceed.
+      });
   }
 }
 
