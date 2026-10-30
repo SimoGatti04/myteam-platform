@@ -240,7 +240,7 @@ In `tests/q1/15-web-w2-r5-logout-federated.vitest.ts` due precedenti `expect(tru
 ### 12.1 Revisione e ambiente effettivi
 
 - Base: `qa/q2-e-w2r5-verification` @ `cb4e0b62f76c31e9fa8ff5906c72b91c4c31bcb`.
-- Branch QA isolato: `qa/q2-e-r1-install-harness` (worktree dedicato; SHA commit da assegnare dopo revisione del checkpoint).
+- Branch QA isolato: `qa/q2-e-r1-install-harness` (worktree dedicato; SHA finale riportato nell’handoff Q2-E-R1).
 - Node effettivo: `v24.19.0`, ammesso da `engines` (`>=22.12 <27`) ma diverso dal pin `.node-version` `26.5.0`.
 - Corepack: non disponibile nel runtime del task.
 - pnpm preinstallato effettivo: `11.25.0`; il repository dichiara `pnpm@10.32.1`.
