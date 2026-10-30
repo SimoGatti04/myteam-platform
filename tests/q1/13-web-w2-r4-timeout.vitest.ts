@@ -54,10 +54,8 @@ describe('Q2-D — QA-C-03: timeout discovery e token exchange (W2-R4)', () => {
   }, 15000);
 
   it('server invia header ma corpo JSON sospeso → limite documentato (timeout non copre res.json)', async () => {
-    // Il timeout W2-R4 copre solo il fetch di rete, non il parsing del corpo.
-    // Questo test dimostra il limite: il flusso NON termina se il corpo resta sospeso.
-    // Classificato come QA-C-08 (osservazione, non bloccante): suggerire di wrappare
-    // anche res.json() in un timeout o usare response.clone()/stream con abort.
+    // W2-R5 ha corretto il limite QA-C-08: il corpo JSON è ora racchiuso nel deadline.
+    // Il flusso termina (con errore di timeout) anche se il corpo resta sospeso.
     vi.useFakeTimers();
     const client = new OidcClient(mockConfig);
     vi.stubGlobal('fetch', () =>
@@ -71,8 +69,9 @@ describe('Q2-D — QA-C-03: timeout discovery e token exchange (W2-R4)', () => {
     const promise = client.fetchDiscovery({ forceRefresh: true });
     promise.then(() => { settled = true; }).catch(() => { settled = true; });
     await vi.advanceTimersByTimeAsync(10000);
-    // Dopo 10s di tempo fittizio il flusso è ancora pendente: il timeout non ha coperto il parsing.
-    expect(settled).toBe(false);
+    // W2-R5 ha corretto il limite: il corpo JSON è ora racchiuso nel deadline.
+    // Il flusso deve terminare (con errore di timeout) anche se il corpo resta sospeso.
+    expect(settled).toBe(true);
     vi.useRealTimers();
   }, 15000);
 

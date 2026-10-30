@@ -5,7 +5,7 @@ const webRoot = fileURLToPath(new URL('../apps/web', import.meta.url));
 export default {
   root: webRoot,
   test: {
-    include: ['../../tests/q1/1[0-4]-*.vitest.ts'],
+    include: ['../../tests/q1/1[0-9]-*.vitest.ts'],
     environment: 'jsdom',
   },
 };
