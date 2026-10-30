@@ -199,7 +199,7 @@ Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e
 
 ---
 
-**Verdetto: QA PASS.**
+**Verdetto storico Q2-E: QA PASS (superseded by Q2-E-R1; stato corrente: QA PARTIAL).**
 
 
 ## 8. Rerun indipendente Q2-E — 30 ottobre 2026
@@ -229,3 +229,58 @@ In `tests/q1/15-web-w2-r5-logout-federated.vitest.ts` due precedenti `expect(tru
 - JWT crittografico/Logto: non dimostrati dal browser Q2-E; i test JWT locali della suite QA non rappresentano una sessione Logto staging.
 - Il tentativo di installazione pulita non è PASS. L’ambiente ha fornito pnpm 11.25.0 nonostante `packageManager: pnpm@10.32.1`; l’install si è fermato dopo download/link dipendenze per script `esbuild` non approvato. Build/test eseguiti con i binari disponibili dopo il materializzarsi dei pacchetti.
 - Branch QA già pubblicato: il rerun ha introdotto soltanto ownership QA (`tests/`, `docs/qa/`); nessuna modifica a Core/Web/iOS, nessun merge su main e nessun deploy.
+
+
+---
+
+## 12. Q2-E-R1 — Installazione riproducibile e browser harness (2026-10-30)
+
+**Stato corrente: QA PARTIAL.** Questo follow-up non riscrive i risultati storici Q2-E: aggiunge prove nuove e ritira la conclusione residuale `QA PASS`, che non è compatibile con i gate ancora aperti. Nessun file applicativo Web/Core è stato modificato.
+
+### 12.1 Revisione e ambiente effettivi
+
+- Base: `qa/q2-e-w2r5-verification` @ `cb4e0b62f76c31e9fa8ff5906c72b91c4c31bcb`.
+- Branch QA isolato: `qa/q2-e-r1-install-harness` (worktree dedicato; SHA commit da assegnare dopo revisione del checkpoint).
+- Node effettivo: `v24.19.0`, ammesso da `engines` (`>=22.12 <27`) ma diverso dal pin `.node-version` `26.5.0`.
+- Corepack: non disponibile nel runtime del task.
+- pnpm preinstallato effettivo: `11.25.0`; il repository dichiara `pnpm@10.32.1`.
+- Il tentativo separato di procurare Node `26.5.0` tramite `pnpm dlx node@26.5.0 --version` è fallito (exit 1): l'installer del pacchetto Node richiedeva `npm`, assente (`/bin/sh: npm: command not found`; pacchetto binario specifico non risolto). Il pin Node 26.5.0 resta quindi NOT RUN.
+
+### 12.2 Installazione e comandi
+
+La prova è partita da un worktree nuovo senza `node_modules`; il lockfile era presente e non è stato rigenerato.
+
+| Prova | Stato | Evidenza |
+|---|---|---|
+| pnpm 10.32.1 tramite `pnpm dlx pnpm@10.32.1 --version` | PASS | output `10.32.1`; Corepack non disponibile, nessuna sostituzione globale. |
+| Installazione iniziale `pnpm dlx pnpm@10.32.1 install --frozen-lockfile` | PASS con script non eseguito | 183 pacchetti aggiunti nel worktree; pnpm ha esplicitamente segnalato `Ignored build scripts: esbuild@0.28.2`. Non è stato interpretato come script completato. |
+| Ispezione build script | PASS | `esbuild@0.28.2` dichiara `postinstall: node install.js`. |
+| Esecuzione postinstall richiesto | PASS | prova reversibile nel solo worktree con `allowBuilds: { esbuild: true }`; output `esbuild@0.28.2 postinstall: Done`. La policy temporanea è stata rimossa e non è stata committata. |
+| Build canonica | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 build`; contracts/API TypeScript e build Vite production completate. |
+| Typecheck canonico | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 typecheck`; contracts, Web e API incluse prove TypeScript. |
+| Test canonico root | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 test`; 6 pass, 0 fail, 0 skipped (test API unitari e health). |
+| Web Vitest | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/web test`; 96 pass in 8 file. |
+| Suite QA sintetica pertinente | PASS con uno skip | `pnpm dlx pnpm@10.32.1 exec tsx --test tests/q1/*.test.ts tests/auth/*.test.ts tests/contracts/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts`; 67 totali, 66 pass, 0 fail, 1 skipped, exit 0. TAP originale locale: `/private/tmp/qae-r1-qa.tap`. |
+| PostgreSQL Core integration | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/api test:integration` con `TEST_DATABASE_URL` del database locale documentato `myteam_platform_test`; 1 pass, 0 fail, 0 skipped. La suite usa schema temporaneo UUID. Questo non certifica browser E2E né Logto. |
+
+Il lockfile e `pnpm-workspace.yaml` risultano identici alla base dopo aver rimosso la sola policy temporanea. La policy non è proposta come modifica condivisa: l'eventuale decisione repository-wide su `allowBuilds` resta di ownership della configurazione condivisa/Core.
+
+### 12.3 Browser harness QA-HARNESS-01
+
+- La suite `tests/browser/browser-e2e.py` continua a dipendere da un API process che parte con schema vuoto; riutilizzare lo stesso server mantiene i dati della prova precedente e non costituisce una seconda esecuzione indipendente.
+- Il PostgreSQL locale risulta healthy e il pacchetto Python Playwright è installato. In questo follow-up non è stata eseguita una prova browser: **NOT RUN**; non sono stati prodotti screenshot o trace nuovi.
+- È stato predisposto un worktree QA pulito e verificata la suite; l'orchestratore proposto per avviare/chiudere un API per run non è stato scritto perché il server attuale ignora gli errori di `ctx.cleanup()` e rimuove il marker senza verificare il `DROP SCHEMA`. Prima dell'automazione occorre rendere verificabile il cleanup del solo schema UUID posseduto dal server e far fallire la run se la verifica fallisce; altrimenti l'orchestratore potrebbe dichiarare esito riuscito lasciando uno schema temporaneo. Non si è proceduto con reset indiscriminato o cancellazioni di schemi.
+- Di conseguenza, due esecuzioni browser consecutive sul setup corretto restano **NOT RUN**, e QA-HARNESS-01 resta aperto.
+
+### 12.4 Gate separati e residui
+
+| Gate | Stato Q2-E-R1 |
+|---|---|
+| Installazione pulita con pnpm dichiarato 10.32.1, Node v24.19.0 | **PASS**; postinstall esbuild autorizzato temporaneamente e completato. |
+| Pin Node 26.5.0 | **NOT RUN** (tentativo di bootstrap fallito per `npm` assente). |
+| Build, typecheck, test root, Web Vitest, suite QA sintetica | **PASS** con conteggi sopra; un test QA resta SKIPPED. |
+| PostgreSQL reale | **PASS** per il singolo test d'integrazione indicato; non è un E2E browser. |
+| Browser E2E ripetuto due volte con schema per-run e cleanup verificato | **NOT RUN**; harness da correggere in sicurezza. |
+| Logto staging reale | **NOT RUN**, senza credenziali o istanza autorizzata. |
+
+Nessun deploy, merge su `main`, force-push o modifica a Core/Web. La cache temporanea pnpm è stata collocata in `/private/tmp/qae-r1-cache`; il TAP originale è in `/private/tmp/qae-r1-qa.tap`. Sono output locali e non condivisi; i file di progetto generati (`node_modules`, `dist`) sono ignorati da Git.
