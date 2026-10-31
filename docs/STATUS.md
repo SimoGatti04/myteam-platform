@@ -85,3 +85,14 @@ Web e QA sono stati informati delle rotte additive, della proiezione pubblica li
 ## Non incluso / prossimo coordinamento
 
 Frontend/PWA, flussi OIDC browser, sincronizzazione iOS, SSE/LIVE completo, provider o scraping CSI, risultati/statistiche, votazioni, contenuti, CI, deployment e mutazioni K3s restano fuori da questo checkpoint. Il passo d'integrazione è condividere i contratti preliminari con Web e QA e poi definire gli adapter/provider senza cambiare la gerarchia delle fonti di ADR-0008.
+
+## Integrations CSI-S2 — scraper configurabile (prototipo) — 31 ottobre 2026
+
+**Stato:** prototipo tecnico isolato su `packages/integrations/`, branch `integrations/csi-s2-scraper` da `f6382175b2fa9488994d3dfbb460d995ede97e5c`. Nessuna modifica a Core, Web, iOS, schema applicato, job schedulati o infrastruttura. Il package non è ancora incluso in `pnpm-workspace.yaml` (file Core): test e typecheck si eseguono direttamente.
+
+- **PASS** `tsc -p packages/integrations/tsconfig.test.json` e 60 test deterministici su fixture sintetiche (parsing, diff, matching, idempotenza, override, SSRF/URL, timeout, retry, cache, concorrenza). Nessun test live.
+- **NON VERIFICATA** l'acquisizione live: `live.centrosportivoitaliano.it` risponde `403` con challenge Cloudflare gestita; il portale `sport.centrosportivoitaliano.it` è dichiaratamente riservato (`Disallow: /`). Nessuna challenge aggirata, nessun login.
+- **NON DIMOSTRATO** il diritto di riuso: nessuna API/export documentato né autorizzazione scritta. Il percorso primario resta export manuale PDF con inserimento/override admin.
+- **SOLO PROGETTATI** contratti Admin (`src/contracts/admin-csi.ts`) e migrazione (`sql/proposed-csi-s2.sql`): richiedono un checkpoint coordinato.
+
+Rapporto completo: [spikes/csi-s2-scraper.md](spikes/csi-s2-scraper.md). Prossimo gate: CSI-S3.0, richiesta scritta a `helpdesk@csi-net.it` e campione autorizzato per calibrare il profilo di estrazione.

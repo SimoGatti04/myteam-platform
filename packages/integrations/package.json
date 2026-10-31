@@ -1,0 +1,12 @@
+{
+  "name": "@myteam/integrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider adapters for myteam-platform. CSI-S2 prototype: fixture-driven extraction pipeline, no persistent jobs.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

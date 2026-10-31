@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- FIXTURE SINTETICO malformato: tag non chiusi, attributi senza virgolette,
+     markup finto dentro <script>, data impossibile, identificativo duplicato. -->
+<HTML><BODY>
+<H1 CLASS=competizione>Girone <b>Sintetico</b> &amp; prova</H1>
+<script>var finto = '<table class="calendario"><tr class="gara" data-gara="P2025X999"></tr></table>';</script>
+<table class=calendario>
+  <tr class=gara data-gara=P2025X001>
+    <td class=giornata>1<td class=data>31/02/2025<td class=ora>18:00
+    <td class=casa data-team=S201>Alfa &amp; Co<td class=risultato>2-1<td class=trasferta data-team=S202>Beta
+  </tr>
+  <tr class=gara data-gara=P2025X001>
+    <td class=giornata>1<td class=data>04/10/2025<td class=ora>18:00
+    <td class=casa data-team=S201>Alfa &amp; Co<td class=risultato>2-1<td class=trasferta data-team=S202>Beta
+  </tr>
+  <tr class=gara data-gara=P2025X002>
+    <td class=giornata>2<td class=data>11/10/2025<td class=ora>19:15
+    <td class=casa data-team=S203>Gamma<td class=risultato>&nbsp;<td class=trasferta data-team=S204>Delta
+  </tr>
+</table>
+</BODY></HTML>
