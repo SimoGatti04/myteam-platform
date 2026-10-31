@@ -16,9 +16,9 @@ A seguito della revisione indipendente QA (rapporto `CHECKPOINT-INFRA-S1-R1-REPO
 | Finding QA | Descrizione Finding | Rischio / Impatto | Azione Correttiva INFRA-S1-R2 | Stato |
 |---|---|---|---|---|
 | **INFRA-QA-01 (P1)** | **Sequencing non gated delle migrazioni:** Kustomize monolitico applicava DB, migrazioni, API, Web e HTTPRoute in un unico comando senza dipendenze d'ordine garantite. | Traffico web/API instradato verso un database non migrato o schema non pronto. | **Separazione a 4 stadi Kustomize indipendenti** (`01-bootstrap`, `02-migration`, `03-apps`, `04-routing`) e creazione di `deploy-stage.sh` con gate fail-closed: il Job di migrazione deve completare con successo prima di qualsiasi rollout applicativo. | **RISOLTO** |
-| **INFRA-QA-02 (P1)** | **Readiness API non verifica PostgreSQL:** Le probe API puntavano a `/health` (liveness lightweight) anziché validare la reale connettività al database. | Pod API marcato Ready da Kubernetes anche in assenza di pool DB o connessione. | **Predisposto path `/ready`** nella `readinessProbe` del Deployment API (`deploy/staging/03-apps/api.yaml`). Mantenuto `/health` per `livenessProbe` e `startupProbe`. Dipendenza applicativa tracciata sul branch `core/readiness-r1`. | **PREDISPOSTO / DEPENDENCY TRACKED** |
-| **INFRA-QA-03 (P2)** | **Egress HTTPS API non limitato:** Regola di egress API permetteva `0.0.0.0/0:443`. | Potenziale compromissione o chiamate non vincolate in uscita dal pod API. | **Verifica CNI e mitigazione:** Il CNI k3s dell'homelab (Flannel / standard NetworkPolicy v1) non supporta filtri FQDN. È stata documentata l'analisi di compatibilità con Logto e Cloudflare. Documentato rischio residuo e predisposizione per egress-proxy/FQDN appena disponibile. | **RISOLTO / DOCUMENTATO** |
-| **INFRA-QA-04 (P2)** | **Tag mutabile `staging-latest`:** Possibilità di cache stale sui nodi worker e non-riproducibilità dei rilasci. | Versioni eterogenee o non allineate in esecuzione tra nodi del cluster. | **Kustomize Image Mapping Immutabile:** Introdotto blocco `images:` in Kustomize per mappare le immagini su tag immutabili `YYYYMMDD-<shortsha>` o digest SHA256 esatti (`deploy/staging/02-migration` e `03-apps`). | **RISOLTO** |
+| **INFRA-QA-02 (P1)** | **Readiness API non verifica PostgreSQL:** Le probe API puntavano a `/health` (liveness lightweight) anziché validare la reale connettività al database. | Pod API marcato Ready da Kubernetes anche in assenza di pool DB o connessione. | **Predisposto path `/ready`** nella `readinessProbe` del Deployment API (`deploy/staging/03-apps/api.yaml`). La probe verifica la disponibilità/connettività PostgreSQL (pool/ping), non automaticamente la versione dello schema delle migrazioni. Mantenuto `/health` per `livenessProbe` e `startupProbe`. Dipendenza applicativa tracciata sul branch `core/readiness-r1`. | **PREDISPOSTO / DEPENDENCY TRACKED** |
+| **INFRA-QA-03 (P2)** | **Egress HTTPS API non limitato:** Regola di egress API permetteva `0.0.0.0/0:443`. | Potenziale compromissione o chiamate non vincolate in uscita dal pod API. | **Verifica CNI e analisi di rischio:** Il CNI K3s dell'homelab (Flannel / standard NetworkPolicy v1) non supporta filtri FQDN nativi e Logto risiede su Anycast Cloudflare dinamico (`auth.simogatti.it`). L'egress `0.0.0.0/0:443` resta un rischio residuo documentato (non una restrizione implementata), mitigato a livello pod (non-root, readOnlyRootFilesystem, drop ALL, token SA non montato). Predisposizione per egress-proxy/CNI FQDN futuro. | **DOCUMENTATO (RISCHIO RESIDUO)** |
+| **INFRA-QA-04 (P2)** | **Tag mutabile `staging-latest`:** Possibilità di cache stale sui nodi worker e non-riproducibilità dei rilasci. | Versioni eterogenee o non allineate in esecuzione tra nodi del cluster. | **Kustomize Image Mapping:** Introdotto blocco `images:` in Kustomize per mappare le immagini su tag `YYYYMMDD-<shortsha>` (convenzione identificativa del commit) o digest SHA256 esatti (`deploy/staging/02-migration` e `03-apps`). La garanzia forte di immutabilità a livello infrastrutturale richiede l'ancoraggio a digest esatto o policy di immutabilità del registry GHCR. | **RISOLTO (CONVENZIONE + DIGEST SUPPORTATO)** |
 | **INFRA-QA-05 (P1)** | **Restore ordinario distruttivo sul database attivo:** Runbook proponeva `pg_restore --clean --if-exists` direttamente sul target. | Rischio di cancellazione accidentale o perdita irreversibile dei dati di produzione/staging. | **Eliminato restore distruttivo ordinario:** Distinzione netta tra rollback applicativo (immediato via `rollout undo`), rollback schema forward (fix forward) e procedura straordinaria di disaster recovery isolata su database/volume separato autorizzata esplicitamente dall'owner. | **RISOLTO** |
 
 ---
@@ -128,9 +128,9 @@ kubectl apply -k deploy/staging/04-routing
 
 ---
 
-## 5. Verifica CI GitHub Actions (`.github/workflows/docker-ci.yml`)
+## 5. Verifica CI GitHub Actions (`.github/workflows/docker-ci.yml`) e Validazione Container
 
-È stato integrato un workflow GitHub Actions dedicato per collaudare l'intero ciclo container e staging smoke:
+È stato integrato un workflow GitHub Actions dedicato per collaudare l'intero ciclo container e staging smoke in CI:
 - **Build Dockerfile.api** in ambiente Linux x86_64 runner.
 - **Build Dockerfile.web** con argomenti di produzione (`VITE_APP_ENV=production`, `VITE_ENABLE_DEMO=false`).
 - **Verifica Non-Root:** API UID `1000`, Web UID `101`.
@@ -139,6 +139,10 @@ kubectl apply -k deploy/staging/04-routing
 - **Smoke API:** Avvio container API e verifica HTTP 200 su `/health`.
 - **Smoke Web:** Avvio container Web e verifica HTTP 200, header `Cache-Control: no-cache` su root/SPA fallback (`/teams/slug`) e `Cache-Control: public, max-age=31536000, immutable` su file statici JS/CSS.
 - **Verifica Esclusione Auth Manuale / Demo:** Accertamento che il frontend compilato non contenga form manuale o demo mock esposti.
+
+### Stato Verifiche e Limiti di Validazione:
+- **GitHub Actions Docker CI:** **NOT RUN** (in attesa del primo trigger remoto su push del branch `infra/s1-r2-staging-gates`).
+- **Smoke Test Locale (`scripts/docker-smoke.sh`):** Eseguito con successo su host di sviluppo locale (OrbStack/Docker). **Rettifica di perimetro:** la suite di smoke locale valida la corretta compilazione, il non-root runtime e l'avvio base dei container con PostgreSQL effimero, ma **non prova** il deployment su cluster K3s reale, né l'interazione con Traefik/Cloudflare Tunnel, né l'integrazione effettiva con l'endpoint `/ready` di Core (ancora dipendenza aperta sul branch `core/readiness-r1`).
 
 ---
 
