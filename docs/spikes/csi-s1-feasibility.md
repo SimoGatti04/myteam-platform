@@ -1,9 +1,9 @@
 # CSI-S1 — Studio di fattibilità per l’importazione CSI
 
-**Data della verifica:** 31 ottobre 2026  
-**Ruolo:** Integrations / Research Spike, sola lettura  
-**Branch di ricerca:** `research/integrations-csi-s1`  
-**Base verificata:** `f6382175b2fa9488994d3dfbb460d995ede97e5c` (`codex/integration-i0-candidate` dopo merge BUILD B1)  
+**Data della verifica:** 31 ottobre 2026
+**Ruolo:** Integrations / Research Spike, sola lettura
+**Branch di ricerca:** `research/integrations-csi-s1`
+**Base verificata:** `f6382175b2fa9488994d3dfbb460d995ede97e5c` (`codex/integration-i0-candidate` dopo merge BUILD B1)
 **Perimetro:** campionamento di fonti pubbliche CSI; nessun accesso autenticato, nessun adapter, scraping, polling, modifica di codice o database.
 
 ## Sintesi e verdetto
