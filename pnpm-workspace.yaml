@@ -2,3 +2,6 @@ packages:
   - apps/api
   - apps/web
   - packages/contracts
+
+allowBuilds:
+  'esbuild@0.28.2': true
