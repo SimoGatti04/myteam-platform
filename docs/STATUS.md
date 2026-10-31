@@ -85,3 +85,20 @@ Web e QA sono stati informati delle rotte additive, della proiezione pubblica li
 ## Non incluso / prossimo coordinamento
 
 Frontend/PWA, flussi OIDC browser, sincronizzazione iOS, SSE/LIVE completo, provider o scraping CSI, risultati/statistiche, votazioni, contenuti, CI, deployment e mutazioni K3s restano fuori da questo checkpoint. Il passo d'integrazione è condividere i contratti preliminari con Web e QA e poi definire gli adapter/provider senza cambiare la gerarchia delle fonti di ADR-0008.
+
+## CI Baseline (CI-C1)
+
+- Branch: `ci/c1-release-gates` basato su `f6382175b2fa9488994d3dfbb460d995ede97e5c`.
+- Workflow GitHub Actions: `.github/workflows/ci.yml`.
+- Runner: `ubuntu-latest` (standard Linux, costi e risorse controllate).
+- Servizio: PostgreSQL 16 (`postgres:16-alpine`) effimero su porta 54329 con database di test `myteam_platform_test`.
+- Gate automatizzati:
+  1. Integrità lockfile: `git diff --exit-code pnpm-lock.yaml` con pnpm frozen lockfile.
+  2. Root Build, Typecheck e Test: `pnpm check` (compilazione contratti, API, web e unit test).
+  3. Web Vitest Suite: `pnpm --filter @myteam/web test` (96 test di componenti e store).
+  4. QA Vitest Suite: `pnpm --filter @myteam/web exec vitest run --config ../../tests/vitest.qa.config.ts` (28 test di sicurezza OIDC, logout e isolamento).
+  5. QA Node Suite: `pnpm exec tsx --test tests/api/*.test.ts tests/contracts/*.test.ts tests/auth/*.test.ts tests/q1/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts` (33 test di scenari, JWT e contratti).
+  6. PostgreSQL Integration: `pnpm test:integration` e `pnpm exec tsx --test tests/integration/postgres-real-concurrency-and-rollback.test.ts tests/integration/postgres-real-onboarding-and-lifecycle.test.ts` (7 test reali con schema isolato temporaneo e rollback).
+- Sicurezza: `permissions: contents: read`, zero segreti produttivi, zero deploy, solo pull_request/push standard.
+- Playwright Browser E2E: escluso dai gate CI ordinari per evitare non-determinismo, assenza dipendenze browser nei lockfile e costi runner; mantenuto come test locale dedicato.
+

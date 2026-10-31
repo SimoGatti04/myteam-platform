@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Release Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: myteam
+          POSTGRES_PASSWORD: local-dev-only
+          POSTGRES_DB: myteam_platform_test
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U myteam -d myteam_platform_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Gate 1 - Lockfile & Git Integrity Check
+        run: git diff --exit-code pnpm-lock.yaml
+
+      - name: Gate 2 - Root Build, Typecheck and Unit Tests (pnpm check)
+        run: pnpm check
+
+      - name: Gate 3 - Web Vitest Suite
+        run: pnpm --filter @myteam/web test
+
+      - name: Gate 4 - QA Vitest Suite
+        run: pnpm --filter @myteam/web exec vitest run --config ../../tests/vitest.qa.config.ts
+
+      - name: Gate 5 - QA Node Suite
+        run: pnpm exec tsx --test tests/api/*.test.ts tests/contracts/*.test.ts tests/auth/*.test.ts tests/q1/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts
+
+      - name: Gate 6 - PostgreSQL Integration Tests
+        env:
+          TEST_DATABASE_URL: postgresql://myteam:local-dev-only@127.0.0.1:54329/myteam_platform_test
+        run: |
+          pnpm test:integration
+          pnpm exec tsx --test tests/integration/postgres-real-concurrency-and-rollback.test.ts tests/integration/postgres-real-onboarding-and-lifecycle.test.ts
