@@ -1,0 +1,73 @@
+
+> myteam-platform@0.1.0 check /private/tmp/myteam-platform-q3
+> pnpm build && pnpm typecheck && pnpm test
+
+
+> myteam-platform@0.1.0 build /private/tmp/myteam-platform-q3
+> pnpm -r --if-present run build
+
+Scope: 3 of 4 workspace projects
+packages/contracts build$ tsc -p tsconfig.json
+packages/contracts build: Done
+apps/api build$ tsc -p tsconfig.json
+apps/web build$ tsc && vite build
+apps/api build: Done
+apps/web build: vite v8.3.5 building client environment for production...
+apps/web build: transforming...
+apps/web build: ✓ 2104 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: dist/index.html                   0.56 kB │ gzip:   0.34 kB
+apps/web build: dist/assets/index-D9-HrLdn.css    1.38 kB │ gzip:   0.70 kB
+apps/web build: dist/assets/index-C8xMxBV6.js   420.80 kB │ gzip: 109.65 kB
+apps/web build: ✓ built in 157ms
+apps/web build: Done
+
+> myteam-platform@0.1.0 typecheck /private/tmp/myteam-platform-q3
+> pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck
+
+
+> @myteam/contracts@0.1.0 build /private/tmp/myteam-platform-q3/packages/contracts
+> tsc -p tsconfig.json
+
+Scope: 3 of 4 workspace projects
+packages/contracts typecheck$ tsc -p tsconfig.json --noEmit
+packages/contracts typecheck: Done
+apps/web typecheck$ tsc --noEmit
+apps/api typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json
+apps/web typecheck: Done
+apps/api typecheck: Done
+
+> myteam-platform@0.1.0 test /private/tmp/myteam-platform-q3
+> pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api test && pnpm exec tsx --test tests/api/*.test.ts
+
+
+> @myteam/contracts@0.1.0 build /private/tmp/myteam-platform-q3/packages/contracts
+> tsc -p tsconfig.json
+
+
+> @myteam/api@0.1.0 test /private/tmp/myteam-platform-q3/apps/api
+> node --import tsx --test test/unit/*.test.ts
+
+✔ Logto verifier accepts a correctly signed admin access token (33.0555ms)
+✔ Logto configuration is optional locally but partial configuration fails (0.425875ms)
+✔ Logto configuration requires HTTPS and uses the proposed admin permission by default (0.317291ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 116.016209
+✔ GET /health returns the versioned liveness contract (10.562792ms)
+✔ configuration defaults to loopback and the documented port (0.135208ms)
+✔ configuration rejects invalid ports (0.150458ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 213.520791

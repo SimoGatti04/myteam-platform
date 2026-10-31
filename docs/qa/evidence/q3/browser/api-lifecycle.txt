@@ -1,0 +1,3 @@
+.env not found. Continuing without it.
+FASTIFY_API_READY at http://127.0.0.1:3000
+QA_SCHEMA_CLEANUP_VERIFIED schema=test_qa_caebe6d81def413690a2c964a34eb99f marker_removed=true

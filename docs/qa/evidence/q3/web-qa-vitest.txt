@@ -1,0 +1,8 @@
+
+ RUN  v4.1.12 /private/tmp/myteam-platform-q3/apps/web
+
+
+ Test Files  6 passed (6)
+      Tests  28 passed (28)
+   Start at  13:09:17
+   Duration  535ms (transform 130ms, setup 0ms, import 339ms, tests 73ms, environment 2.17s)
