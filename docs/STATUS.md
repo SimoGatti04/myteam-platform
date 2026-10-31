@@ -151,3 +151,16 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
     - I finding di sicurezza Q3-AUTH-01 e Q3-AUTH-02 dispongono di una remediation implementata e coperta da test unitari/integrazione approfonditi (111 test Web Vitest totali, di cui 37 test dedicati OIDC security e regressioni).
     - **La chiusura formale e indipendente dei finding è ancora PENDENTE** in attesa della revisione e validazione autonoma di QA (prevista nel checkpoint Q4).
     - **Logto staging reale e deployment rimangono NOT RUN**: nessun test sintetico o su mock è presentato come prova di login reale con l'Identity Provider remoto.
+
+## Core — Readiness Endpoint R1 (31 ottobre 2026)
+
+- **Branch autonomo:** `core/readiness-r1` (base I3 `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`).
+- **Obiettivo:** Introduzione endpoint `/ready` separato da `/health` per il gate di readiness applicativo in staging e produzione.
+- **Dettagli implementativi:**
+  - `GET /health`: liveness del processo, completamente disaccoppiato dal database PostgreSQL. Restituisce HTTP 200 `{ status: "ok", service: "myteam-platform-api", apiVersion: "v1" }`.
+  - `GET /ready`: probe di readiness a traffico servibile. Esegue probe `SELECT 1` con timeout limitato (default 2s) e gestione fail-closed. Nessuna esecuzione o applicazione automatica di migrazioni.
+  - Comportamento fail-closed: restituisce HTTP 503 `{ status: "not_ready", service: "myteam-platform-api", apiVersion: "v1", error: "service_unavailable" }` in assenza di pool, timeout o errore di connessione/query. Nessun dettaglio interno o credenziale esposta.
+  - Restituisce HTTP 200 `{ status: "ready", service: "myteam-platform-api", apiVersion: "v1", database: "connected" }` solo con connettività PostgreSQL verificata.
+- **Schemi e contratti:** Aggiornato `packages/contracts/src/health.ts` con `ReadyOkResponseSchema` e `ReadyUnavailableResponseSchema`.
+- **Test:** Aggiunti unit test dedicati `apps/api/test/unit/readiness.test.ts` e contratto API `tests/api/ready.test.ts` a copertura di pool sano, pool assente, errore query, timeout, assenza leak credenziali e indipendenza di `/health`.
+- **Vincoli:** Nessuna modifica a manifest INFRA, Web, iOS, Logto o CSI. Nessun merge su main o I3.
