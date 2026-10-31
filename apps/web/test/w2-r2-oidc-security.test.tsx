@@ -8,6 +8,7 @@ import { authService } from '../src/services/auth';
 import {
   OidcClient,
   oidcClient,
+  loadOidcConfig,
   OidcConfig,
   OidcSession,
   STORAGE_KEY_PKCE,
@@ -681,4 +682,501 @@ describe('Web W2-R2 — OIDC Security, Interoperability & Negative Regression Te
       });
     });
   });
+
+  // =========================================================================
+  // 7. Q3-AUTH-01 & Q3-AUTH-02 SECURITY HARDENING DEDICATED TESTS
+  // =========================================================================
+  describe('7. Q3-AUTH-01 & Q3-AUTH-02 Security Hardening', () => {
+    describe('Q3-AUTH-01: Issuer exact match, multi-audience, and azp validation', () => {
+      it('rifiuta callback se l\'issuer dell\'ID token differisce anche solo per trailing slash (nessuna normalizzazione permissiva)', async () => {
+        const client = new OidcClient(mockConfig);
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-trailing-slash-1';
+        const nonce = 'nonce-trailing-slash-1';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        // ID token con trailing slash rispetto all'endpoint configurato senza slash
+        const tokenWithSlash = createValidMockIdToken({
+          issuer: `${mockConfig.endpoint}/`,
+          appId: mockConfig.appId,
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: tokenWithSlash,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
+          /Validazione ID Token fallita: issuer non corrispondente/
+        );
+      });
+
+      it('rifiuta discovery se l\'issuer restituito differisce per trailing slash rispetto alla configurazione', async () => {
+        const client = new OidcClient(mockConfig);
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            issuer: `${mockConfig.endpoint}/`,
+            authorization_endpoint: `${mockConfig.endpoint}/auth`,
+            token_endpoint: `${mockConfig.endpoint}/token`,
+          }),
+        });
+
+        await expect(client.fetchDiscovery({ forceRefresh: true })).rejects.toThrow(
+          /OIDC discovery: issuer restituito dal provider.*non corrisponde all'endpoint configurato/
+        );
+      });
+
+      it('rifiuta token multi-audience se il claim azp è mancante (OIDC Core 1.0 §3.1.3.7)', async () => {
+        const client = new OidcClient({
+          ...mockConfig,
+          trustedAudiences: ['https://api.myteam.local'],
+        });
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-multiaud-no-azp';
+        const nonce = 'nonce-multiaud-no-azp';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        // Multi-audience con audience fidate ma privo di azp
+        const multiAudTokenNoAzp = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          aud: [mockConfig.appId, 'https://api.myteam.local'],
+          nonce,
+          // azp undefined
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: multiAudTokenNoAzp,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
+          /claim "azp" obbligatorio per ID token con audience multiple/
+        );
+      });
+
+      it('rifiuta token multi-audience se azp è presente e valido ma contiene audience sconosciute non fidate', async () => {
+        const client = new OidcClient({
+          ...mockConfig,
+          trustedAudiences: ['https://trusted.myteam.local'],
+        });
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-multiaud-untrusted';
+        const nonce = 'nonce-multiaud-untrusted';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        // azp coincide con client ID, ma c'è un'audience sconosciuta 'https://malicious-aud.evil.com'
+        const multiAudUntrusted = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          aud: [mockConfig.appId, 'https://malicious-aud.evil.com'],
+          azp: mockConfig.appId,
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: multiAudUntrusted,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
+          /l'ID token contiene audience aggiuntive non fidate \(https:\/\/malicious-aud\.evil\.com\)/
+        );
+      });
+
+      it('rifiuta token multi-audience se azp non corrisponde al client ID, anche se tutte le audience sono fidate', async () => {
+        const client = new OidcClient({
+          ...mockConfig,
+          trustedAudiences: ['https://api.myteam.local'],
+        });
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-multiaud-wrong-azp';
+        const nonce = 'nonce-multiaud-wrong-azp';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        const multiAudWrongAzp = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          aud: [mockConfig.appId, 'https://api.myteam.local'],
+          azp: 'another-third-party-client-app',
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: multiAudWrongAzp,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
+          /authorized party \(azp: "another-third-party-client-app"\) non corrisponde al client ID/
+        );
+      });
+
+      it('accetta token multi-audience valido con tutte le audience fidate e azp coincidente con appId', async () => {
+        const client = new OidcClient({
+          ...mockConfig,
+          trustedAudiences: ['https://api.myteam.local', 'https://auth-service.myteam.local'],
+        });
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-multiaud-valid';
+        const nonce = 'nonce-multiaud-valid';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        const validMultiAudToken = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          aud: [mockConfig.appId, 'https://api.myteam.local'],
+          azp: mockConfig.appId,
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: validMultiAudToken,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        const { session } = await client.handleAuthorizationCallback(callbackUrl);
+        expect(session.accessToken).toBe('valid-access-token');
+        expect(session.idToken).toBe(validMultiAudToken);
+      });
+
+      it('rifiuta token a singola audience se azp è presente ma difforme da appId', async () => {
+        const client = new OidcClient(mockConfig);
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-single-aud-mismatched-azp';
+        const nonce = 'nonce-single-aud-mismatched-azp';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        const singleAudWrongAzp = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          appId: mockConfig.appId,
+          azp: 'rogue-azp-client',
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: singleAudWrongAzp,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        await expect(client.handleAuthorizationCallback(callbackUrl)).rejects.toThrow(
+          /authorized party \(azp: "rogue-azp-client"\) non corrisponde al client ID/
+        );
+      });
+
+      it('accetta token a singola audience con azp coincidente con appId', async () => {
+        const client = new OidcClient(mockConfig);
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+        });
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-single-aud-matching-azp';
+        const nonce = 'nonce-single-aud-matching-azp';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        const singleAudMatchingAzp = createValidMockIdToken({
+          issuer: mockConfig.endpoint,
+          appId: mockConfig.appId,
+          azp: mockConfig.appId,
+          nonce,
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'valid-access-token',
+            id_token: singleAudMatchingAzp,
+            token_type: 'Bearer',
+            expires_in: 3600,
+          }),
+        });
+
+        const callbackUrl = `https://myteam.local/callback?code=test-code&state=${state}`;
+        const { session } = await client.handleAuthorizationCallback(callbackUrl);
+        expect(session.accessToken).toBe('valid-access-token');
+      });
+    });
+
+    describe('Q3-AUTH-02: HTTPS enforcement, URL validation, and redirect protection', () => {
+      it('rifiuta configurazione con endpoint HTTP non sicuro (loadOidcConfig e costruttore)', () => {
+        const insecureConfig = loadOidcConfig({
+          VITE_LOGTO_ENDPOINT: 'http://auth.myteam.local/oidc',
+          VITE_LOGTO_APP_ID: 'app-123',
+          VITE_LOGTO_API_RESOURCE: 'https://api.myteam.local',
+        });
+        expect(insecureConfig).toBeNull();
+
+        expect(() => {
+          new OidcClient({
+            ...mockConfig,
+            endpoint: 'http://auth.myteam.local/oidc',
+          });
+        }).toThrow(/protocollo "http:" non consentito.*È richiesto tassativamente HTTPS/);
+      });
+
+      it('rifiuta URL con credenziali (username/password) o frammenti (#)', () => {
+        expect(() => {
+          new OidcClient({
+            ...mockConfig,
+            endpoint: 'https://user:pass@auth.myteam.local/oidc',
+          });
+        }).toThrow(/credenziali utente.*non consentite/);
+
+        expect(() => {
+          new OidcClient({
+            ...mockConfig,
+            endpoint: 'https://auth.myteam.local/oidc#fragment',
+          });
+        }).toThrow(/frammenti \(#\) non consentiti/);
+      });
+
+      it('rifiuta endpoint issuer con parametri query (?)', () => {
+        expect(() => {
+          new OidcClient({
+            ...mockConfig,
+            endpoint: 'https://auth.myteam.local/oidc?param=evil',
+          });
+        }).toThrow(/parametri query \(\?\) non consentiti/);
+      });
+
+      it('rifiuta discovery contenente endpoint HTTP non sicuri', async () => {
+        const client = new OidcClient(mockConfig);
+
+        // authorization_endpoint HTTP
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            issuer: mockConfig.endpoint,
+            authorization_endpoint: 'http://auth.myteam.local/oidc/auth',
+            token_endpoint: 'https://auth.myteam.local/oidc/token',
+          }),
+        });
+
+        await expect(client.fetchDiscovery({ forceRefresh: true })).rejects.toThrow(
+          /protocollo "http:" non consentito/
+        );
+
+        // token_endpoint HTTP
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            issuer: mockConfig.endpoint,
+            authorization_endpoint: 'https://auth.myteam.local/oidc/auth',
+            token_endpoint: 'http://auth.myteam.local/oidc/token',
+          }),
+        });
+
+        await expect(client.fetchDiscovery({ forceRefresh: true })).rejects.toThrow(
+          /protocollo "http:" non consentito/
+        );
+
+        // end_session_endpoint HTTP
+        globalThis.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            issuer: mockConfig.endpoint,
+            authorization_endpoint: 'https://auth.myteam.local/oidc/auth',
+            token_endpoint: 'https://auth.myteam.local/oidc/token',
+            end_session_endpoint: 'http://auth.myteam.local/oidc/session/end',
+          }),
+        });
+
+        await expect(client.fetchDiscovery({ forceRefresh: true })).rejects.toThrow(
+          /protocollo "http:" non consentito/
+        );
+      });
+
+      it('accetta endpoint OIDC validi contenenti percorsi e parametri query conforme alle specifiche', async () => {
+        const client = new OidcClient(mockConfig);
+
+        client.setDiscoveryMetadata({
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/oauth/v2/authorize?tenant=myteam`,
+          token_endpoint: `${mockConfig.endpoint}/oauth/v2/token?tenant=myteam`,
+          end_session_endpoint: `${mockConfig.endpoint}/oauth/v2/logout?tenant=myteam`,
+        });
+
+        const authResult = await client.buildAuthorizationUrl();
+        expect(authResult.url).toContain('https://auth.myteam.local/oidc/oauth/v2/authorize');
+        const parsedAuth = new URL(authResult.url);
+        expect(parsedAuth.searchParams.get('tenant')).toBe('myteam');
+        expect(parsedAuth.searchParams.get('client_id')).toBe(mockConfig.appId);
+
+        const endSessionUrl = client.buildEndSessionUrl('test-hint');
+        expect(endSessionUrl).not.toBeNull();
+        const parsedEnd = new URL(endSessionUrl!);
+        expect(parsedEnd.searchParams.get('tenant')).toBe('myteam');
+        expect(parsedEnd.searchParams.get('client_id')).toBe(mockConfig.appId);
+        expect(parsedEnd.searchParams.get('id_token_hint')).toBe('test-hint');
+      });
+
+      it('rifiuta buildEndSessionUrl se end_session_endpoint è HTTP', () => {
+        const client = new OidcClient(mockConfig);
+        (client as any).discoveryMetadata = {
+          issuer: mockConfig.endpoint,
+          authorization_endpoint: `${mockConfig.endpoint}/auth`,
+          token_endpoint: `${mockConfig.endpoint}/token`,
+          end_session_endpoint: 'http://auth.myteam.local/oidc/session/end',
+        };
+
+        expect(() => client.buildEndSessionUrl('token-123')).toThrow(
+          /protocollo "http:" non consentito.*È richiesto tassativamente HTTPS/
+        );
+      });
+
+      it('configura redirect: "error" nelle richieste di discovery e scambio token per prevenire redirect hijacking', async () => {
+        const client = new OidcClient(mockConfig);
+
+        let discoveryOptions: RequestInit | undefined;
+        let tokenOptions: RequestInit | undefined;
+
+        globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+          if (url.includes('.well-known/openid-configuration')) {
+            discoveryOptions = init;
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                issuer: mockConfig.endpoint,
+                authorization_endpoint: `${mockConfig.endpoint}/auth`,
+                token_endpoint: `${mockConfig.endpoint}/token`,
+              }),
+            };
+          }
+          if (url.includes('/token')) {
+            tokenOptions = init;
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                access_token: 'access-ok',
+                id_token: createValidMockIdToken({
+                  issuer: mockConfig.endpoint,
+                  appId: mockConfig.appId,
+                  nonce: 'nonce-redirect-test',
+                }),
+                token_type: 'Bearer',
+                expires_in: 3600,
+              }),
+            };
+          }
+          return { ok: false, status: 404 };
+        });
+
+        await client.fetchDiscovery({ forceRefresh: true });
+        expect(discoveryOptions?.redirect).toBe('error');
+
+        const codeVerifier = generateCodeVerifier();
+        const state = 'state-redirect-test';
+        const nonce = 'nonce-redirect-test';
+        sessionStorage.setItem(
+          STORAGE_KEY_PKCE,
+          JSON.stringify({ codeVerifier, state, nonce, createdAt: Date.now() })
+        );
+
+        await client.handleAuthorizationCallback(`https://myteam.local/callback?code=auth-code&state=${state}`);
+        expect(tokenOptions?.redirect).toBe('error');
+      });
+    });
+  });
+
 });
