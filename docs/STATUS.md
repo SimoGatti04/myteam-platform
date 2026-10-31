@@ -2,6 +2,13 @@
 
 **Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 (`162cd2c`) pubblicato su `origin/codex/integration-i2-candidate`. Candidato I3 incorpora Security Q3-R1 (`0fb810c`) su `codex/integration-i3-candidate`. Nessun merge su `main`.
 
+## QA Infra — INFRA-S1-R1 (31 ottobre 2026)
+
+- Revisione indipendente del target `infra/s1-staging-preparation` @ `22d23d54a49f4a8c479a9011ca823b745f7a52b3`, derivato da I3 `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`; rapporto `docs/qa/CHECKPOINT-INFRA-S1-R1-REPORT.md` sul branch QA `qa/infra-s1-r1-review`.
+- Kustomize render verificato (19 risorse); Docker build, PostgreSQL effimero, smoke container e staging non eseguiti per limiti di runtime/permessi, non PASS.
+- Finding da risolvere o accettare prima dello staging: sequencing migrazioni, readiness PostgreSQL, egress HTTPS ampio, tag immutabili e restore non isolato.
+- **Prossimo gate:** ripetere Docker build, migration job e smoke API/Web su runner Linux effimero autorizzato; poi verificare sequencing e policy senza collegarsi al cluster live.
+
 ## Integrations — CSI-S1 (31 ottobre 2026)
 
 - Rapporto tecnico: `docs/spikes/csi-s1-feasibility.md`, branch autonomo `research/integrations-csi-s1` (base candidato I1 `f6382175b2fa9488994d3dfbb460d995ede97e5c`; rapporto al commit `d6031b4feea7d85610d700792cfb79262e9ae774`).
