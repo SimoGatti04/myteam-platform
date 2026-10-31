@@ -1,6 +1,13 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 30 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+**Aggiornato:** 31 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+
+## Integrations — CSI-S1 (31 ottobre 2026)
+
+- Rapporto tecnico: `docs/spikes/csi-s1-feasibility.md`, branch autonomo `research/integrations-csi-s1` (base candidato I1 `f6382175b2fa9488994d3dfbb460d995ede97e5c`; rapporto al commit `d6031b4feea7d85610d700792cfb79262e9ae774`).
+- Esito: PDF manuale documentato; API pubblica e licenza di riuso automatizzato non dimostrate. Gli estratti pubblici mostrano calendario/classifica e distinzione ufficiosa/omologata, ma l'accesso automatico a Live è stato bloccato da robots nel servizio di consultazione; nessun bypass o scraping eseguito.
+- Nessun adapter, codice applicativo o schema dati modificato. L'inserimento e l'override admin restano il fallback e l'import CSI non blocca il primo deployment.
+- **Prossimo gate:** localizzare la squadra MAPI nel comitato/competizione/girone corretti e ottenere dal CSI autorizzazione scritta o un export/API supportato, con ID, stato di omologazione e frequenza/condizioni d'uso verificabili.
 
 ## Integrazione iOS — stato R1-D
 
