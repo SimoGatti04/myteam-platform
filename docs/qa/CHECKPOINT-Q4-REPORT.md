@@ -1,11 +1,11 @@
 # QA Release Gate Q4 — Revisione indipendente I3
 
-**Data:** 31 ottobre 2026  
-**Repository:** `SimoGatti04/myteam-platform`  
-**Target:** `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`  
-**Ancestry:** I2 `162cd2c2e61d0fc58a9ffba1ab8d2e0713f908b1` e Security Q3-R1 `0fb810cfabdce07b0ca3ae8a4ade95c2edfeb278`, entrambi antenati  
-**Worktree/branch QA:** `/Users/gatti/.codex/worktrees/q4-release-gate/myteam-platform`, `qa/q4-i3-release-gate`  
-**Verdetto codice:** **Q4 CODE GO CON RISERVE**  
+**Data:** 31 ottobre 2026
+**Repository:** `SimoGatti04/myteam-platform`
+**Target:** `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`
+**Ancestry:** I2 `162cd2c2e61d0fc58a9ffba1ab8d2e0713f908b1` e Security Q3-R1 `0fb810cfabdce07b0ca3ae8a4ade95c2edfeb278`, entrambi antenati
+**Worktree/branch QA:** `/Users/gatti/.codex/worktrees/q4-release-gate/myteam-platform`, `qa/q4-i3-release-gate`
+**Verdetto codice:** **Q4 CODE GO CON RISERVE**
 **Deployment/staging:** **NOT RUN**
 
 Questa revisione non approva un deployment o una dichiarazione production-ready. Nessun codice Core/Web/iOS, `main`, branch concorrente o infrastruttura è stato modificato; nessun push, merge o deploy è stato eseguito.
