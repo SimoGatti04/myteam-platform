@@ -1,6 +1,6 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 consolida CI-C1, QA Q3 e CSI-S1 su `codex/integration-i2-candidate`. Nessun merge su `main`.
+**Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 (`162cd2c`) pubblicato su `origin/codex/integration-i2-candidate`. Candidato I3 incorpora Security Q3-R1 (`0fb810c`) su `codex/integration-i3-candidate`. Nessun merge su `main`.
 
 ## Integrations — CSI-S1 (31 ottobre 2026)
 
@@ -131,3 +131,23 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
   - CSI-S1 è concluso come pura ricerca (nessun adapter o modifica a schema/codice).
   - L'utente ha successivamente approvato lo scraping configurabile da Admin; il prototipo è assegnato al checkpoint **CSI-S2** (workstream indipendente da I2).
 - **Nessun merge su main, nessun deploy e nessuna alterazione di I1.**
+
+## Consolidamento candidato I3 e Security Q3-R1 (31 ottobre 2026)
+
+- **Branch candidato:** `codex/integration-i3-candidate` (worktree `integration-i3`).
+- **Base:** Candidato I2 (`162cd2c2e61d0fc58a9ffba1ab8d2e0713f908b1`), che include CI-C1, QA Q3 e CSI-S1.
+- **Revisione Security incorporata:** `security/q3-oidc-hardening` (`0fb810cfabdce07b0ca3ae8a4ade95c2edfeb278`).
+- **Stato CI e Remediation:**
+  - **CI-C1:** Pipeline GitHub Actions pienamente integrata e verificata con esito SUCCESS sui run remoti di baseline e candidato I2.
+  - **Security Q3-R1:** Incorporata con successo nel candidato I3 con modifiche strettamente confinate al modulo Web (`apps/web/src/services/oidc.ts`, test correlati).
+  - **Remediation Q3-AUTH-01 / Q3-AUTH-02 implementata:**
+    - Confronto esatto di issuer/discovery/ID token senza normalizzazioni permissive o rimozione slash.
+    - Validazione restrittiva dell'audience con client ID obbligatorio, supporto per audience multiple tramite `VITE_LOGTO_TRUSTED_AUDIENCES` e controllo mandatorio di corrispondenza `azp` (OpenID Connect Core 1.0 §3.1.3.7).
+    - `VITE_LOGTO_TRUSTED_AUDIENCES`: opzionale, valore predefinito restrittivo (vuoto/assente). Se assente, qualsiasi audience aggiuntiva rispetto a `appId` comporta il rigetto immediato. Non configurare audience aggiuntive senza necessità formale verificata.
+    - Protocollo HTTPS tassativo su issuer ed endpoint OIDC (`authorization_endpoint`, `token_endpoint`, `end_session_endpoint`).
+    - Esclusione categorica di credenziali utente e frammenti (`#`) negli URL; parametri query proibiti per l'issuer e consentiti solo ove previsto dalle specifiche per gli endpoint.
+    - Configurazione `redirect: 'error'` su fetch di discovery e token exchange per prevenire redirect hijacking.
+  - **Stato dei Gate e Verdict QA:**
+    - I finding di sicurezza Q3-AUTH-01 e Q3-AUTH-02 dispongono di una remediation implementata e coperta da test unitari/integrazione approfonditi (111 test Web Vitest totali, di cui 37 test dedicati OIDC security e regressioni).
+    - **La chiusura formale e indipendente dei finding è ancora PENDENTE** in attesa della revisione e validazione autonoma di QA (prevista nel checkpoint Q4).
+    - **Logto staging reale e deployment rimangono NOT RUN**: nessun test sintetico o su mock è presentato come prova di login reale con l'Identity Provider remoto.
