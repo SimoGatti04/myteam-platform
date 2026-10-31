@@ -13,19 +13,25 @@ export function createMockJwt(claims: Record<string, any>, headerOverride?: Reco
 export function createValidMockIdToken(options?: {
   issuer?: string;
   appId?: string;
+  aud?: string | string[];
+  azp?: string;
   nonce?: string;
   expiresInSec?: number;
   subject?: string;
 }): string {
   const nowSec = Math.floor(Date.now() / 1000);
-  return createMockJwt({
+  const claims: Record<string, any> = {
     iss: options?.issuer || 'https://auth.myteam.local/oidc',
-    aud: options?.appId || 'myteam-web-app-client-id',
+    aud: options?.aud !== undefined ? options.aud : (options?.appId || 'myteam-web-app-client-id'),
     exp: nowSec + (options?.expiresInSec ?? 3600),
     nonce: options?.nonce || 'mock-nonce-default',
     sub: options?.subject || 'usr_admin_123',
     iat: nowSec,
-  });
+  };
+  if (options?.azp !== undefined) {
+    claims.azp = options.azp;
+  }
+  return createMockJwt(claims);
 }
 
 export function createValidMockAccessToken(options?: {

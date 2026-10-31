@@ -112,7 +112,7 @@ describe('Web W2 — Logto OIDC Admin Authentication Tests', () => {
 
     it('correctly parses full configuration and sets default scopes including platform:admin', () => {
       const config = loadOidcConfig({
-        VITE_LOGTO_ENDPOINT: 'https://auth.myteam.local/oidc/',
+        VITE_LOGTO_ENDPOINT: 'https://auth.myteam.local/oidc',
         VITE_LOGTO_APP_ID: 'app-client-123',
         VITE_LOGTO_API_RESOURCE: 'https://api.myteam.local',
       });

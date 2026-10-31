@@ -53,6 +53,7 @@ export interface OidcConfig {
   scopes: string;
   redirectUri: string;
   postLogoutRedirectUri: string;
+  trustedAudiences?: string[];
 }
 
 export interface OidcDiscoveryMetadata {
@@ -223,12 +224,83 @@ export function parseJwtPayload(token: string): Record<string, any> | null {
  * - Nessun default fittizio è consentito nei deployment reali.
  * - Se uno dei parametri manca, restituisce null per indicare configurazione incompleta.
  */
+/**
+ * Opzioni per la validazione degli URL HTTPS OIDC.
+ */
+export interface ValidateHttpsUrlOptions {
+  allowQuery?: boolean;
+  fieldName?: string;
+}
+
+/**
+ * Valida rigorosamente che un URL utilizzi il protocollo HTTPS, sia ben formato,
+ * contenga un hostname valido, sia privo di credenziali utente e frammenti (#).
+ * Se allowQuery è false (default per issuer OIDC), proibisce anche parametri query (?).
+ *
+ * SPECIFICHE (Q3-AUTH-02, RFC 8414 §2, OpenID Connect Core 1.0 §1.2 & §3.1.2.1):
+ * - Issuer OIDC: deve essere un URL HTTPS valido privo di query e fragment.
+ * - Endpoint OIDC (authorization, token, end_session): devono essere HTTPS,
+ *   possono includere percorsi e parametri query conforme alle specifiche OAuth 2.0 / OIDC.
+ * - Credenziali utente (username/password) e frammenti (#) sono categoricamente respinti.
+ * - Nessuna eccezione HTTP consentita in ambiente di produzione o runtime.
+ */
+export function validateHttpsUrl(
+  rawUrl: string,
+  options?: ValidateHttpsUrlOptions
+): URL {
+  const field = options?.fieldName || 'URL';
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    throw new Error(`${field} non valido: valore vuoto o non testuale.`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new Error(`${field} non valido: sintassi URL non valida ("${rawUrl}").`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `${field} insicuro: protocollo "${parsed.protocol}" non consentito. È richiesto tassativamente HTTPS.`
+    );
+  }
+
+  if (!parsed.hostname) {
+    throw new Error(`${field} non valido: hostname mancante.`);
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error(`${field} non valido: credenziali utente nell'URL non consentite.`);
+  }
+
+  if (parsed.hash) {
+    throw new Error(`${field} non valido: frammenti (#) non consentiti.`);
+  }
+
+  if (!options?.allowQuery && parsed.search) {
+    throw new Error(`${field} non valido: parametri query (?) non consentiti per questo endpoint/issuer.`);
+  }
+
+  return parsed;
+}
+
 export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | null {
   const endpoint = (env as Record<string, string | undefined>).VITE_LOGTO_ENDPOINT?.trim();
   const appId = (env as Record<string, string | undefined>).VITE_LOGTO_APP_ID?.trim();
   const apiResource = (env as Record<string, string | undefined>).VITE_LOGTO_API_RESOURCE?.trim();
 
   if (!endpoint || !appId || !apiResource) {
+    return null;
+  }
+
+  // Validazione preventiva dell'endpoint/issuer configurato (Q3-AUTH-02)
+  try {
+    validateHttpsUrl(endpoint, {
+      allowQuery: false,
+      fieldName: 'VITE_LOGTO_ENDPOINT',
+    });
+  } catch {
     return null;
   }
 
@@ -246,13 +318,19 @@ export function loadOidcConfig(env: EnvLike = import.meta.env): OidcConfig | nul
     (env as Record<string, string | undefined>).VITE_LOGTO_POST_LOGOUT_REDIRECT_URI?.trim() ||
     origin;
 
+  const trustedAudiencesRaw = (env as Record<string, string | undefined>).VITE_LOGTO_TRUSTED_AUDIENCES?.trim();
+  const trustedAudiences = trustedAudiencesRaw
+    ? trustedAudiencesRaw.split(/[,\s]+/).filter(Boolean)
+    : undefined;
+
   return {
-    endpoint: endpoint.replace(/\/+$/, ''),
+    endpoint,
     appId,
     apiResource,
     scopes,
     redirectUri,
     postLogoutRedirectUri,
+    ...(trustedAudiences && trustedAudiences.length > 0 ? { trustedAudiences } : {}),
   };
 }
 
@@ -262,6 +340,12 @@ export class OidcClient {
 
   constructor(config?: OidcConfig | null) {
     this.config = config !== undefined ? config : loadOidcConfig();
+    if (this.config) {
+      validateHttpsUrl(this.config.endpoint, {
+        allowQuery: false,
+        fieldName: 'OidcConfig.endpoint',
+      });
+    }
   }
 
   public isConfigured(): boolean {
@@ -273,6 +357,12 @@ export class OidcClient {
   }
 
   public setConfig(config: OidcConfig | null): void {
+    if (config) {
+      validateHttpsUrl(config.endpoint, {
+        allowQuery: false,
+        fieldName: 'OidcConfig.endpoint',
+      });
+    }
     this.config = config;
     this.discoveryMetadata = null;
   }
@@ -283,6 +373,26 @@ export class OidcClient {
 
   public setDiscoveryMetadata(metadata: OidcDiscoveryMetadata | null): void {
     if (typeof process !== 'undefined' && process.env?.VITEST) {
+      if (metadata !== null) {
+        validateHttpsUrl(metadata.issuer, {
+          allowQuery: false,
+          fieldName: 'OIDC discovery issuer',
+        });
+        validateHttpsUrl(metadata.authorization_endpoint, {
+          allowQuery: true,
+          fieldName: 'OIDC discovery authorization_endpoint',
+        });
+        validateHttpsUrl(metadata.token_endpoint, {
+          allowQuery: true,
+          fieldName: 'OIDC discovery token_endpoint',
+        });
+        if (metadata.end_session_endpoint) {
+          validateHttpsUrl(metadata.end_session_endpoint, {
+            allowQuery: true,
+            fieldName: 'OIDC discovery end_session_endpoint',
+          });
+        }
+      }
       this.discoveryMetadata = metadata;
     }
   }
@@ -300,7 +410,13 @@ export class OidcClient {
       return this.discoveryMetadata;
     }
 
-    const endpoint = this.config.endpoint.replace(/\/+$/, '');
+    // Validazione preventiva dell'issuer configurato prima della richiesta di discovery (Q3-AUTH-02)
+    validateHttpsUrl(this.config.endpoint, {
+      allowQuery: false,
+      fieldName: 'Configured OIDC issuer/endpoint',
+    });
+
+    const endpoint = this.config.endpoint;
     const issuerBase = endpoint.endsWith('/') ? endpoint : `${endpoint}/`;
     const discoveryUrl = new URL('.well-known/openid-configuration', issuerBase).toString();
 
@@ -309,6 +425,7 @@ export class OidcClient {
       discoveryResponse = await withOidcRequestDeadline(async signal => {
         const response = await fetch(discoveryUrl, {
           headers: { Accept: 'application/json' },
+          redirect: 'error',
           signal,
         });
         if (!response.ok) return { response, body: null };
@@ -343,7 +460,33 @@ export class OidcClient {
       );
     }
 
-    const returnedIssuer = metadata.issuer.replace(/\/+$/, '');
+    // Validazione HTTPS dei metadati di discovery (Q3-AUTH-02)
+    validateHttpsUrl(metadata.issuer, {
+      allowQuery: false,
+      fieldName: 'OIDC discovery issuer',
+    });
+    validateHttpsUrl(metadata.authorization_endpoint, {
+      allowQuery: true,
+      fieldName: 'OIDC discovery authorization_endpoint',
+    });
+    validateHttpsUrl(metadata.token_endpoint, {
+      allowQuery: true,
+      fieldName: 'OIDC discovery token_endpoint',
+    });
+
+    if (metadata.end_session_endpoint !== undefined) {
+      if (typeof metadata.end_session_endpoint !== 'string') {
+        throw new Error('OIDC discovery: end_session_endpoint deve essere una stringa.');
+      }
+      validateHttpsUrl(metadata.end_session_endpoint, {
+        allowQuery: true,
+        fieldName: 'OIDC discovery end_session_endpoint',
+      });
+    }
+
+    // Confronto esatto dei valori issuer configurato e restituito dalla discovery (Q3-AUTH-01)
+    // Nessuna normalizzazione o rimozione automatica di slash finali
+    const returnedIssuer = metadata.issuer;
     const expectedIssuer = endpoint;
 
     if (returnedIssuer !== expectedIssuer) {
@@ -371,6 +514,11 @@ export class OidcClient {
     // Risolve authorization_endpoint via OIDC discovery (fail-closed: nessun fallback manuale)
     const discovery = await this.fetchDiscovery();
     const authEndpoint = discovery.authorization_endpoint;
+
+    validateHttpsUrl(authEndpoint, {
+      allowQuery: true,
+      fieldName: 'authorization_endpoint',
+    });
 
     const state = options?.state || generateState();
     const nonce = generateRandomString(32);
@@ -484,6 +632,11 @@ export class OidcClient {
     const discoveryForToken = await this.fetchDiscovery();
     const tokenEndpoint = discoveryForToken.token_endpoint;
 
+    validateHttpsUrl(tokenEndpoint, {
+      allowQuery: true,
+      fieldName: 'token_endpoint',
+    });
+
     const body = new URLSearchParams();
     body.set('grant_type', 'authorization_code');
     body.set('client_id', this.config.appId);
@@ -501,6 +654,7 @@ export class OidcClient {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: body.toString(),
+          redirect: 'error',
           signal,
         });
         let responseBody: any = null;
@@ -543,27 +697,84 @@ export class OidcClient {
       throw new Error('Validazione ID Token fallita: token JWT malformato o non valido.');
     }
 
-    // 4a. Verifica Issuer
-    const expectedIssuer = this.config.endpoint.replace(/\/+$/, '');
-    const idTokenIssuer = typeof idTokenClaims.iss === 'string' ? idTokenClaims.iss.replace(/\/+$/, '') : '';
+    // 4a. Verifica Issuer (Q3-AUTH-01: confronto esatto, nessuna trasformazione di slash)
+    const expectedIssuer = this.config.endpoint;
+    const idTokenIssuer = typeof idTokenClaims.iss === 'string' ? idTokenClaims.iss : '';
     if (idTokenIssuer !== expectedIssuer) {
       throw new Error(
         `Validazione ID Token fallita: issuer non corrispondente (atteso: "${expectedIssuer}", ricevuto: "${idTokenClaims.iss}").`
       );
     }
 
-    // 4b. Verifica Audience (deve corrispondere ad appId)
+    // 4b. Verifica Audience e Authorized Party (azp) secondo OpenID Connect Core 1.0 §3.1.3.7 (Q3-AUTH-01)
+    // POLITICA DI VALIDAZIONE AUDIENCE & AZP:
+    // 1. aud deve essere una stringa non vuota o un array non vuoto di stringhe.
+    // 2. aud deve contenere il client ID (config.appId).
+    // 3. Se aud contiene audience aggiuntive rispetto a config.appId, ciascuna di esse deve essere
+    //    esplicitamente presente nell'elenco fidato (config.trustedAudiences). In assenza di
+    //    trustedAudiences configurate, qualsiasi audience aggiuntiva comporta il rigetto immediato.
+    // 4. Se sono presenti audience multiple (aud.length > 1), il claim azp è OBBLIGATORIO e
+    //    deve coincidere esattamente con il client ID (config.appId).
+    // 5. Se il claim azp è presente (anche per audience singola), deve coincidere con config.appId.
+    // 6. La presenza di un claim azp valido non è MAI sufficiente ad accettare audience sconosciute o non fidate.
     const aud = idTokenClaims.aud;
-    const audMatches =
-      typeof aud === 'string'
-        ? aud === this.config.appId
-        : Array.isArray(aud)
-          ? aud.includes(this.config.appId)
-          : false;
+    const appId = this.config.appId;
+    const trustedAudiences = new Set(this.config.trustedAudiences || []);
 
-    if (!audMatches) {
+    if (typeof aud === 'string') {
+      if (aud !== appId) {
+        throw new Error(
+          `Validazione ID Token fallita: audience non valida per appId "${appId}".`
+        );
+      }
+      if (idTokenClaims.azp !== undefined) {
+        if (typeof idTokenClaims.azp !== 'string' || idTokenClaims.azp !== appId) {
+          throw new Error(
+            `Validazione ID Token fallita: authorized party (azp: "${idTokenClaims.azp}") non corrisponde al client ID ("${appId}").`
+          );
+        }
+      }
+    } else if (Array.isArray(aud)) {
+      if (aud.length === 0 || aud.some(a => typeof a !== 'string' || !a)) {
+        throw new Error('Validazione ID Token fallita: claim "aud" contiene valori non validi o vuoti.');
+      }
+      if (!aud.includes(appId)) {
+        throw new Error(
+          `Validazione ID Token fallita: audience non valida per appId "${appId}".`
+        );
+      }
+
+      const additionalAudiences = aud.filter(a => a !== appId);
+      if (additionalAudiences.length > 0) {
+        const untrusted = additionalAudiences.filter(a => !trustedAudiences.has(a));
+        if (untrusted.length > 0) {
+          throw new Error(
+            `Validazione ID Token fallita: l'ID token contiene audience aggiuntive non fidate (${untrusted.join(', ')}).`
+          );
+        }
+      }
+
+      if (aud.length > 1) {
+        if (!idTokenClaims.azp || typeof idTokenClaims.azp !== 'string') {
+          throw new Error(
+            'Validazione ID Token fallita: claim "azp" obbligatorio per ID token con audience multiple.'
+          );
+        }
+        if (idTokenClaims.azp !== appId) {
+          throw new Error(
+            `Validazione ID Token fallita: authorized party (azp: "${idTokenClaims.azp}") non corrisponde al client ID ("${appId}").`
+          );
+        }
+      } else if (idTokenClaims.azp !== undefined) {
+        if (typeof idTokenClaims.azp !== 'string' || idTokenClaims.azp !== appId) {
+          throw new Error(
+            `Validazione ID Token fallita: authorized party (azp: "${idTokenClaims.azp}") non corrisponde al client ID ("${appId}").`
+          );
+        }
+      }
+    } else {
       throw new Error(
-        `Validazione ID Token fallita: audience non valida per appId "${this.config.appId}".`
+        `Validazione ID Token fallita: audience non valida per appId "${appId}".`
       );
     }
 
@@ -670,6 +881,11 @@ export class OidcClient {
     if (!endSessionEndpoint) {
       return null;
     }
+
+    validateHttpsUrl(endSessionEndpoint, {
+      allowQuery: true,
+      fieldName: 'end_session_endpoint',
+    });
 
     const url = new URL(endSessionEndpoint);
     url.searchParams.set('client_id', this.config.appId);
