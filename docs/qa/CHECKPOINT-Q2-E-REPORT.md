@@ -284,3 +284,42 @@ Il lockfile e `pnpm-workspace.yaml` risultano identici alla base dopo aver rimos
 | Logto staging reale | **NOT RUN**, senza credenziali o istanza autorizzata. |
 
 Nessun deploy, merge su `main`, force-push o modifica a Core/Web. La cache temporanea pnpm è stata collocata in `/private/tmp/qae-r1-cache`; il TAP originale è in `/private/tmp/qae-r1-qa.tap`. Sono output locali e non condivisi; i file di progetto generati (`node_modules`, `dist`) sono ignorati da Git.
+
+## 9. Q2-E-R2 — cleanup sicuro e harness browser ripetibile (31 ottobre 2026)
+
+**Base verificata:** `qa/q2-e-r1-install-harness` @ `87dc5a4698a58c6d041193086cf7189026f9df84`.
+Le verifiche e le modifiche sotto appartengono esclusivamente a `tests/` e a questa documentazione QA. Nessuna modifica applicativa Core/Web o all'helper PostgreSQL condiviso.
+
+### Stato delle prove
+
+| Gate | Esito | Evidenza |
+|---|---|---|
+| Test unitari del lifecycle/cleanup | **PASS** | `pnpm exec tsx --test tests/browser/schema-cleanup.test.ts`: 7 test, 7 PASS, 0 FAIL, 0 SKIP; copre drop+verifica+marker, eccezioni, DB non raggiungibile, timeout, marker/database non validi, schema ancora presente e recupero con proprietario vivo. |
+| Build monorepo | **PASS** | `pnpm build`, exit 0. |
+| Typecheck monorepo | **PASS** | `pnpm typecheck`, exit 0. |
+| Test canonici | **PASS** | `pnpm test`, exit 0. Il comando esegue due processi Node test distinti: API 3 PASS/0 FAIL/0 SKIP (141.805 ms) e QA API 3 PASS/0 FAIL/0 SKIP (250.013 ms); totale 6 PASS, 0 FAIL, 0 SKIP. TAP integrale conservato localmente in `/tmp/myteam-q2e-r2-pnpm-test.log`. |
+| Browser E2E ripetuto su PostgreSQL | **PASS** | Due cicli consecutivi completati dal runner, entrambi con API/schema nuovi; browser exit 0 per ciascuno, 11 screenshot per ciclo. Nessun dato preesistente riutilizzato. |
+| Verifica cleanup dopo ciascun ciclo | **PASS** | Log API registra `QA_SCHEMA_CLEANUP_VERIFIED`; verifica indipendente interroga `pg_namespace` e registra `QA_SCHEMA_ABSENT_VERIFIED`; marker assente in entrambi i casi. |
+| Installazione standard riproducibile | **NOT RUN / GAP** | Non è stata eseguita una nuova installazione pulita senza policy temporanea per lo script esbuild. Le evidenze storiche pnpm 10.32.1 autorizzando temporaneamente solo esbuild non certificano l'installazione standard. |
+| Logto staging reale | **NOT RUN** | Nessun IdP/credenziale di staging autorizzati. QA-C-01/08 restano chiusi solo nel perimetro locale/mock già riportato, non come certificazione staging. |
+
+### Cicli browser e artefatti
+
+Runner ripetibile: `python3 tests/browser/run-browser-e2e.py --artifacts-dir <directory>`, richiede `TEST_DATABASE_URL` verso database dedicato ai test su loopback, PostgreSQL accessibile, dipendenze installate, Chromium/Playwright disponibile e porte 3000/5173 libere. Il runner rifiuta porte già occupate, avvia e termina i processi per ciascun ciclo, e non esegue reset di database condivisi.
+
+Esecuzione autorizzata: `TEST_DATABASE_URL` (valore omesso per sicurezza) + `python3.14 tests/browser/run-browser-e2e.py --artifacts-dir /tmp/myteam-q2e-r2-e2e-authorized`; exit code complessivo **0**. Run 1 e Run 2: browser **PASS**, 11 screenshot ciascuno, inclusi backend offline, onboarding DB vuoto, 401 e 403, squadra pubblicata, bozza isolata, partita pubblicata e viewport mobile. Log originali per ciclo: `api.log`, `browser.log`, `schema-verification.log`; screenshot sotto `screenshots/`. Gli artefatti sono locali in `/tmp/myteam-q2e-r2-e2e-authorized/`, non committati perché temporanei; contengono solo fixture sintetiche e nessun token/password. Sono conservati per la revisione in questo ambiente.
+
+I tentativi preliminari con Python 3.15 senza Playwright e con Chromium bloccato dal sandbox non sono conteggiati come PASS; il risultato sopra è la successiva esecuzione nel normale ambiente autorizzato.
+
+### Garanzie di cleanup introdotte
+
+- Nome schema ancorato a `test_qa_<UUID>` e validato; marker JSON vincolato a owner harness, DB, PID e run ID, con file regolare di proprietà dell'utente e permessi privati.
+- Destinazione limitata a host loopback e database il cui nome termina in `_test`; nessuna wildcard o scansione per eliminazione. Marker invalido, provenienza/DB incoerenti o processo proprietario ancora vivo causano rifiuto fail-closed.
+- `DROP SCHEMA` è seguito da verifica PostgreSQL esplicita dell'assenza in `pg_namespace`; marker rimosso solo dopo esito verificato. Eccezioni, timeout e indisponibilità DB propagano errore non-zero e mantengono il marker.
+- La stessa procedura è usata dal recupero di run precedenti e dal cleanup di startup/shutdown; il runner crea un nuovo processo API/schema per ciascun run e verifica in modo indipendente schema e marker al termine.
+
+### Valutazione e limiti
+
+**Verdetto: HARNESS PASS** per test sintetici di cleanup e due esecuzioni browser reali ripetibili contro PostgreSQL locale dedicato. Questo non chiude il gap dell'installazione pulita standard e non certifica Logto staging. Il browser E2E verifica la UI via browser, ma il suo login admin usa il meccanismo sostitutivo di test: non è prova di OIDC remoto.
+
+Diff QA atteso in questo checkpoint: `tests/browser/start-test-api.ts`, `tests/browser/browser-e2e.py`, nuovi `tests/browser/schema-cleanup.ts`, `tests/browser/schema-cleanup.test.ts`, `tests/browser/run-browser-e2e.py`, `tests/browser/verify-schema-absent.ts` e questa sezione. Nessuna pulizia di database/volumi condivisi. I processi harness sono terminati; gli schemi e marker creati dai due run sono stati verificati assenti.
