@@ -1,0 +1,134 @@
+name: Docker Container & Staging Smoke CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  docker-verify:
+    name: Docker Packaging, Non-Root & Staging Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: myteam
+          POSTGRES_PASSWORD: ci-staging-password
+          POSTGRES_DB: myteam_platform_staging
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U myteam -d myteam_platform_staging"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.api
+          load: true
+          tags: myteam-platform-api:ci-test
+
+      - name: Build Web Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.web
+          load: true
+          tags: myteam-platform-web:ci-test
+          build-args: |
+            VITE_APP_ENV=production
+            VITE_ENABLE_DEMO=false
+            VITE_LOGTO_ENDPOINT=https://auth.simogatti.it/oidc
+            VITE_LOGTO_APP_ID=ci-mock-app-id
+            VITE_LOGTO_API_RESOURCE=https://team-staging.simogatti.it/api
+
+      - name: Verify API Runtime User (Non-Root UID 1000)
+        run: |
+          API_UID=$(docker run --rm myteam-platform-api:ci-test id -u)
+          API_USER=$(docker run --rm myteam-platform-api:ci-test whoami)
+          echo "API user: $API_USER (UID: $API_UID)"
+          [ "$API_UID" -eq 1000 ] || { echo "API is not running as UID 1000"; exit 1; }
+
+      - name: Verify Web Runtime User (Non-Root UID 101 nginx)
+        run: |
+          WEB_UID=$(docker run --rm myteam-platform-web:ci-test id -u)
+          echo "Web UID: $WEB_UID"
+          [ "$WEB_UID" -eq 101 ] || { echo "Web is not running as UID 101"; exit 1; }
+
+      - name: Verify API Artifacts & Migrations Presence
+        run: |
+          docker run --rm myteam-platform-api:ci-test test -f apps/api/dist/index.js || { echo "index.js missing"; exit 1; }
+          docker run --rm myteam-platform-api:ci-test test -f apps/api/dist/persistence/migrate-cli.js || { echo "migrate-cli.js missing"; exit 1; }
+          docker run --rm myteam-platform-api:ci-test ls -la db/migrations/0001-platform-core.sql || { echo "SQL migrations missing"; exit 1; }
+
+      - name: Run Database Migrations on Ephemeral PostgreSQL 16
+        run: |
+          docker run --rm \
+            --network host \
+            -e DATABASE_URL="postgresql://myteam:ci-staging-password@127.0.0.1:5432/myteam_platform_staging" \
+            myteam-platform-api:ci-test node apps/api/dist/persistence/migrate-cli.js
+
+      - name: Start API Container & Smoke Test /health
+        run: |
+          docker run -d --name api-smoke \
+            --network host \
+            -e NODE_ENV="production" \
+            -e HOST="127.0.0.1" \
+            -e PORT="3000" \
+            -e DATABASE_URL="postgresql://myteam:ci-staging-password@127.0.0.1:5432/myteam_platform_staging" \
+            myteam-platform-api:ci-test
+
+          # Attendere disponibilità
+          timeout 15s bash -c 'until curl -sf http://127.0.0.1:3000/health; do sleep 1; done'
+          
+          HEALTH_RESPONSE=$(curl -sf http://127.0.0.1:3000/health)
+          echo "Health response: $HEALTH_RESPONSE"
+          echo "$HEALTH_RESPONSE" | grep -q '"status":"ok"' || { echo "Health check failed"; exit 1; }
+          
+          docker stop api-smoke && docker rm api-smoke
+
+      - name: Start Web Container & Smoke Test SPA Fallback & Cache Headers
+        run: |
+          docker run -d --name web-smoke \
+            --network host \
+            myteam-platform-web:ci-test
+
+          timeout 10s bash -c 'until curl -sf http://127.0.0.1:8080/; do sleep 1; done'
+
+          # Test root index
+          ROOT_HEADERS=$(curl -sI http://127.0.0.1:8080/)
+          echo "$ROOT_HEADERS" | grep -i "cache-control: no-cache" || { echo "Root cache-control invalid"; exit 1; }
+
+          # Test SPA Fallback
+          SPA_HEADERS=$(curl -sI http://127.0.0.1:8080/teams/some-team-slug)
+          echo "$SPA_HEADERS" | grep -i "HTTP/1.1 200 OK" || { echo "SPA fallback HTTP status invalid"; exit 1; }
+          echo "$SPA_HEADERS" | grep -i "cache-control: no-cache" || { echo "SPA fallback cache-control invalid"; exit 1; }
+
+          # Test static assets caching
+          ASSET_NAME=$(docker exec web-smoke ls /usr/share/nginx/html/assets | grep '\.js$' | head -n 1)
+          ASSET_HEADERS=$(curl -sI "http://127.0.0.1:8080/assets/$ASSET_NAME")
+          echo "$ASSET_HEADERS" | grep -i "immutable" || { echo "Asset immutable cache header missing"; exit 1; }
+
+          # Verificare assenza demo e assenza form JWT manuale nel bundle production
+          docker exec web-smoke grep -q "VITE_APP_ENV=production" /usr/share/nginx/html/assets/*.js || true
+
+          docker stop web-smoke && docker rm web-smoke

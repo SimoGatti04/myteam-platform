@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - api.yaml
+  - web.yaml
+
+# Immutabilità Immagini (QA finding INFRA-QA-04):
+# Mappatura su tag immutabile o digest sha256 deterministico.
+images:
+  - name: ghcr.io/simogatti04/myteam-platform-api
+    newTag: 20261031-22d23d5
+  - name: ghcr.io/simogatti04/myteam-platform-web
+    newTag: 20261031-22d23d5

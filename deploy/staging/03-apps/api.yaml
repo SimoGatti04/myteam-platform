@@ -34,6 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
+          # In staging/production sostituire staging-latest con digest immutabile (es. sha256:...) o tag immutabile di release
           image: ghcr.io/simogatti04/myteam-platform-api:staging-latest
           imagePullPolicy: IfNotPresent
           command: ["node", "apps/api/dist/index.js"]
@@ -83,9 +84,15 @@ spec:
               port: http
             periodSeconds: 15
             failureThreshold: 3
+          # Readiness Probe:
+          # NOTA INTEGRATION CORE (branch core/readiness-r1):
+          # L'endpoint /ready (che verifica connettività PostgreSQL e schema pronto) è in fase di implementazione
+          # sul branch 'core/readiness-r1'. Fino a quando tale modifica non sarà integrata nel candidato release,
+          # la readiness probe utilizza temporaneamente /health per garantire avviabilità; una volta integrato core/readiness-r1,
+          # il path va commutato a /ready come predisposto sotto.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: http
             periodSeconds: 5
             failureThreshold: 3
