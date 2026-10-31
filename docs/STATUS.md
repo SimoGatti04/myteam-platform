@@ -1,6 +1,6 @@
 # Stato — myteam-platform
 
-**Aggiornato:** 31 ottobre 2026. **Checkpoint:** C0 è pubblicato su `main`; le slice Core C1.1 e C1.2 sono implementate sul branch dedicato `codex/core-persistent-flow`. Non è l'MVP completo e non è stato integrato automaticamente in `main`.
+**Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 consolida CI-C1, QA Q3 e CSI-S1 su `codex/integration-i2-candidate`. Nessun merge su `main`.
 
 ## Integrations — CSI-S1 (31 ottobre 2026)
 
@@ -8,6 +8,7 @@
 - Esito: PDF manuale documentato; API pubblica e licenza di riuso automatizzato non dimostrate. Gli estratti pubblici mostrano calendario/classifica e distinzione ufficiosa/omologata, ma l'accesso automatico a Live è stato bloccato da robots nel servizio di consultazione; nessun bypass o scraping eseguito.
 - Nessun adapter, codice applicativo o schema dati modificato. L'inserimento e l'override admin restano il fallback e l'import CSI non blocca il primo deployment.
 - **Prossimo gate:** localizzare la squadra MAPI nel comitato/competizione/girone corretti e ottenere dal CSI autorizzazione scritta o un export/API supportato, con ID, stato di omologazione e frequenza/condizioni d'uso verificabili.
+- **Evoluzione progettuale post CSI-S1:** a seguito delle conclusioni della ricerca CSI-S1, l'utente ha approvato lo scraping CSI configurabile dall'area Admin come soluzione progettuale, soggetta alla verifica concreta di accessibilità e condizioni d'uso. Lo sviluppo del prototipo è demandato al checkpoint separato CSI-S2, workstream indipendente non incluso in I2.
 
 ## Integrazione iOS — stato R1-D
 
@@ -111,5 +112,22 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
   5. QA Node Suite: `pnpm exec tsx --test tests/api/*.test.ts tests/contracts/*.test.ts tests/auth/*.test.ts tests/q1/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts` (33 test di scenari, JWT e contratti).
   6. PostgreSQL Integration: `pnpm test:integration` e `pnpm exec tsx --test tests/integration/postgres-real-concurrency-and-rollback.test.ts tests/integration/postgres-real-onboarding-and-lifecycle.test.ts` (7 test reali con schema isolato temporaneo e rollback).
 - Sicurezza: `permissions: contents: read`, zero segreti produttivi, zero deploy, solo pull_request/push standard.
-- Playwright Browser E2E: escluso dai gate CI ordinari per evitare non-determinismo, assenza dipendenze browser nei lockfile e costi runner; mantenuto come test locale dedicato.
+- Esito primo run remoto: **SUCCESS** (Run #1, ID 41206638980 su GitHub Actions, branch `ci/c1-release-gates`).
+- Limiti attuali della CI remota: Playwright Browser E2E e suite iOS non sono coperti dalla CI remota per ragioni di footprint/dipendenze; restano coperti da gate ed evidenze locali dedicate.
 
+## Consolidamento candidato I2 e stato dei gate (31 ottobre 2026)
+
+- **Branch candidato:** `codex/integration-i2-candidate` (worktree `integration-i2`).
+- **Base:** Candidato I1 (`f6382175b2fa9488994d3dfbb460d995ede97e5c`), integrato, testato e pubblicato su `origin/codex/integration-i0-candidate`.
+- **Revisioni consolidate in I2:**
+  - CI-C1 (`996d08d5f4f78097edca850a556f97e87587ce3f`): baseline GitHub Actions `.github/workflows/ci.yml`.
+  - QA Q3 (`e192451d55392c71e9780a8652e024747321c29a`): release gate review e pacchetto evidenze E2E/PostgreSQL.
+  - CSI-S1 (`d19915e96d90c92a7dabac680c9b466149ce28ea`): studio di fattibilità integrazioni CSI.
+- **Stato gate e verdict QA:**
+  - QA Q3 ha emesso **NO-GO per merge/release** sul candidato I1 per via dei finding aperti di configurazione e validazione OIDC (`Q3-AUTH-01` e `Q3-AUTH-02`).
+  - I finding `Q3-AUTH-01` e `Q3-AUTH-02` restano **APERTI** fino alla verifica formale e indipendente della remediation in corso nel ramo `security/q3-oidc-hardening` (non incorporato in I2).
+  - La CI remota GitHub Actions è ora attiva e ha superato il primo run; Browser E2E e iOS rimangono gestiti via test harness locali.
+- **Stato integrazioni CSI:**
+  - CSI-S1 è concluso come pura ricerca (nessun adapter o modifica a schema/codice).
+  - L'utente ha successivamente approvato lo scraping configurabile da Admin; il prototipo è assegnato al checkpoint **CSI-S2** (workstream indipendente da I2).
+- **Nessun merge su main, nessun deploy e nessuna alterazione di I1.**
