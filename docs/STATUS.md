@@ -151,3 +151,10 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
     - I finding di sicurezza Q3-AUTH-01 e Q3-AUTH-02 dispongono di una remediation implementata e coperta da test unitari/integrazione approfonditi (111 test Web Vitest totali, di cui 37 test dedicati OIDC security e regressioni).
     - **La chiusura formale e indipendente dei finding è ancora PENDENTE** in attesa della revisione e validazione autonoma di QA (prevista nel checkpoint Q4).
     - **Logto staging reale e deployment rimangono NOT RUN**: nessun test sintetico o su mock è presentato come prova di login reale con l'Identity Provider remoto.
+
+## QA Release Gate Q4 — revisione candidata I3 (31 ottobre 2026)
+
+- Target verificato: `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`; report indipendente: `docs/qa/CHECKPOINT-Q4-REPORT.md` sul branch `qa/q4-i3-release-gate`.
+- Risultati: installazione frozen, `pnpm check`, Web Vitest 111/111, QA Vitest 28/28, QA Node 69 PASS / 1 SKIP e PostgreSQL reale 6/6 PASS. CI remota run `41215411372` è verde sullo SHA esatto.
+- Verdetto Q4: **GO CON RISERVE per code/integration review**, non per dichiarare il prodotto production-ready. Browser E2E, Logto staging, deployment e Xcode/iOS sul tip I3 restano NOT RUN. Fixture demo sintetiche sono presenti nel bundle; il guard production le disabilita, ma resta aperto il rischio condizionale di configurazione segnalato in Q4.
+- Prossimo gate: eseguire Playwright desktop/mobile su runner autorizzato; collaudare OIDC con Logto staging senza credenziali production; auditare variabili e artefatti della pipeline di deployment; eseguire i gate iOS sul candidato secondo il piano release.
