@@ -199,7 +199,7 @@ Nessuna modifica a `apps/web`, `apps/api`, `packages/contracts`. Solo `tests/` e
 
 ---
 
-**Verdetto: QA PASS.**
+**Verdetto storico Q2-E: QA PASS (superseded by Q2-E-R1; stato corrente: QA PARTIAL).**
 
 
 ## 8. Rerun indipendente Q2-E — 30 ottobre 2026
@@ -229,3 +229,97 @@ In `tests/q1/15-web-w2-r5-logout-federated.vitest.ts` due precedenti `expect(tru
 - JWT crittografico/Logto: non dimostrati dal browser Q2-E; i test JWT locali della suite QA non rappresentano una sessione Logto staging.
 - Il tentativo di installazione pulita non è PASS. L’ambiente ha fornito pnpm 11.25.0 nonostante `packageManager: pnpm@10.32.1`; l’install si è fermato dopo download/link dipendenze per script `esbuild` non approvato. Build/test eseguiti con i binari disponibili dopo il materializzarsi dei pacchetti.
 - Branch QA già pubblicato: il rerun ha introdotto soltanto ownership QA (`tests/`, `docs/qa/`); nessuna modifica a Core/Web/iOS, nessun merge su main e nessun deploy.
+
+
+---
+
+## 12. Q2-E-R1 — Installazione riproducibile e browser harness (2026-10-30)
+
+**Stato corrente: QA PARTIAL.** Questo follow-up non riscrive i risultati storici Q2-E: aggiunge prove nuove e ritira la conclusione residuale `QA PASS`, che non è compatibile con i gate ancora aperti. Nessun file applicativo Web/Core è stato modificato.
+
+### 12.1 Revisione e ambiente effettivi
+
+- Base: `qa/q2-e-w2r5-verification` @ `cb4e0b62f76c31e9fa8ff5906c72b91c4c31bcb`.
+- Branch QA isolato: `qa/q2-e-r1-install-harness` (worktree dedicato; SHA finale riportato nell’handoff Q2-E-R1).
+- Node effettivo: `v24.19.0`, ammesso da `engines` (`>=22.12 <27`) ma diverso dal pin `.node-version` `26.5.0`.
+- Corepack: non disponibile nel runtime del task.
+- pnpm preinstallato effettivo: `11.25.0`; il repository dichiara `pnpm@10.32.1`.
+- Il tentativo separato di procurare Node `26.5.0` tramite `pnpm dlx node@26.5.0 --version` è fallito (exit 1): l'installer del pacchetto Node richiedeva `npm`, assente (`/bin/sh: npm: command not found`; pacchetto binario specifico non risolto). Il pin Node 26.5.0 resta quindi NOT RUN.
+
+### 12.2 Installazione e comandi
+
+La prova è partita da un worktree nuovo senza `node_modules`; il lockfile era presente e non è stato rigenerato.
+
+| Prova | Stato | Evidenza |
+|---|---|---|
+| pnpm 10.32.1 tramite `pnpm dlx pnpm@10.32.1 --version` | PASS | output `10.32.1`; Corepack non disponibile, nessuna sostituzione globale. |
+| Installazione iniziale `pnpm dlx pnpm@10.32.1 install --frozen-lockfile` | PASS con script non eseguito | 183 pacchetti aggiunti nel worktree; pnpm ha esplicitamente segnalato `Ignored build scripts: esbuild@0.28.2`. Non è stato interpretato come script completato. |
+| Ispezione build script | PASS | `esbuild@0.28.2` dichiara `postinstall: node install.js`. |
+| Esecuzione postinstall richiesto | PASS | prova reversibile nel solo worktree con `allowBuilds: { esbuild: true }`; output `esbuild@0.28.2 postinstall: Done`. La policy temporanea è stata rimossa e non è stata committata. |
+| Build canonica | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 build`; contracts/API TypeScript e build Vite production completate. |
+| Typecheck canonico | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 typecheck`; contracts, Web e API incluse prove TypeScript. |
+| Test canonico root | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 test`; 6 pass, 0 fail, 0 skipped (test API unitari e health). |
+| Web Vitest | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/web test`; 96 pass in 8 file. |
+| Suite QA sintetica pertinente | PASS con uno skip | `pnpm dlx pnpm@10.32.1 exec tsx --test tests/q1/*.test.ts tests/auth/*.test.ts tests/contracts/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts`; 67 totali, 66 pass, 0 fail, 1 skipped, exit 0. TAP originale locale: `/private/tmp/qae-r1-qa.tap`. |
+| PostgreSQL Core integration | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/api test:integration` con `TEST_DATABASE_URL` del database locale documentato `myteam_platform_test`; 1 pass, 0 fail, 0 skipped. La suite usa schema temporaneo UUID. Questo non certifica browser E2E né Logto. |
+
+Il lockfile e `pnpm-workspace.yaml` risultano identici alla base dopo aver rimosso la sola policy temporanea. La policy non è proposta come modifica condivisa: l'eventuale decisione repository-wide su `allowBuilds` resta di ownership della configurazione condivisa/Core.
+
+### 12.3 Browser harness QA-HARNESS-01
+
+- La suite `tests/browser/browser-e2e.py` continua a dipendere da un API process che parte con schema vuoto; riutilizzare lo stesso server mantiene i dati della prova precedente e non costituisce una seconda esecuzione indipendente.
+- Il PostgreSQL locale risulta healthy e il pacchetto Python Playwright è installato. In questo follow-up non è stata eseguita una prova browser: **NOT RUN**; non sono stati prodotti screenshot o trace nuovi.
+- È stato predisposto un worktree QA pulito e verificata la suite; l'orchestratore proposto per avviare/chiudere un API per run non è stato scritto perché il server attuale ignora gli errori di `ctx.cleanup()` e rimuove il marker senza verificare il `DROP SCHEMA`. Prima dell'automazione occorre rendere verificabile il cleanup del solo schema UUID posseduto dal server e far fallire la run se la verifica fallisce; altrimenti l'orchestratore potrebbe dichiarare esito riuscito lasciando uno schema temporaneo. Non si è proceduto con reset indiscriminato o cancellazioni di schemi.
+- Di conseguenza, due esecuzioni browser consecutive sul setup corretto restano **NOT RUN**, e QA-HARNESS-01 resta aperto.
+
+### 12.4 Gate separati e residui
+
+| Gate | Stato Q2-E-R1 |
+|---|---|
+| Installazione pulita con pnpm dichiarato 10.32.1, Node v24.19.0 | **PASS**; postinstall esbuild autorizzato temporaneamente e completato. |
+| Pin Node 26.5.0 | **NOT RUN** (tentativo di bootstrap fallito per `npm` assente). |
+| Build, typecheck, test root, Web Vitest, suite QA sintetica | **PASS** con conteggi sopra; un test QA resta SKIPPED. |
+| PostgreSQL reale | **PASS** per il singolo test d'integrazione indicato; non è un E2E browser. |
+| Browser E2E ripetuto due volte con schema per-run e cleanup verificato | **NOT RUN**; harness da correggere in sicurezza. |
+| Logto staging reale | **NOT RUN**, senza credenziali o istanza autorizzata. |
+
+Nessun deploy, merge su `main`, force-push o modifica a Core/Web. La cache temporanea pnpm è stata collocata in `/private/tmp/qae-r1-cache`; il TAP originale è in `/private/tmp/qae-r1-qa.tap`. Sono output locali e non condivisi; i file di progetto generati (`node_modules`, `dist`) sono ignorati da Git.
+
+## 9. Q2-E-R2 — cleanup sicuro e harness browser ripetibile (31 ottobre 2026)
+
+**Base verificata:** `qa/q2-e-r1-install-harness` @ `87dc5a4698a58c6d041193086cf7189026f9df84`.
+Le verifiche e le modifiche sotto appartengono esclusivamente a `tests/` e a questa documentazione QA. Nessuna modifica applicativa Core/Web o all'helper PostgreSQL condiviso.
+
+### Stato delle prove
+
+| Gate | Esito | Evidenza |
+|---|---|---|
+| Test unitari del lifecycle/cleanup | **PASS** | `pnpm exec tsx --test tests/browser/schema-cleanup.test.ts`: 7 test, 7 PASS, 0 FAIL, 0 SKIP; copre drop+verifica+marker, eccezioni, DB non raggiungibile, timeout, marker/database non validi, schema ancora presente e recupero con proprietario vivo. |
+| Build monorepo | **PASS** | `pnpm build`, exit 0. |
+| Typecheck monorepo | **PASS** | `pnpm typecheck`, exit 0. |
+| Test canonici | **PASS** | `pnpm test`, exit 0. Il comando esegue due processi Node test distinti: API 3 PASS/0 FAIL/0 SKIP (141.805 ms) e QA API 3 PASS/0 FAIL/0 SKIP (250.013 ms); totale 6 PASS, 0 FAIL, 0 SKIP. TAP integrale conservato localmente in `/tmp/myteam-q2e-r2-pnpm-test.log`. |
+| Browser E2E ripetuto su PostgreSQL | **PASS** | Due cicli consecutivi completati dal runner, entrambi con API/schema nuovi; browser exit 0 per ciascuno, 11 screenshot per ciclo. Nessun dato preesistente riutilizzato. |
+| Verifica cleanup dopo ciascun ciclo | **PASS** | Log API registra `QA_SCHEMA_CLEANUP_VERIFIED`; verifica indipendente interroga `pg_namespace` e registra `QA_SCHEMA_ABSENT_VERIFIED`; marker assente in entrambi i casi. |
+| Installazione standard riproducibile | **NOT RUN / GAP** | Non è stata eseguita una nuova installazione pulita senza policy temporanea per lo script esbuild. Le evidenze storiche pnpm 10.32.1 autorizzando temporaneamente solo esbuild non certificano l'installazione standard. |
+| Logto staging reale | **NOT RUN** | Nessun IdP/credenziale di staging autorizzati. QA-C-01/08 restano chiusi solo nel perimetro locale/mock già riportato, non come certificazione staging. |
+
+### Cicli browser e artefatti
+
+Runner ripetibile: `python3 tests/browser/run-browser-e2e.py --artifacts-dir <directory>`, richiede `TEST_DATABASE_URL` verso database dedicato ai test su loopback, PostgreSQL accessibile, dipendenze installate, Chromium/Playwright disponibile e porte 3000/5173 libere. Il runner rifiuta porte già occupate, avvia e termina i processi per ciascun ciclo, e non esegue reset di database condivisi.
+
+Esecuzione autorizzata: `TEST_DATABASE_URL` (valore omesso per sicurezza) + `python3.14 tests/browser/run-browser-e2e.py --artifacts-dir /tmp/myteam-q2e-r2-e2e-authorized`; exit code complessivo **0**. Run 1 e Run 2: browser **PASS**, 11 screenshot ciascuno, inclusi backend offline, onboarding DB vuoto, 401 e 403, squadra pubblicata, bozza isolata, partita pubblicata e viewport mobile. Log originali per ciclo: `api.log`, `browser.log`, `schema-verification.log`; screenshot sotto `screenshots/`. Gli artefatti sono locali in `/tmp/myteam-q2e-r2-e2e-authorized/`, non committati perché temporanei; contengono solo fixture sintetiche e nessun token/password. Sono conservati per la revisione in questo ambiente.
+
+I tentativi preliminari con Python 3.15 senza Playwright e con Chromium bloccato dal sandbox non sono conteggiati come PASS; il risultato sopra è la successiva esecuzione nel normale ambiente autorizzato.
+
+### Garanzie di cleanup introdotte
+
+- Nome schema ancorato a `test_qa_<UUID>` e validato; marker JSON vincolato a owner harness, DB, PID e run ID, con file regolare di proprietà dell'utente e permessi privati.
+- Destinazione limitata a host loopback e database il cui nome termina in `_test`; nessuna wildcard o scansione per eliminazione. Marker invalido, provenienza/DB incoerenti o processo proprietario ancora vivo causano rifiuto fail-closed.
+- `DROP SCHEMA` è seguito da verifica PostgreSQL esplicita dell'assenza in `pg_namespace`; marker rimosso solo dopo esito verificato. Eccezioni, timeout e indisponibilità DB propagano errore non-zero e mantengono il marker.
+- La stessa procedura è usata dal recupero di run precedenti e dal cleanup di startup/shutdown; il runner crea un nuovo processo API/schema per ciascun run e verifica in modo indipendente schema e marker al termine.
+
+### Valutazione e limiti
+
+**Verdetto: HARNESS PASS** per test sintetici di cleanup e due esecuzioni browser reali ripetibili contro PostgreSQL locale dedicato. Questo non chiude il gap dell'installazione pulita standard e non certifica Logto staging. Il browser E2E verifica la UI via browser, ma il suo login admin usa il meccanismo sostitutivo di test: non è prova di OIDC remoto.
+
+Diff QA atteso in questo checkpoint: `tests/browser/start-test-api.ts`, `tests/browser/browser-e2e.py`, nuovi `tests/browser/schema-cleanup.ts`, `tests/browser/schema-cleanup.test.ts`, `tests/browser/run-browser-e2e.py`, `tests/browser/verify-schema-absent.ts` e questa sezione. Nessuna pulizia di database/volumi condivisi. I processi harness sono terminati; gli schemi e marker creati dai due run sono stati verificati assenti.

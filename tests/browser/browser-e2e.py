@@ -53,7 +53,7 @@ async def run_e2e(web_url="http://127.0.0.1:5173", api_url="http://127.0.0.1:300
     print(f"Target API: {api_url}")
     print("=" * 75)
 
-    screenshots_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "screenshots"))
+    screenshots_dir = os.path.abspath(os.environ.get("QA_BROWSER_SCREENSHOTS_DIR", os.path.join(os.path.dirname(__file__), "screenshots")))
     os.makedirs(screenshots_dir, exist_ok=True)
 
     scenario_results = {}
