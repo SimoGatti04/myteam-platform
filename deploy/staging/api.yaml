@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myteam-platform-api
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/name: myteam-platform-api
+    app.kubernetes.io/component: backend
+    environment: staging
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-api
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: myteam-platform-api
+        app.kubernetes.io/component: backend
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/simogatti04/myteam-platform-api:staging-latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "apps/api/dist/index.js"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3000"
+            - name: LOGTO_ADMIN_SCOPE
+              value: "platform:admin"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myteam-platform-secrets
+                  key: DATABASE_URL
+            - name: LOGTO_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: myteam-platform-secrets
+                  key: LOGTO_ISSUER
+            - name: LOGTO_AUDIENCE
+              valueFrom:
+                secretKeyRef:
+                  name: myteam-platform-secrets
+                  key: LOGTO_AUDIENCE
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myteam-platform-api
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/name: myteam-platform-api
+    app.kubernetes.io/component: backend
+    environment: staging
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: myteam-platform-api
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP

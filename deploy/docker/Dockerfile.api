@@ -1,0 +1,53 @@
+# Multi-stage Dockerfile for @myteam/api production
+# Stage 1: Build
+FROM node:26-alpine AS builder
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+
+# Copy root manifest and workspace configuration
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY packages/contracts/package.json ./packages/contracts/
+COPY apps/api/package.json ./apps/api/
+
+# Install dependencies (frozen lockfile)
+RUN pnpm install --frozen-lockfile
+
+# Copy sources required for contracts and api compilation
+COPY tsconfig.base.json ./
+COPY packages/contracts/ ./packages/contracts/
+COPY apps/api/ ./apps/api/
+COPY db/migrations/ ./db/migrations/
+
+# Build contracts and api TypeScript
+RUN pnpm --filter @myteam/contracts build && \
+    pnpm --filter @myteam/api build
+
+# Prune devDependencies for runtime
+RUN pnpm --filter @myteam/api --prod deploy /app/pruned-api
+
+# Stage 2: Runtime
+FROM node:26-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3000
+
+# Run as non-root user (node is UID 1000 in official alpine image)
+USER node
+
+# Copy pruned runtime dependencies and built application
+COPY --chown=node:node --from=builder /app/pruned-api/node_modules ./node_modules
+COPY --chown=node:node --from=builder /app/apps/api/package.json ./apps/api/
+COPY --chown=node:node --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --chown=node:node --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+COPY --chown=node:node --from=builder /app/packages/contracts/package.json ./packages/contracts/
+COPY --chown=node:node --from=builder /app/db/migrations ./db/migrations
+
+EXPOSE 3000
+
+# Default entrypoint: API server
+CMD ["node", "apps/api/dist/index.js"]
