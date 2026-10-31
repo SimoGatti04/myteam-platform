@@ -85,3 +85,7 @@ Web e QA sono stati informati delle rotte additive, della proiezione pubblica li
 ## Non incluso / prossimo coordinamento
 
 Frontend/PWA, flussi OIDC browser, sincronizzazione iOS, SSE/LIVE completo, provider o scraping CSI, risultati/statistiche, votazioni, contenuti, CI, deployment e mutazioni K3s restano fuori da questo checkpoint. Il passo d'integrazione è condividere i contratti preliminari con Web e QA e poi definire gli adapter/provider senza cambiare la gerarchia delle fonti di ADR-0008.
+
+## QA Release Gate Q3 — revisione candidato integrato
+
+Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488994d3dfbb460d995ede97e5c` ha superato i gate locali build/typecheck, suite automatica, PostgreSQL reale e browser E2E con verificatore admin sostitutivo. QA ha emesso **NO-GO per merge/release** finché restano aperti i finding di validazione/configurazione OIDC e finché il gate CI remoto non esiste; Logto staging e deployment sono **NOT RUN**. Il flusso admin→PostgreSQL→API pubblica→Web è verificato nel perimetro di test, non equivale a production-ready. Vedere [rapporto Q3](qa/CHECKPOINT-Q3-REPORT.md). Prossimo gate: remediation Web dei finding Q3-AUTH-01/02, definizione dei controlli CI e verifica Logto/deploy su staging autorizzato.
