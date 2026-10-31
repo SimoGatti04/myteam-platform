@@ -1,10 +1,10 @@
 # QA INFRA-S1-R1 — Container, manifest e sicurezza staging
 
-**Data verifica:** 31 ottobre 2026  
-**Repository:** `SimoGatti04/myteam-platform`  
-**Target Infra:** `origin/infra/s1-staging-preparation` @ `22d23d54a49f4a8c479a9011ca823b745f7a52b3`  
-**Base applicativa I3:** `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`  
-**Branch QA:** `qa/infra-s1-r1-review` (derivato dal target; commit QA locale riportato nel checkpoint)  
+**Data verifica:** 31 ottobre 2026
+**Repository:** `SimoGatti04/myteam-platform`
+**Target Infra:** `origin/infra/s1-staging-preparation` @ `22d23d54a49f4a8c479a9011ca823b745f7a52b3`
+**Base applicativa I3:** `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`
+**Branch QA:** `qa/infra-s1-r1-review` (derivato dal target; commit QA locale riportato nel checkpoint)
 **Ambiente:** macOS arm64; Docker CLI 29.8.2, contesto OrbStack senza accesso al socket; `kubectl` disponibile. Nessun accesso al cluster live, nessun segreto o database di staging usato.
 
 ## Sintesi
@@ -40,37 +40,37 @@ Revisione indipendente prevalentemente statica. Il rendering Kustomize è stato 
 
 ### INFRA-QA-01 — Avvio e pubblicazione non gated dalle migrazioni (P1, Infra)
 
-**Tipo:** rischio di deployment riproducibile dalla struttura dichiarativa; non è stato osservato su cluster.  
-**Evidenza:** `deploy/staging/kustomization.yaml` include Postgres, migration Job, API, Web e HTTPRoute nello stesso set. La semantica Kustomize rende risorse, non un workflow con dipendenze o attesa Job; i Deployment/route possono essere riconciliati mentre migrazione è ancora in corso o fallita. Le probe API usano inoltre `/health` (vedi INFRA-QA-02).  
-**Impatto:** accesso a endpoint prima dello schema aggiornato, errori intermittenti e falso stato di disponibilità.  
+**Tipo:** rischio di deployment riproducibile dalla struttura dichiarativa; non è stato osservato su cluster.
+**Evidenza:** `deploy/staging/kustomization.yaml` include Postgres, migration Job, API, Web e HTTPRoute nello stesso set. La semantica Kustomize rende risorse, non un workflow con dipendenze o attesa Job; i Deployment/route possono essere riconciliati mentre migrazione è ancora in corso o fallita. Le probe API usano inoltre `/health` (vedi INFRA-QA-02).
+**Impatto:** accesso a endpoint prima dello schema aggiornato, errori intermittenti e falso stato di disponibilità.
 **Raccomandazione:** sequenziare i rollout con pipeline/job gate esplicito: DB healthy → migration Job completato con verifica → API/Web → route; fallire il rollout se il Job non termina con successo. Non affidarsi all'ordine YAML.
 
 ### INFRA-QA-02 — Readiness API non verifica dipendenza PostgreSQL (P1, Infra/Core)
 
-**Tipo:** gap di disponibilità noto nei documenti e confermato staticamente.  
-**Evidenza:** `deploy/staging/api.yaml` usa `/health` per startup, liveness e readiness; `docs/infra/INFRA-S1-PREFLIGHT.md` specifica che `/health` è lightweight e non verifica il pool DB.  
-**Impatto:** Kubernetes può instradare traffico a un'API senza connessione DB o con migrazioni non applicate.  
+**Tipo:** gap di disponibilità noto nei documenti e confermato staticamente.
+**Evidenza:** `deploy/staging/api.yaml` usa `/health` per startup, liveness e readiness; `docs/infra/INFRA-S1-PREFLIGHT.md` specifica che `/health` è lightweight e non verifica il pool DB.
+**Impatto:** Kubernetes può instradare traffico a un'API senza connessione DB o con migrazioni non applicate.
 **Raccomandazione:** endpoint di readiness distinto che verifica dipendenze richieste e schema; lasciare liveness indipendente dal DB per evitare restart storm. Coordinare eventuali endpoint applicativi con Core.
 
 ### INFRA-QA-03 — Egress HTTPS API non limitato (P2, Infra/Core)
 
-**Tipo:** configurazione permissiva dimostrata dal manifest; impatto dipende dall'uso delle richieste in uscita.  
-**Evidenza:** `deploy/staging/network-policy.yaml` consente API → `0.0.0.0/0`, TCP 443.  
-**Impatto:** compromissione SSRF/exfiltrazione o accesso a servizi HTTPS arbitrari dal pod; non è stato effettuato alcun tentativo di rete.  
+**Tipo:** configurazione permissiva dimostrata dal manifest; impatto dipende dall'uso delle richieste in uscita.
+**Evidenza:** `deploy/staging/network-policy.yaml` consente API → `0.0.0.0/0`, TCP 443.
+**Impatto:** compromissione SSRF/exfiltrazione o accesso a servizi HTTPS arbitrari dal pod; non è stato effettuato alcun tentativo di rete.
 **Raccomandazione:** limitare l'egress ai servizi necessari; se Logto richiede IP dinamici, definire una strategia controllata (egress gateway/proxy o policy DNS-aware supportata dalla CNI), documentando il compromesso. Verificare anche DNS, Postgres, ESO e flusso migration secondo selectors reali.
 
 ### INFRA-QA-04 — Tag immutabili non garantiti per API/Web (P2, Infra)
 
-**Tipo:** rischio riproducibile dalla configurazione, non testato su registry.  
-**Evidenza:** `staging-latest` insieme a `imagePullPolicy: IfNotPresent` nei manifest API/Web e migration.  
-**Impatto:** rollout non riproducibile e nodi diversi possono eseguire digest differenti o immagini cache.  
+**Tipo:** rischio riproducibile dalla configurazione, non testato su registry.
+**Evidenza:** `staging-latest` insieme a `imagePullPolicy: IfNotPresent` nei manifest API/Web e migration.
+**Impatto:** rollout non riproducibile e nodi diversi possono eseguire digest differenti o immagini cache.
 **Raccomandazione:** pubblicare e distribuire per digest SHA; mantenere tag leggibili solo come metadato.
 
 ### INFRA-QA-05 — Restore ordinario sul target è distruttivo/non isolato (P1, Infra)
 
-**Tipo:** discrepanza rispetto al requisito di ripristino isolato.  
-**Evidenza:** procedura documentata nel preflight/runbook usa `pg_restore --clean --if-exists` sul database destinazione; il flag rimuove oggetti prima del restore. Nessun comando è stato eseguito.  
-**Impatto:** perdita/sostituzione di dati del database target se usato come rollback ordinario o se il backup è errato.  
+**Tipo:** discrepanza rispetto al requisito di ripristino isolato.
+**Evidenza:** procedura documentata nel preflight/runbook usa `pg_restore --clean --if-exists` sul database destinazione; il flag rimuove oggetti prima del restore. Nessun comando è stato eseguito.
+**Impatto:** perdita/sostituzione di dati del database target se usato come rollback ordinario o se il backup è errato.
 **Raccomandazione:** restore in database/schema/volume isolato, con validazione e decisione esplicita dell'owner sul volume esterno; promozione/switch separata e recuperabile. Non usare restore distruttivo come rollback standard.
 
 ## Controlli statici positivi e limiti
