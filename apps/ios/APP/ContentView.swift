@@ -1669,6 +1669,11 @@ struct ContentView:
     @State private var showClockCorrection = false
 
     @State private var selectedMinuteCorrectionPlayer: MatchPlayer?
+    @State private var tacticalPitchLayout = TacticalPitchLayout()
+    @State private var selectedPlayerForDetail: MatchPlayer? = nil
+    @State private var showAdvancedGoalSheet = false
+    @State private var advancedGoalEvent: GoalEvent? = nil
+    @State private var currentAdvancedGoalDetails = AdvancedGoalDetails()
 
     @State private var selectedLiveEvent: GoalEvent?
 
@@ -2970,6 +2975,28 @@ struct ContentView:
                     liveTimerSection
 
                     timeoutSection
+
+                    InteractiveFutsalPitchSection(
+                        fieldPlayers: players.filter { $0.inField },
+                        benchPlayers: players.filter { !$0.inField },
+                        maxPlayersOnField: maxPlayersOnField,
+                        canRecordEvents: canRecordMatchEvent,
+                        isTimingRunning: isRunning,
+                        layout: $tacticalPitchLayout,
+                        selectedPlayerForDetail: $selectedPlayerForDetail,
+                        onGoal: { player in
+                            addOurGoal(for: player.id)
+                        },
+                        onSubstituteOut: { player in
+                            outgoingSubstitution = OutgoingSubstitutionRequest(outPlayerID: player.id)
+                        },
+                        onQuickSubstitute: { outPlayer, inPlayer in
+                            performManualSubstitution(outID: outPlayer.id, inID: inPlayer.id)
+                        },
+                        onToggleSuperpower: { player in
+                            toggleSuperpower(player.id)
+                        }
+                    )
 
                     suggestionSection
 

@@ -1,8 +1,18 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 30 ottobre 2026 — stato R1-D; verifica C3.3 sul candidato monorepo R1-A3.
+**Aggiornato:** 1 novembre 2026 — checkpoint C4 Functional Advancement su branch isolato `ios/c4-functional`.
 
-## Stato corrente — C3.3
+## Stato corrente — C4 Functional Advancement
+
+**Esito: COMPLETE per lo scope del checkpoint.** Avanzamento funzionale verso l'app operativa approvata in C4:
+- **Prepartita e selezione distinta:** integrata e preservata la gestione presenze e titolari senza duplicazioni di dati, pronta per l'aggancio bidirezionale.
+- **Campo da calcio a 5 (Futsal) interattivo:** implementato `InteractiveFutsalPitchSection` con posizioni tattiche (POR, DIF, LAT SX, LAT DX, PIV), token giocatori con minuti/ruolo/superpower, panchina scorrevole ad accesso rapido e menu contestuali per gol, cambi rapidi e cambio posizione tattica.
+- **Dettagli avanzati gol:** predisposto modello e foglio di dettaglio per situazioni (azione/piazzato/rigore/punizione/angolo/contropiede), parte del corpo, dinamica ed eventuale coordinate bersaglio in porta.
+- **Configurazione regolamento e branding:** predisposti contratti `TeamBrandProfile` (con default MAPI GROUP per conservazione aspetto attuale) e `CompetitionRulesConfiguration` (tempi e durate configurabili) senza forzare modifiche distruttive allo schema SwiftData V3.
+- **Verifica build:** `xcodebuild build` su generic iOS ed `xcodebuild build-for-testing` su iPhone 18 Pro Simulator eseguiti con successo (PASS).
+- **Nuovi unit test:** aggiunti test di caratterizzazione per i contratti C4 in `C4AdvancementTests.swift`.
+
+## Stato storico — C3.3
 
 **Esito: COMPLETE per lo scope del checkpoint.** Cronologia attendibile delle presenze, correzioni live/storico persistenti e UI contestuale sono integrate; la suite finale è **122 PASS, 0 FAIL, 0 SKIPPED** su iOS Simulator. Due warning SwiftUI di frame non valido restano da diagnosticare; non sono state eseguite prove su device fisico o lock/unlock reale. Dettagli, commit e limiti sono riportati nella sezione C3.3 più avanti.
 
