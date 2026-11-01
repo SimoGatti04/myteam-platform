@@ -1,9 +1,9 @@
 # MYTEAM-PLATFORM — QA INFRA-S1-R2 Report
 
-**Data review:** 1 novembre 2026  
-**Repository:** `SimoGatti04/myteam-platform`  
-**Target verificato:** `origin/infra/s1-r2-staging-gates` @ `b925c9622c498818157b68d24ea4af38f6e304da`  
-**Base dichiarata:** `22d23d54a49f4a8c479a9011ca823b745f7a52b3`  
+**Data review:** 1 novembre 2026
+**Repository:** `SimoGatti04/myteam-platform`
+**Target verificato:** `origin/infra/s1-r2-staging-gates` @ `b925c9622c498818157b68d24ea4af38f6e304da`
+**Base dichiarata:** `22d23d54a49f4a8c479a9011ca823b745f7a52b3`
 **Branch QA:** `qa/infra-s1-r2-review` (rapporto da committare localmente; nessun push)
 
 ## Verdetto
@@ -42,7 +42,7 @@ Il job `Docker Packaging, Non-Root & Staging Smoke` ha concluso tutti gli step a
 
 ### INFRA-R2-01 — readiness manifest non compatibile col Core incluso nel target
 
-**Gravità: P1 — blocco per candidato I4 basato su questo checkout; non attribuito al Core readiness branch.**  
+**Gravità: P1 — blocco per candidato I4 basato su questo checkout; non attribuito al Core readiness branch.**
 **Tipo:** incompatibilità riprodotta staticamente; runtime non eseguito. **Owner:** Infra + Core.
 
 `deploy/staging/03-apps/api.yaml` imposta la `readinessProbe` su `/ready`. In questo target, `apps/api/src/app.ts` registra `/health` ma non `/ready`; il relativo branch Core `origin/core/readiness-r1` contiene la route, ma non è antenato del target Infra né del checkout testato. È quindi atteso che il pod API di questo preciso insieme di sorgenti riceva 404 dalla readiness probe e non diventi Ready. Il commento inline nel manifest è inoltre contraddittorio: afferma che `/ready` è ancora in implementazione e che nel frattempo la probe usa `/health`, mentre il valore YAML effettivo è `/ready`.
@@ -53,16 +53,16 @@ Il job `Docker Packaging, Non-Root & Staging Smoke` ha concluso tutti gli step a
 
 ### INFRA-R2-02 — gate DEMO/JWT del Docker workflow è inefficace
 
-**Gravità: P1 — blocco del gate di sicurezza richiesto prima dello staging.**  
+**Gravità: P1 — blocco del gate di sicurezza richiesto prima dello staging.**
 **Tipo:** difetto del controllo CI dimostrato; presenza effettiva della feature nel bundle/UI staging non certificata. **Owner:** Infra + Web.
 
-La build passa `VITE_APP_ENV=production` e `VITE_ENABLE_DEMO=false`, ma la verifica finale è `docker exec web-smoke grep -q "VITE_APP_ENV=production" /usr/share/nginx/html/assets/*.js || true` (workflow linea 150 circa). Il `|| true` neutralizza ogni esito, incluso file assente, `grep` fallito o stringa non trovata; inoltre cerca una stringa di configurazione anziché provare le capability visibili. Nei log CI il controllo non fallisce anche quando `grep` segnala che il glob `assets/*.js` non esiste nel contesto invocato.
+La build passa `VITE_APP_ENV=production` e `VITE_ENABLE_DEMO=false`, ma la verifica finale è `docker exec web-smoke grep -q "VITE_APP_ENV=production" /usr/share/nginx/html/assets/*.js || true` (workflow linea 132). Il `|| true` neutralizza ogni esito, incluso file assente, `grep` fallito o stringa non trovata; inoltre cerca una stringa di configurazione anziché provare le capability visibili. Nei log CI il controllo non fallisce anche quando `grep` segnala che il glob `assets/*.js` non esiste nel contesto invocato.
 
 **Rimedio:** sostituire il controllo con asserzioni funzionali sul container/build di staging (form JWT manuale assente, DEMO non attivabile; verificare anche route/controlli accessibili), e far fallire lo step se setup/selettori/risposte non corrispondono. Il solo env della build non è evidenza della UI risultante.
 
 ### INFRA-R2-03 — immagini Kustomize non legate al digest del rilascio
 
-**Gravità: P1 per autorizzare un rilascio riproducibile; P2 come debito di packaging.**  
+**Gravità: P1 per autorizzare un rilascio riproducibile; P2 come debito di packaging.**
 **Tipo:** rischio configurativo verificato; tag availability/provenienza non verificata. **Owner:** Infra/Release.
 
 Il render root risolve API, Web e migration sul tag `20261031-22d23d5`; PostgreSQL resta `postgres:16-alpine`. I primi tre non corrispondono allo SHA target `b925c962…` per nome, ma al prefisso della base `22d23d5…`. La convenzione del tag data+short SHA non garantisce da sola immutabilità nel registry. Inoltre Docker CI ha `load: true` e non pubblica immagini: il run verde non prova che i tag renderizzati siano presenti né che corrispondano al codice destinato a staging.
@@ -71,7 +71,7 @@ Il render root risolve API, Web e migration sul tag `20261031-22d23d5`; PostgreS
 
 ### INFRA-R2-04 — root aggregator può bypassare la sequenza fail-closed
 
-**Gravità: P2 — rischio operativo controllabile con runbook, ma gate non imposto tecnicamente.**  
+**Gravità: P2 — rischio operativo controllabile con runbook, ma gate non imposto tecnicamente.**
 **Tipo:** bypass staticamente riproducibile; nessuna risorsa applicata. **Owner:** Infra.
 
 `deploy/staging/kustomization.yaml` aggrega `01-bootstrap`, `02-migration`, `03-apps` e `04-routing` in un unico render. Applicare `kubectl apply -k deploy/staging` applicherebbe quindi anche apps e HTTPRoute senza attendere il Job di migrazione. Il commento dice che l'aggregatore serve per rendering/validazione statica, ma Kustomize non impedisce l'`apply`; il runbook descrive correttamente gli stadi e lo script usa le directory singole.
@@ -80,7 +80,7 @@ Il render root risolve API, Web e migration sul tag `20261031-22d23d5`; PostgreS
 
 ### INFRA-R2-05 — invocazioni concorrenti/interrotte possono cancellare il Job attivo
 
-**Gravità: P2 — rischio di affidabilità del rollout; nessun danno dati riprodotto.**  
+**Gravità: P2 — rischio di affidabilità del rollout; nessun danno dati riprodotto.**
 **Tipo:** rischio da flusso statico; test cluster concorrente non eseguito. **Owner:** Infra.
 
 Lo script fa `kubectl delete job myteam-platform-migrate --ignore-not-found` seguito da `apply` dello stesso nome ogni volta. Una seconda invocazione mentre la prima migrazione è attiva può cancellare il Job/pod della prima, provocandone il fallimento e avviando un nuovo Job; un'interruzione tra delete/apply/wait lascia una procedura incompleta da rilanciare. Nel Core incluso la migrazione usa advisory lock PostgreSQL e transazione per ciascun file, che mitigano l'esecuzione concorrente e il partial apply del singolo file, ma non coordinano i processi di deploy né impediscono che un runner cancelli il Job dell'altro.
@@ -89,7 +89,7 @@ Lo script fa `kubectl delete job myteam-platform-migrate --ignore-not-found` seg
 
 ### INFRA-R2-06 — vecchio traffico/API può restare attivo durante le migrazioni
 
-**Gravità: P2 — condizione di compatibilità da verificare a ogni release.**  
+**Gravità: P2 — condizione di compatibilità da verificare a ogni release.**
 **Tipo:** comportamento derivato dall'ordine risorse; impatto di una migrazione incompatibile non testato. **Owner:** Core + Infra.
 
 La sequenza esegue bootstrap, migrazione DB, poi aggiorna Deployment API/Web e applica il nuovo routing. Se il cluster ha già una HTTPRoute, essa non viene rimossa prima della migrazione e i vecchi pod possono continuare a servire richieste mentre lo schema evolve. La separazione degli stadi garantisce che le nuove app non vengano applicate prima del Job, ma non crea una finestra senza traffico e non impone migrazioni expand/contract retrocompatibili.
@@ -98,7 +98,7 @@ La sequenza esegue bootstrap, migrazione DB, poi aggiorna Deployment API/Web e a
 
 ### INFRA-R2-07 — egress HTTPS API ampio
 
-**Gravità: P2 — rischio residuo dichiarato, non mitigazione implementata.**  
+**Gravità: P2 — rischio residuo dichiarato, non mitigazione implementata.**
 **Tipo:** configurazione verificata; enforcement del CNI non eseguito. **Owner:** Infra/Security.
 
 La NetworkPolicy consente al pod API egress TCP 443 verso `0.0.0.0/0`; DNS è consentito. Ciò permette HTTPS verso qualsiasi IPv4, non soltanto Logto. La documentazione riconosce il limite delle NetworkPolicy standard senza filtri FQDN e la natura dinamica/Anycast del provider; i security context riducono l'impatto ma non restringono le destinazioni. Non è stato verificato che il CNI del cluster applichi effettivamente le policy.
@@ -107,7 +107,7 @@ La NetworkPolicy consente al pod API egress TCP 443 verso `0.0.0.0/0`; DNS è co
 
 ### INFRA-R2-08 — restore solo logicamente isolato e non provato
 
-**Gravità: P2 — gap di disaster recovery; non blocca da solo il packaging.**  
+**Gravità: P2 — gap di disaster recovery; non blocca da solo il packaging.**
 **Tipo:** limite documentale/di verifica, nessuna restore prova. **Owner:** Infra/Operations.
 
 Il runbook vieta correttamente restore distruttivi in-place e descrive il ripristino in un database separato `myteam_restore_test`. L'esempio crea quel database nello stesso StatefulSet/istanza PostgreSQL staging: è isolamento logico dal DB attivo, non isolamento di host/volume/failure domain. Non è definita o testata la provenienza di `backup.dump`; nessun backup automatico è dichiarato, coerentemente con il vincolo di non aggiungere backup pesanti.
