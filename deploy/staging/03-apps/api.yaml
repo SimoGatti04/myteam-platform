@@ -84,16 +84,16 @@ spec:
               port: http
             periodSeconds: 15
             failureThreshold: 3
-          # Readiness Probe:
-          # NOTA INTEGRATION CORE (branch core/readiness-r1):
-          # L'endpoint /ready (che verifica connettività PostgreSQL e schema pronto) è in fase di implementazione
-          # sul branch 'core/readiness-r1'. Fino a quando tale modifica non sarà integrata nel candidato release,
-          # la readiness probe utilizza temporaneamente /health per garantire avviabilità; una volta integrato core/readiness-r1,
-          # il path va commutato a /ready come predisposto sotto.
+          # Readiness Probe (INFRA-R2-01 & CORE READINESS R2 coordination):
+          # L'endpoint /ready è implementato sul branch 'core/readiness-r1' con probe PostgreSQL
+          # e timeout interno configurato a DEFAULT_READINESS_TIMEOUT_MS=2000 (2 secondi).
+          # Il probe Kubernetes è allineato coerentemente con timeoutSeconds: 2, periodSeconds: 5, failureThreshold: 3.
+          # Nota di rilascio: Il container dell'immagine API nel candidato integrato (I4) deve includere /ready.
           readinessProbe:
             httpGet:
               path: /ready
               port: http
+            timeoutSeconds: 2
             periodSeconds: 5
             failureThreshold: 3
           resources:

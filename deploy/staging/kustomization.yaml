@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-# Aggregatore complessivo di riferimento (per rendering e validazione schema statica)
-resources:
-  - 01-bootstrap
-  - 02-migration
-  - 03-apps
-  - 04-routing

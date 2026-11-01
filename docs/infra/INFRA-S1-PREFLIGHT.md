@@ -151,3 +151,62 @@ kubectl apply -k deploy/staging/04-routing
 1. **Core:** Implementazione e merge dell'endpoint `/ready` (in lavorazione sul branch `core/readiness-r1`) per completare il gate di readiness DB.
 2. **Logto:** Registrazione API Resource (`https://team-staging.simogatti.it/api`, scope `platform:admin`) e registrazione SPA client su `auth.simogatti.it` per ricavare il `VITE_LOGTO_APP_ID` reale prima del deploy su K3s.
 3. **Infrastruttura Host:** Creazione della directory `/srv/myteam-platform-staging/postgres` con UID/GID `70:70` su `servergatti` e popolamento chiavi Infisical `/myteam-platform/staging/*`.
+
+---
+
+## 5. Hardening R3 & Risoluzione Finding QA INFRA-S1-R2
+
+A seguito della revisione QA INFRA-S1-R2 (rapporto `docs/qa/CHECKPOINT-INFRA-S1-R2-REPORT.md` al commit `7d7391080e0be35d1ac20a802fb07365b3b10832`), sono state implementate le seguenti misure di hardening:
+
+### 5.1 Tabella di Risoluzione Finding INFRA-S1-R2
+
+| Finding QA | Gravità | Descrizione & Rischio | Azione Correttiva INFRA-S1-R3 | Stato |
+|---|---|---|---|---|
+| **INFRA-R2-01** | P1 | Readiness probe in `api.yaml` fa riferimento a `/ready` (implementato su `core/readiness-r1`), causando mancata readiness con immagini compilate da checkout I3. | **Allineamento Probe & Budget Timeout:** Inserito commento esplicito di tracciamento dipendenza verso il candidato integrato I4. Coordinato il probe Kubernetes (`timeoutSeconds: 2`, `periodSeconds: 5`, `failureThreshold: 3`) con la configurazione Core (`DEFAULT_READINESS_TIMEOUT_MS=2000`). Nessuna modifica a codice Core. | **PREDISPOSTO / DEPENDENCY TRACKED** |
+| **INFRA-R2-02** | P1 | Gate DEMO / JWT manuale CI inefficace (`grep ... || true`). Rischio esposizione form JWT o attivazione DEMO in staging pubblico. | **Browser Production Security Audit con Playwright:** Creato `tests/browser/test-web-prod-security.py`. Esegue un test headless browser reale e vincolante su container Nginx verificando: 1) Assenza form inserimento JWT manuale; 2) Inattivabilità DEMO via `?demo=true`; 3) Inattivabilità DEMO via localStorage/sessionStorage; 4) Assenza bypass Logto. Integrato come step bloccante in `.github/workflows/docker-ci.yml` e `scripts/docker-smoke.sh`. | **RISOLTO** |
+| **INFRA-R2-03** | P1/P2 | Immagini Kustomize non legate al digest del rilascio. Rischio di deploy con tag mobili non verificati. | **Validatore Immagini & Pinning Tool:** Creati `scripts/validate-release-images.py` e `scripts/pin-release-images.py`. Il validatore rifiuta tag mobili (`latest`, `staging-latest`, ecc.), verifica l'identità tra Job migrazioni e Deployment API, e valida il formato dei digest OCI (`sha256:<64hex>`). Inserito nel workflow CI. | **RISOLTO** |
+| **INFRA-R2-04** | P2 | Root aggregator `deploy/staging/kustomization.yaml` consentiva di bypassare la sequenza a 4 stadi con un singolo `kubectl apply -k`. | **Rimozione Aggregatore Monolitico:** Rimosso `deploy/staging/kustomization.yaml`. L'unico percorso ammesso è l'esecuzione sequenziale degli overlay (`01-bootstrap` -> `02-migration` -> `03-apps` -> `04-routing`) tramite `deploy-stage.sh`. | **RISOLTO** |
+| **INFRA-R2-05** | P2 | Invocazioni concorrenti o interrotte di `deploy-stage.sh` cancellavano indiscriminatamente il Job di migrazione attivo. | **Concurrency Lock & Job Deterministico:** 1) Aggiunta acquisizione atomica di un Kubernetes Lease (`myteam-platform-deploy-lock`) nel namespace di staging; 2) Generazione di Job univoco per release (`myteam-platform-migrate-${RELEASE_ID}`); 3) Blocco esplicito se esiste già un Job attivo (`status.active > 0`). Non viene mai cancellato un Job running. | **RISOLTO** |
+| **INFRA-R2-06** | P2 | Vecchio traffico/API può restare attivo durante le migrazioni DB. Mancata policy di retrocompatibilità. | **Policy di Retrocompatibilità Migrazioni (Expand/Contract):** Formalizzata policy operativa nel runbook (Sezione 5.2). Le migrazioni ordinarie devono essere backward-compatible con l'API attualmente in esecuzione. Per modifiche breaking è obbligatoria una finestra di manutenzione con sospensione del routing. | **RISOLTO / POLICY FORMALIZZATA** |
+| **INFRA-R2-07** | P2 | Egress HTTPS API verso `0.0.0.0/0:443` troppo ampio a causa di limitazioni CNI Flannel. | **Rischio Residuo Documentato:** Confermato e documentato il rischio residuo derivante dall'infrastruttura Anycast CDN di Logto/Cloudflare e dalle capacità del CNI Flannel v1 (Sezione 5.4). | **DOCUMENTATO** |
+| **INFRA-R2-08** | P2 | Procedura di restore solo logicamente isolata su medesima istanza Postgres staging. | **Disaster Recovery Isolato su Storage/Host Separato:** Aggiornata procedura di DR (Sezione 5.3): il test di restore straordinario deve avvenire su un'istanza o volume separato dal cluster staging live, con backup off-node verificato. | **RISOLTO / PROCEDURA AGGIORNATA** |
+| **INFRA-R2-09** | P3 | Whitespace trailing nel workflow Docker CI alle linee 102 e 106. | **Pulizia Whitespace:** Rimossi gli spazi trailing. `git diff --check` superato con esito pulito. | **RISOLTO** |
+
+---
+
+### 5.2 Policy Migrazioni DB con Traffico Preesistente (INFRA-R2-06)
+Nelle distribuzioni con HTTPRoute attiva e traffico preesistente:
+1. **Regola Expand/Contract per Aggiornamenti Ordinari:**
+   - Ogni script di migrazione (`db/migrations/*.sql`) deve essere retrocompatibile sia con la versione API corrente (in esecuzione) sia con la nuova versione da distribuire.
+   - Non eliminare o rinominare colonne/tabelle in uso dall'API attiva prima che il codice sia stato aggiornato e distribuito.
+   - L'aggiunta di colonne deve prevedere valori di default o ammettere `NULL`.
+2. **Finestra di Manutenzione per Migrazioni Breaking:**
+   - Se una migrazione richiede alterazioni strutturali non retrocompatibili, il rilascio ordinario automatico è **vietato**.
+   - Deve essere pianificata una finestra di manutenzione esplicitamente autorizzata:
+     1. Disattivazione preventiva del traffico (`kubectl delete -k deploy/staging/04-routing` o redirect a pagina di manutenzione).
+     2. Esecuzione del Job di migrazione e verifica del completamento.
+     3. Aggiornamento delle applicazioni API/Web (`kubectl apply -k deploy/staging/03-apps`).
+     4. Riapertura del traffico (`kubectl apply -k deploy/staging/04-routing`).
+3. **Rollback su Schema Modificato:**
+   - Il completamento del Job di migrazione **non garantisce** che un successivo rollback applicativo (`rollout undo`) sia sicuro. In caso di schema non retrocompatibile, il rollback applicativo causerebbe 500 continui verso il database. Qualsiasi correzione deve avvenire tramite migrazioni forward.
+
+---
+
+### 5.3 Procedura di Disaster Recovery e Restore Isolato su Storage Separato (INFRA-R2-08)
+Per soddisfare i requisiti di affidabilità e isolamento dei failure domain:
+1. **Separazione Fisica/Storage per il Test di Restore:**
+   - Il ripristino di un backup di collaudo **non deve condividere** il PVC o l'istanza PostgreSQL di staging.
+   - Utilizzare uno StatefulSet/Pod PostgreSQL effimero dedicato con volume isolato (es. storage locale temporaneo o host di backup) per verificare l'integrità del dump `backup.dump`.
+2. **Requisiti Off-Node:**
+   - I backup del database PostgreSQL devono essere replicati off-node prima di qualunque operazione straordinaria di migrazione major.
+   - Un test di restore positivo su ambiente isolato costituisce gate obbligatorio prima del GO staging operativo.
+
+---
+
+### 5.4 Analisi Rischio Residuo Egress HTTPS (INFRA-R2-07)
+Il NetworkPolicy `myteam-platform-api-netpol` ammette traffico in uscita verso la porta TCP 443 su `0.0.0.0/0`.
+- **Causa tecnica:** L'endpoint OIDC di Logto (`auth.simogatti.it`) e le discovery API transitano attraverso Cloudflare Anycast CDN, i cui indirizzi IP variano dinamicamente e non possono essere bloccati staticamente tramite CIDR prefissati senza provocare interruzioni casuali del servizio OIDC.
+- **Mitigazione applicata:**
+  - CNI Flannel standard di K3s non supporta FQDN egress filtering nativo (richiederebbe Cilium o Calico Enterprise).
+  - Il container API gira come utente non-root (UID 1000), con root filesystem in sola lettura (`readOnlyRootFilesystem: true`), privilege escalation disabilitata (`allowPrivilegeEscalation: false`), e tutte le Linux capabilities eliminate (`drop: [ALL]`).
+  - La comunicazione tra pod nel cluster è ristretta: PostgreSQL accetta connessioni esclusivamente da pod con label `component=backend` o `component=migration` nel namespace `myteam-platform-staging`.

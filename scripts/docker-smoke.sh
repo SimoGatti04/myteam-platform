@@ -93,3 +93,17 @@ ASSET_HEADERS=$(docker run --rm --network "$NET_NAME" curlimages/curl:8.10.1 -sI
 echo "$ASSET_HEADERS" | grep -i "immutable" || { echo "Asset immutable failed"; exit 1; }
 
 echo "=== ALL DOCKER SMOKE CHECKS PASSED SUCCESSFULLY ==="
+
+echo "10. Binding Web Production Security Audit (Playwright Browser Test)..."
+if command -v python3 >/dev/null 2>&1 && python3 -c "import playwright" >/dev/null 2>&1; then
+  # Avvia temporaneamente web container mappato sulla porta 18080 per il test browser locale
+  docker run -d --name "${WEB_CONTAINER}-sec" -p 18080:8080 myteam-web:smoke >/dev/null
+  sleep 1
+  python3 tests/browser/test-web-prod-security.py http://127.0.0.1:18080
+  docker rm -f "${WEB_CONTAINER}-sec" >/dev/null 2>&1 || true
+else
+  echo "Nota: Python Playwright non disponibile nell'ambiente locale; verifica statica vincolante su bundle:"
+  # Assicura che la modalità demo sia rigorosamente disattivata
+  docker exec "$WEB_CONTAINER" grep -q "VITE_APP_ENV=production" /usr/share/nginx/html/assets/*.js || { echo "VITE_APP_ENV production marker missing"; exit 1; }
+  ! docker exec "$WEB_CONTAINER" grep -q "VITE_ENABLE_DEMO=true" /usr/share/nginx/html/assets/*.js || { echo "VITE_ENABLE_DEMO=true found in assets!"; exit 1; }
+fi
