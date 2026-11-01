@@ -2990,6 +2990,9 @@ struct ContentView:
                         onSubstituteOut: { player in
                             outgoingSubstitution = OutgoingSubstitutionRequest(outPlayerID: player.id)
                         },
+                        onBenchEntry: { player in
+                            handleBenchPlayerEntry(player.id)
+                        },
                         onQuickSubstitute: { outPlayer, inPlayer in
                             performManualSubstitution(outID: outPlayer.id, inID: inPlayer.id)
                         },

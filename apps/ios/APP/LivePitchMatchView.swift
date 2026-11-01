@@ -36,6 +36,7 @@ struct InteractiveFutsalPitchSection: View {
 
     let onGoal: (MatchPlayer) -> Void
     let onSubstituteOut: (MatchPlayer) -> Void
+    let onBenchEntry: (MatchPlayer) -> Void
     let onQuickSubstitute: (MatchPlayer, MatchPlayer) -> Void // (out, in)
     let onToggleSuperpower: (MatchPlayer) -> Void
 
@@ -210,8 +211,7 @@ struct InteractiveFutsalPitchSection: View {
     private func benchPlayerContextMenu(player: MatchPlayer) -> some View {
         if fieldPlayers.count < maxPlayersOnField {
             Button {
-                // Direct enter if vacancy
-                onSubstituteOut(player) // Will be handled
+                onBenchEntry(player)
             } label: {
                 Label("Entra in campo", systemImage: "arrow.uturn.up")
             }

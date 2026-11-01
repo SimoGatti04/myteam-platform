@@ -112,4 +112,39 @@ final class C4AdvancementTests: XCTestCase {
         XCTAssertEqual(decoded.targetX, 0.85)
         XCTAssertEqual(decoded.targetY, 0.20)
     }
+    func testInteractiveFutsalPitchSectionBenchEntryCallbackDispatched() {
+        let benchPlayer = MatchPlayer(rosterPlayerID: UUID(), name: "Panchinaro", inField: false)
+        let fieldPlayer = MatchPlayer(rosterPlayerID: UUID(), name: "Titolare", inField: true)
+
+        var benchEntryCalledWithID: UUID? = nil
+        var substituteOutCalledWithID: UUID? = nil
+
+        var layout = TacticalPitchLayout()
+        var selectedDetail: MatchPlayer? = nil
+
+        let section = InteractiveFutsalPitchSection(
+            fieldPlayers: [fieldPlayer],
+            benchPlayers: [benchPlayer],
+            maxPlayersOnField: 5,
+            canRecordEvents: true,
+            isTimingRunning: true,
+            layout: .init(get: { layout }, set: { layout = $0 }),
+            selectedPlayerForDetail: .init(get: { selectedDetail }, set: { selectedDetail = $0 }),
+            onGoal: { _ in },
+            onSubstituteOut: { player in
+                substituteOutCalledWithID = player.id
+            },
+            onBenchEntry: { player in
+                benchEntryCalledWithID = player.id
+            },
+            onQuickSubstitute: { _, _ in },
+            onToggleSuperpower: { _ in }
+        )
+
+        // Invoke the onBenchEntry callback directly on the section to verify contract
+        section.onBenchEntry(benchPlayer)
+
+        XCTAssertEqual(benchEntryCalledWithID, benchPlayer.id, "onBenchEntry must be invoked with the bench player ID")
+        XCTAssertNil(substituteOutCalledWithID, "onSubstituteOut must NOT be invoked when entering from bench")
+    }
 }

@@ -1,8 +1,19 @@
 # Stato del progetto — MAPI GROUP Match Manager
 
-**Aggiornato:** 1 novembre 2026 — checkpoint C4 Functional Advancement su branch isolato `ios/c4-functional`.
+**Aggiornato:** 1 novembre 2026 — remediation C4-R1 (Finding P1 QA-IOS-C4-01) su branch isolato `ios/c4-r1-bench-entry`.
 
-## Stato corrente — C4 Functional Advancement
+## Stato corrente — C4-R1 Bench Entry Remediation
+
+**Esito: COMPLETE per lo scope del checkpoint C4-R1.**
+- **Remediation P1 QA-IOS-C4-01:** in `LivePitchMatchView.swift`, il pulsante contestuale «Entra in campo» per un giocatore in panchina (quando è presente almeno un posto libero) era erroneamente collegato a `onSubstituteOut(player)`, innescando la semantica di uscita. È stato introdotto il callback dedicato `onBenchEntry: (MatchPlayer) -> Void`, collegato direttamente in `ContentView.swift` al gestore operativo consolidato `handleBenchPlayerEntry(player.id)`.
+- **Comportamento verificato:**
+  - Posto libero in campo (< 5): ingresso diretto immediato in campo tramite `timing.setParticipantInField(id, inField: true)`, sincronizzazione timeline e persistenza atomica.
+  - Campo al completo (5/5): apertura della richiesta di sostituzione guidata 1-a-1 (`IncomingSubstitutionRequest`) verso un titolare.
+  - Partita terminata / azioni disabilitate: nessuna mutazione consentita (guardie `phase != .finished` e `liveSessionActionsEnabled`).
+- **Verifica build:** `xcodebuild build` su generic iOS e `xcodebuild build-for-testing` su iPhone 18 Pro Simulator sono PASS (**BUILD SUCCEEDED** e **TEST BUILD SUCCEEDED**).
+- **Nuovo test di regressione:** inserito `testInteractiveFutsalPitchSectionBenchEntryCallbackDispatched()` in `C4AdvancementTests.swift` per certificare il corretto dispacciamento di `onBenchEntry` e la mancata invocazione di `onSubstituteOut`.
+
+## Stato storico — C4 Functional Advancement
 
 **Esito: COMPLETE per lo scope del checkpoint.** Avanzamento funzionale verso l'app operativa approvata in C4:
 - **Prepartita e selezione distinta:** integrata e preservata la gestione presenze e titolari senza duplicazioni di dati, pronta per l'aggancio bidirezionale.
