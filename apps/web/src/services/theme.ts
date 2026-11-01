@@ -27,7 +27,7 @@ export const NEUTRAL_THEME: ThemeTokens = {
   isNeutralDefault: true,
 };
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const clean = hex.replace('#', '');
   if (clean.length !== 6 && clean.length !== 3) return null;
   const normalized = clean.length === 3
@@ -42,19 +42,24 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   };
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
+export function isValidHexColor(hex: string | null | undefined): boolean {
+  if (!hex) return false;
+  return /^#[0-9A-Fa-f]{6}$/.test(hex.trim());
+}
+
+export function rgbToHex(r: number, g: number, b: number): string {
   const clamp = (val: number) => Math.max(0, Math.min(255, Math.round(val)));
   return '#' + [clamp(r), clamp(g), clamp(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-function getContrastYIQ(hex: string): string {
+export function getContrastYIQ(hex: string): string {
   const rgb = hexToRgb(hex);
   if (!rgb) return '#ffffff';
   const yiq = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
   return yiq >= 140 ? '#0f172a' : '#ffffff';
 }
 
-function adjustBrightness(hex: string, percent: number): string {
+export function adjustBrightness(hex: string, percent: number): string {
   const rgb = hexToRgb(hex);
   if (!rgb) return hex;
   const factor = 1 + percent / 100;

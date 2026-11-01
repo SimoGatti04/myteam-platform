@@ -1,5 +1,32 @@
 # Stato — myteam-platform
 
+## Web — W3: MVP Functional Advancement (1 novembre 2026)
+
+- **Branch / Worktree:** `web/w3-mvp-functional` (originato da `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`).
+- **Obiettivo raggiunto:** Avanzamento funzionale completo del sito pubblico, della PWA e dell'amministrazione sulle API Core C1.1/C1.2 esistenti, senza persistenze fittizie o alterazioni di contratti.
+- **Interventi completati:**
+  1. **Branding e Dynamic Theming (Mode A approvata):**
+     - Scelta cromatica libera con validazione HEX rigorosa `#RRGGBB`.
+     - Calcolo armoniato di contrasti e token derivati (`surface`, `border`, `textOnPrimary`) e anteprima componenti live.
+     - Interfaccia di fine-tuning dei singoli token derivati con ripristino valori armonici predefiniti.
+     - Checklist/wizard passo-passo guidato in Panoramica e Impostazioni.
+  2. **Completamento UX Amministrativa:**
+     - Aggiunta gestione **Competizioni** (`GET/POST /api/v1/admin/competitions`) in Partite.
+     - Aggiunta modifica e rinvio programmazione gara (`PATCH /api/v1/admin/matches/:id/schedule`) con finestra modal dedicata per data/ora, stato gara (`scheduled`, `to_be_scheduled`, `postponed`, `cancelled`, `completed`) e motivazione.
+     - Gestione tabelle touch/mobile friendly con container `.table-responsive`.
+  3. **PWA Completa & Installabilità:**
+     - Web App Manifest conforme (`apps/web/public/manifest.json`) con icone maskable, `id`, `scope` e modalità standalone.
+     - Service Worker (`apps/web/public/sw.js`) per cache shell e gestione offline (esclusione esplicita di chiamate `/api/`).
+     - Banner e supporto all'evento nativo d'installazione in Home e AppContext.
+  4. **Stati applicativi e robustezza:**
+     - Gestione accurata di stati vuoti, caricamento, errori HTTP e dati parziali sia in modalità DEMO che REALE (Logto OIDC / Bearer JWT).
+  5. **Test & Build:**
+     - 10 test suite su `@myteam/web` tutte superate (120 test passati, 0 errori).
+     - Build Vite/TypeScript superata senza errori di compilazione o typecheck.
+- **Dipendenze Core aperte:**
+  - Nessuna persistenza locale fittizia introdotta per tabellini o eventi live: si attende il contratto C2 per le API di referto/marcatori.
+
+
 **Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 (`162cd2c`) pubblicato su `origin/codex/integration-i2-candidate`. Candidato I3 incorpora Security Q3-R1 (`0fb810c`) su `codex/integration-i3-candidate`. Nessun merge su `main`.
 
 ## Integrations — CSI-S1 (31 ottobre 2026)

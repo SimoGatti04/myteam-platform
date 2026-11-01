@@ -46,12 +46,11 @@ export const AdminRosaView: React.FC<{
   // End Membership Dialog State
   const [endingMembership, setEndingMembership] = useState<RosterMembershipDto | null>(null);
   const [endDateInput, setEndDateInput] = useState<string>('');
-  const [endReasonInput, setEndReasonInput] = useState<string>('');
   const [endingSubmitting, setEndingSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     loadData();
-  }, [isDemoData]);
+  }, [isDemoData, adminTeam?.currentSeasonId]);
 
   useEffect(() => {
     if (openNewPlayerModal) {
@@ -61,67 +60,59 @@ export const AdminRosaView: React.FC<{
 
   const loadData = async (preserveStatus = false) => {
     setLoading(true);
-    if (!preserveStatus) setStatusMsg(null);
+    if (!preserveStatus) {
+      setStatusMsg(null);
+    }
 
     if (isDemoData) {
       const demoSeasons = apiService.getDemoSeasons();
       const demoPlayers = apiService.getDemoPlayers();
-      const currentSeason = demoSeasons.find(s => s.id === adminTeam?.currentSeasonId) || demoSeasons[0];
-      const initialSeasonId = currentSeason ? currentSeason.id : '';
+      const currentSId = adminTeam?.currentSeasonId || demoSeasons[0]?.id || '';
+      const demoMemberships = apiService.getDemoRosterMemberships(currentSId);
 
       setSeasons(demoSeasons);
+      setSelectedSeasonId(currentSId);
+      setModalSeasonId(currentSId);
+      setPlayers(demoPlayers);
+      setMemberships(demoMemberships);
+    } else {
+      // 1. Carica stagioni registrate
+      const seasonsRes = await apiService.getAdminSeasons();
+      let loadedSeasons: SeasonDto[] = [];
+      if (seasonsRes.success) {
+        loadedSeasons = seasonsRes.data;
+        setSeasons(loadedSeasons);
+      } else {
+        setSeasons([]);
+      }
+
+      // Imposta stagione selezionata iniziale: currentSeason della squadra o prima disponibile
+      const initialSeasonId = adminTeam?.currentSeasonId || (loadedSeasons.length > 0 ? loadedSeasons[0]!.id : '');
       setSelectedSeasonId(initialSeasonId);
       setModalSeasonId(initialSeasonId);
-      setPlayers(demoPlayers);
-      setMemberships(apiService.getDemoRosterMemberships(initialSeasonId));
-      setLoading(false);
-      return;
+
+      // 2. Carica anagrafica giocatori registrati
+      const playersRes = await apiService.getAdminPlayers();
+      if (playersRes.success) {
+        setPlayers(playersRes.data);
+      } else {
+        setPlayers([]);
+      }
+
+      // 3. Carica appartenenze della stagione corrente (o tutte se non impostata)
+      await loadMembershipsForSeason(initialSeasonId || undefined);
     }
 
-    // Modalità REALE: Letture C1.1
-    const [seasonsRes, playersRes] = await Promise.all([
-      apiService.getAdminSeasons(),
-      apiService.getAdminPlayers(),
-    ]);
-
-    if (!seasonsRes.success) {
-      setStatusMsg({
-        type: 'error',
-        text: `Errore caricamento stagioni (${seasonsRes.status}): ${seasonsRes.message}`,
-      });
-      setLoading(false);
-      return;
-    }
-
-    if (!playersRes.success) {
-      setStatusMsg({
-        type: 'error',
-        text: `Errore caricamento anagrafiche giocatori (${playersRes.status}): ${playersRes.message}`,
-      });
-      setLoading(false);
-      return;
-    }
-
-    const loadedSeasons = seasonsRes.data;
-    const loadedPlayers = playersRes.data;
-    setSeasons(loadedSeasons);
-    setPlayers(loadedPlayers);
-
-    // Determina la stagione iniziale (quella corrente o la prima disponibile)
-    const initialSeason = loadedSeasons.find(s => s.id === adminTeam?.currentSeasonId) || loadedSeasons[0];
-    const initialSid = initialSeason ? initialSeason.id : '';
-    setSelectedSeasonId(initialSid);
-    setModalSeasonId(initialSid);
-
-    await loadMembershipsForSeason(initialSid);
     setLoading(false);
   };
 
   const loadMembershipsForSeason = async (seasonId?: string) => {
     if (isDemoData) {
-      setMemberships(apiService.getDemoRosterMemberships(seasonId || undefined));
+      const demo = apiService.getDemoRosterMemberships(seasonId);
+      setMemberships(demo);
       return;
     }
+
     const memRes = await apiService.getAdminRosterMemberships(seasonId ? { seasonId } : undefined);
     if (memRes.success) {
       setMemberships(memRes.data);
@@ -141,14 +132,13 @@ export const AdminRosaView: React.FC<{
 
   const openModal = () => {
     setIsModalOpen(true);
+    setStatusMsg(null);
     setNewDisplayName('');
     setNewJerseyNumber('');
-    const sId = selectedSeasonId || (seasons[0] ? seasons[0].id : '');
-    setModalSeasonId(sId);
 
-    // Imposta activeFrom in modo coerente con l'intervallo della stagione selezionata
-    const targetSeason = seasons.find(s => s.id === sId) || seasons[0];
+    const targetSeason = seasons.find(s => s.id === modalSeasonId) || seasons[0];
     if (targetSeason) {
+      setModalSeasonId(targetSeason.id);
       const today = new Date().toISOString().split('T')[0]!;
       if (today >= targetSeason.startsOn && today <= targetSeason.endsOn) {
         setActiveFromDate(today);
@@ -188,41 +178,55 @@ export const AdminRosaView: React.FC<{
       return;
     }
 
-    const targetSeason = seasons.find(s => s.id === modalSeasonId);
-    if (targetSeason) {
-      if (activeFromDate < targetSeason.startsOn || activeFromDate > targetSeason.endsOn) {
-        setStatusMsg({
-          type: 'error',
-          text: `La data di inizio (${activeFromDate}) deve ricadere nell'intervallo della stagione (${targetSeason.startsOn} - ${targetSeason.endsOn}).`,
-        });
-        return;
-      }
+    if (!activeFromDate) {
+      setStatusMsg({ type: 'error', text: 'La data di inizio tesseramento (activeFrom) è obbligatoria.' });
+      return;
+    }
+
+    const jerseyNum = newJerseyNumber.trim() ? parseInt(newJerseyNumber.trim(), 10) : null;
+    if (jerseyNum !== null && (isNaN(jerseyNum) || jerseyNum < 0 || jerseyNum > 99)) {
+      setStatusMsg({ type: 'error', text: 'Il numero di maglia deve essere compreso tra 0 e 99.' });
+      return;
     }
 
     setSubmitting(true);
     setStatusMsg(null);
 
-    const parsedJerseyNumber = newJerseyNumber ? parseInt(newJerseyNumber, 10) : null;
+    let targetPlayerId = selectedPlayerId;
+    let targetDisplayName = '';
+
+    if (playerMode === 'new') {
+      const trimmedName = newDisplayName.trim();
+      if (!trimmedName) {
+        setSubmitting(false);
+        setStatusMsg({ type: 'error', text: 'Inserisci il nome del nuovo giocatore.' });
+        return;
+      }
+      targetDisplayName = trimmedName;
+    } else {
+      if (!targetPlayerId) {
+        setSubmitting(false);
+        setStatusMsg({ type: 'error', text: 'Seleziona un giocatore registrato in anagrafica.' });
+        return;
+      }
+      const existing = players.find(p => p.id === targetPlayerId);
+      targetDisplayName = existing?.displayName || 'Giocatore';
+    }
 
     if (isDemoData) {
-      let playerId = selectedPlayerId;
-      let displayName = '';
-
+      // Demo mock locale
       if (playerMode === 'new') {
-        playerId = `demo-pl-${Date.now()}`;
-        displayName = newDisplayName.trim() || 'Nuovo Giocatore';
-        const newPl: PlayerDto = { id: playerId, displayName };
-        setPlayers(prev => [newPl, ...prev]);
-      } else {
-        const found = players.find(p => p.id === selectedPlayerId);
-        displayName = found ? found.displayName : 'Giocatore';
+        const mockPlayerId = `demo-player-${Date.now()}`;
+        const newP: PlayerDto = { id: mockPlayerId, displayName: targetDisplayName };
+        setPlayers(prev => [newP, ...prev]);
+        targetPlayerId = mockPlayerId;
       }
 
       const newMem: RosterMembershipDto = {
-        id: `demo-rm-${Date.now()}`,
-        playerId,
+        id: `demo-mem-${Date.now()}`,
+        playerId: targetPlayerId,
         seasonId: modalSeasonId,
-        jerseyNumber: parsedJerseyNumber,
+        jerseyNumber: jerseyNum,
         activeFrom: activeFromDate,
         activeUntil: null,
       };
@@ -233,24 +237,15 @@ export const AdminRosaView: React.FC<{
       if (onCloseNewPlayerModal) onCloseNewPlayerModal();
       setStatusMsg({
         type: 'success',
-        text: `Tesseramento DEMO registrato per ${displayName}.`,
+        text: `Giocatore "${targetDisplayName}" tesserato con successo nella rosa (DEMO).`,
       });
       return;
     }
 
-    // Modalità REALE
-    let targetPlayerId = selectedPlayerId;
-    let targetDisplayName = '';
-
+    // Modalità REALE: se playerMode === 'new', chiama POST /api/v1/admin/players
     if (playerMode === 'new') {
-      if (!newDisplayName.trim()) {
-        setStatusMsg({ type: 'error', text: 'Inserisci il nome del nuovo giocatore.' });
-        setSubmitting(false);
-        return;
-      }
-
       const createPlayerRes = await apiService.createPlayer({
-        displayName: newDisplayName.trim(),
+        displayName: targetDisplayName,
       });
 
       if (!createPlayerRes.success) {
@@ -265,38 +260,38 @@ export const AdminRosaView: React.FC<{
       targetPlayerId = createPlayerRes.data.id;
       targetDisplayName = createPlayerRes.data.displayName;
       setPlayers(prev => [createPlayerRes.data, ...prev]);
-    } else {
-      const p = players.find(x => x.id === selectedPlayerId);
-      targetDisplayName = p ? p.displayName : 'Giocatore';
     }
 
-    const memRes = await apiService.createRosterMembership({
+    // Crea appartenenza con POST /api/v1/admin/roster-memberships
+    const membershipRes = await apiService.createRosterMembership({
       playerId: targetPlayerId,
       seasonId: modalSeasonId,
-      jerseyNumber: parsedJerseyNumber,
+      jerseyNumber: jerseyNum,
       activeFrom: activeFromDate,
-      activeUntil: null,
     });
 
     setSubmitting(false);
 
-    if (!memRes.success) {
+    if (membershipRes.success) {
+      setIsModalOpen(false);
+      if (onCloseNewPlayerModal) onCloseNewPlayerModal();
+      setStatusMsg({
+        type: 'success',
+        text: `Giocatore "${targetDisplayName}" tesserato con successo nella rosa per la stagione selezionata!`,
+      });
+      await loadMembershipsForSeason(selectedSeasonId || undefined);
+    } else {
       setStatusMsg({
         type: 'error',
-        text: `Errore registrazione tesseramento (${memRes.status}): ${memRes.message}`,
+        text: `Errore creazione tesseramento (${membershipRes.status}): ${membershipRes.message}`,
       });
-      return;
     }
+  };
 
-    setIsModalOpen(false);
-    if (onCloseNewPlayerModal) onCloseNewPlayerModal();
-    setStatusMsg({
-      type: 'success',
-      text: `Tesseramento registrato con successo per ${targetDisplayName} (${memRes.data.activeFrom}).`,
-    });
-
-    // Ricarica appartenenze
-    await loadMembershipsForSeason(selectedSeasonId || undefined);
+  const openEndMembershipDialog = (membership: RosterMembershipDto) => {
+    setEndingMembership(membership);
+    const today = new Date().toISOString().split('T')[0]!;
+    setEndDateInput(today);
   };
 
   const handleEndMembershipSubmit = async (e: React.FormEvent) => {
@@ -307,109 +302,82 @@ export const AdminRosaView: React.FC<{
     setStatusMsg(null);
 
     if (isDemoData) {
-      setMemberships(prev =>
-        prev.map(m => (m.id === endingMembership.id ? { ...m, activeUntil: endDateInput } : m))
-      );
+      setMemberships(prev => prev.map(m => {
+        if (m.id === endingMembership.id) {
+          return { ...m, activeUntil: endDateInput };
+        }
+        return m;
+      }));
       setEndingSubmitting(false);
       setEndingMembership(null);
       setStatusMsg({
         type: 'success',
-        text: 'Tesseramento terminato nell\'anteprima DEMO.',
+        text: 'Tesseramento concluso con successo (DEMO).',
       });
       return;
     }
 
+    // Chiamata REALE: POST /api/v1/admin/roster-memberships/:id/end
     const res = await apiService.endRosterMembership(endingMembership.id, {
       activeUntil: endDateInput,
-      reason: endReasonInput.trim() || undefined,
     });
 
     setEndingSubmitting(false);
-    setEndingMembership(null);
 
-    if (!res.success) {
+    if (res.success) {
+      setEndingMembership(null);
+      setStatusMsg({
+        type: 'success',
+        text: 'Tesseramento concluso con successo nel database Core!',
+      });
+      await loadMembershipsForSeason(selectedSeasonId || undefined);
+    } else {
       setStatusMsg({
         type: 'error',
-        text: `Errore chiusura tesseramento (${res.status}): ${res.message}`,
+        text: `Errore conclusione tesseramento (${res.status}): ${res.message}`,
       });
-      return;
     }
-
-    setStatusMsg({
-      type: 'success',
-      text: `Tesseramento concluso con data ${res.data.activeUntil}.`,
-    });
-
-    await loadMembershipsForSeason(selectedSeasonId || undefined);
   };
 
-  const openEndMembershipDialog = (mem: RosterMembershipDto) => {
-    setEndingMembership(mem);
-    const targetSeason = seasons.find(s => s.id === mem.seasonId);
-    const today = new Date().toISOString().split('T')[0]!;
-    if (targetSeason && today > targetSeason.endsOn) {
-      setEndDateInput(targetSeason.endsOn);
-    } else if (today < mem.activeFrom) {
-      setEndDateInput(mem.activeFrom);
-    } else {
-      setEndDateInput(today);
-    }
-    setEndReasonInput('');
-  };
-
-  // Mappa di supporto per i nomi giocatori
+  // Mappa giocatori e stagioni per visualizzazione immediata
   const playerNameMap = new Map<string, string>();
   for (const p of players) {
     playerNameMap.set(p.id, p.displayName);
   }
 
-  // Mappa di supporto per le stagioni
   const seasonMap = new Map<string, SeasonDto>();
   for (const s of seasons) {
     seasonMap.set(s.id, s);
   }
 
-  // Filtro memberships
   const filteredMemberships = memberships.filter(m => {
     if (membershipFilter === 'active') return m.activeUntil === null;
     if (membershipFilter === 'ended') return m.activeUntil !== null;
     return true;
   });
 
-  const selectedSeasonObj = seasons.find(s => s.id === modalSeasonId);
-
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Header Gestione Rosa */}
+
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>
-            Gestione Rosa & Tesseramenti
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>
+              Gestione Rosa & Tesseramenti
+            </h2>
+            {isDemoData && (
+              <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                DEMO MOCK
+              </span>
+            )}
+          </div>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Anagrafica identità giocatori, appartenenze storiche e tesseramenti per stagione (Core C1.1).
+            Anagrafica atleti, appartenenze stagionali, numeri di maglia e storico uscite
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => loadData()}
-            disabled={loading}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              color: 'var(--text-muted)',
-              border: '1px solid var(--border-subtle)',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Aggiorna
-          </button>
+        <div>
           <button
             onClick={openModal}
             style={{
@@ -419,7 +387,7 @@ export const AdminRosaView: React.FC<{
               color: '#0f172a',
               border: 'none',
               fontWeight: 700,
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -431,32 +399,56 @@ export const AdminRosaView: React.FC<{
         </div>
       </div>
 
-      {/* Sub Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+      {!isDemoData && (
+        <div style={{
+          backgroundColor: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          fontSize: '0.8rem',
+          color: 'var(--text-dim)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <Info size={16} color="var(--brand-secondary)" style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Integrazione Core C1.1:</strong> Gestione tesseramenti stagionali <code>GET /api/v1/admin/roster-memberships</code>, creazione atleti <code>POST /api/v1/admin/players</code> e conclusione tesseramento <code>POST .../end</code> con preservazione storico.
+          </span>
+        </div>
+      )}
+
+      {/* Sottosezioni Rosa (Appartenenze vs Anagrafica atleti) */}
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        borderBottom: '1px solid var(--border-subtle)',
+        paddingBottom: '8px',
+      }}>
         <button
           onClick={() => setActiveSubTab('appartenenze')}
           style={{
-            padding: '8px 16px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
+            padding: '6px 14px',
+            borderRadius: '6px',
+            fontSize: '0.82rem',
             fontWeight: activeSubTab === 'appartenenze' ? 700 : 500,
-            backgroundColor: activeSubTab === 'appartenenze' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-            color: activeSubTab === 'appartenenze' ? '#60a5fa' : 'var(--text-muted)',
-            border: activeSubTab === 'appartenenze' ? '1px solid rgba(59, 130, 246, 0.3)' : 'none',
+            backgroundColor: activeSubTab === 'appartenenze' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+            color: activeSubTab === 'appartenenze' ? '#ffffff' : 'var(--text-muted)',
+            border: 'none',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
           }}
         >
-          <Users size={16} /> Appartenenze Stagionali ({memberships.length})
+          <Users size={16} /> Rosa Stagionale & Tesseramenti ({memberships.length})
         </button>
         <button
           onClick={() => setActiveSubTab('anagrafiche')}
           style={{
-            padding: '8px 16px',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
+            padding: '6px 14px',
+            borderRadius: '6px',
+            fontSize: '0.82rem',
             fontWeight: activeSubTab === 'anagrafiche' ? 700 : 500,
             backgroundColor: activeSubTab === 'anagrafiche' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
             color: activeSubTab === 'anagrafiche' ? '#60a5fa' : 'var(--text-muted)',
@@ -541,13 +533,13 @@ export const AdminRosaView: React.FC<{
                     fontWeight: membershipFilter === tabKey ? 700 : 500,
                     backgroundColor: membershipFilter === tabKey ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
                     color: membershipFilter === tabKey ? '#ffffff' : 'var(--text-muted)',
-                    border: '1px solid var(--border-subtle)',
+                    border: 'none',
                     cursor: 'pointer',
                   }}
                 >
-                  {tabKey === 'all' && 'Tutti'}
-                  {tabKey === 'active' && 'Solo Attivi'}
-                  {tabKey === 'ended' && 'Conclusi'}
+                  {tabKey === 'all' && `Tutti (${memberships.length})`}
+                  {tabKey === 'active' && `Attivi (${memberships.filter(m => m.activeUntil === null).length})`}
+                  {tabKey === 'ended' && `Conclusi (${memberships.filter(m => m.activeUntil !== null).length})`}
                 </button>
               ))}
             </div>
@@ -555,8 +547,16 @@ export const AdminRosaView: React.FC<{
 
           {/* Tabella Tesseramenti */}
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-              Caricamento dati rosa e tesseramenti in corso...
+            <div style={{
+              backgroundColor: 'var(--bg-card)',
+              borderRadius: '16px',
+              border: '1px solid var(--border-subtle)',
+              padding: '40px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '0.9rem',
+            }}>
+              Caricamento tesseramenti della rosa...
             </div>
           ) : filteredMemberships.length > 0 ? (
             <div style={{
@@ -564,7 +564,7 @@ export const AdminRosaView: React.FC<{
               borderRadius: '16px',
               border: '1px solid var(--border-subtle)',
               overflow: 'hidden',
-            }}>
+            }} className="table-responsive">
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -594,7 +594,7 @@ export const AdminRosaView: React.FC<{
                           {seasonObj ? seasonObj.label : m.seasonId}
                         </td>
                         <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          Dal {m.activeFrom} {m.activeUntil ? `al ${m.activeUntil}` : '— a tempo indet.'}
+                          dal {m.activeFrom} {m.activeUntil ? `al ${m.activeUntil}` : '(in corso)'}
                         </td>
                         <td style={{ padding: '12px 16px' }}>
                           {isMembershipActive ? (
@@ -642,7 +642,7 @@ export const AdminRosaView: React.FC<{
                                 cursor: 'pointer',
                               }}
                             >
-                              Termina
+                              Termina Tesseramento
                             </button>
                           )}
                         </td>
@@ -664,8 +664,8 @@ export const AdminRosaView: React.FC<{
               <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#ffffff', marginBottom: '6px' }}>
                 Nessun tesseramento trovato per la selezione
               </h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Non ci sono giocatori tesserati per la stagione selezionata o con il filtro attivo.
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                Non risultano atleti tesserati per i filtri impostati.
               </p>
               <button
                 onClick={openModal}
@@ -696,7 +696,7 @@ export const AdminRosaView: React.FC<{
               borderRadius: '16px',
               border: '1px solid var(--border-subtle)',
               overflow: 'hidden',
-            }}>
+            }} className="table-responsive">
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -794,23 +794,6 @@ export const AdminRosaView: React.FC<{
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                   <button
                     type="button"
-                    onClick={() => setPlayerMode('new')}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      backgroundColor: playerMode === 'new' ? 'var(--brand-secondary)' : 'rgba(255, 255, 255, 0.05)',
-                      color: playerMode === 'new' ? '#0f172a' : 'var(--text-muted)',
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Nuova Anagrafica
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setPlayerMode('existing')}
                     disabled={players.length === 0}
                     style={{
@@ -818,41 +801,38 @@ export const AdminRosaView: React.FC<{
                       padding: '8px',
                       borderRadius: '8px',
                       fontSize: '0.8rem',
-                      fontWeight: 600,
-                      backgroundColor: playerMode === 'existing' ? 'var(--brand-secondary)' : 'rgba(255, 255, 255, 0.05)',
-                      color: playerMode === 'existing' ? '#0f172a' : 'var(--text-muted)',
-                      border: 'none',
+                      fontWeight: playerMode === 'existing' ? 700 : 500,
+                      backgroundColor: playerMode === 'existing' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                      color: playerMode === 'existing' ? '#60a5fa' : 'var(--text-muted)',
+                      border: playerMode === 'existing' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-subtle)',
                       cursor: players.length === 0 ? 'not-allowed' : 'pointer',
-                      opacity: players.length === 0 ? 0.5 : 1,
                     }}
                   >
-                    Giocatore Esistente ({players.length})
+                    Seleziona Esistente ({players.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlayerMode('new')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      fontWeight: playerMode === 'new' ? 700 : 500,
+                      backgroundColor: playerMode === 'new' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                      color: playerMode === 'new' ? '#60a5fa' : 'var(--text-muted)',
+                      border: playerMode === 'new' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    + Nuovo Giocatore
                   </button>
                 </div>
 
-                {playerMode === 'new' ? (
-                  <input
-                    type="text"
-                    placeholder="es. Mario Rossi (o nome d'arte)"
-                    value={newDisplayName}
-                    onChange={(e) => setNewDisplayName(e.target.value)}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                      border: '1px solid var(--border-subtle)',
-                      color: '#ffffff',
-                      fontSize: '0.85rem',
-                      outline: 'none',
-                    }}
-                  />
-                ) : (
+                {playerMode === 'existing' ? (
                   <select
                     value={selectedPlayerId}
                     onChange={(e) => setSelectedPlayerId(e.target.value)}
-                    required
                     style={{
                       width: '100%',
                       padding: '10px 14px',
@@ -860,16 +840,34 @@ export const AdminRosaView: React.FC<{
                       backgroundColor: 'rgba(15, 23, 42, 0.8)',
                       border: '1px solid var(--border-subtle)',
                       color: '#ffffff',
-                      fontSize: '0.85rem',
+                      fontSize: '0.9rem',
                       outline: 'none',
                     }}
                   >
                     {players.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.displayName} (ID: {p.id.slice(0, 8)}...)
+                        {p.displayName} ({p.id.slice(0, 8)}...)
                       </option>
                     ))}
                   </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Nome e Cognome (es. Marco Rossi)"
+                    value={newDisplayName}
+                    onChange={(e) => setNewDisplayName(e.target.value)}
+                    maxLength={100}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                  />
                 )}
               </div>
 
@@ -881,7 +879,6 @@ export const AdminRosaView: React.FC<{
                 <select
                   value={modalSeasonId}
                   onChange={(e) => handleModalSeasonChange(e.target.value)}
-                  required
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -889,7 +886,7 @@ export const AdminRosaView: React.FC<{
                     backgroundColor: 'rgba(15, 23, 42, 0.8)',
                     border: '1px solid var(--border-subtle)',
                     color: '#ffffff',
-                    fontSize: '0.85rem',
+                    fontSize: '0.9rem',
                     outline: 'none',
                   }}
                 >
@@ -901,66 +898,56 @@ export const AdminRosaView: React.FC<{
                 </select>
               </div>
 
-              {/* Data Inizio Tesseramento (coerente con la stagione) */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)' }}>
-                    Data Inizio Tesseramento *
+              {/* Campi Dettaglio: Numero Maglia & Data Inizio */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                    Numero Maglia (0-99)
                   </label>
-                  {selectedSeasonObj && (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      Intervallo stagione: {selectedSeasonObj.startsOn} → {selectedSeasonObj.endsOn}
-                    </span>
-                  )}
+                  <input
+                    type="number"
+                    placeholder="Opzionale (es. 10)"
+                    min={0}
+                    max={99}
+                    value={newJerseyNumber}
+                    onChange={(e) => setNewJerseyNumber(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                  />
                 </div>
-                <input
-                  type="date"
-                  value={activeFromDate}
-                  min={selectedSeasonObj?.startsOn}
-                  max={selectedSeasonObj?.endsOn}
-                  onChange={(e) => setActiveFromDate(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.85rem',
-                    outline: 'none',
-                  }}
-                />
-                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Non vincolata alla data odierna: può essere retrodatata o impostata all'inizio della stagione.
-                </p>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                    Valido dal (activeFrom) *
+                  </label>
+                  <input
+                    type="date"
+                    value={activeFromDate}
+                    onChange={(e) => setActiveFromDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid var(--border-subtle)',
+                      color: '#ffffff',
+                      fontSize: '0.9rem',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
               </div>
 
-              {/* Numero di Maglia */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                  Numero di Maglia (opzionale, 0-99)
-                </label>
-                <input
-                  type="number"
-                  placeholder="es. 10"
-                  min="0"
-                  max="99"
-                  value={newJerseyNumber}
-                  onChange={(e) => setNewJerseyNumber(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.85rem',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
+              {/* Bottoni Azione */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button
                   type="button"
@@ -969,11 +956,11 @@ export const AdminRosaView: React.FC<{
                     if (onCloseNewPlayerModal) onCloseNewPlayerModal();
                   }}
                   style={{
-                    padding: '10px 16px',
+                    padding: '8px 16px',
                     borderRadius: '8px',
                     backgroundColor: 'transparent',
-                    color: 'var(--text-muted)',
                     border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-muted)',
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                   }}
@@ -984,7 +971,7 @@ export const AdminRosaView: React.FC<{
                   type="submit"
                   disabled={submitting}
                   style={{
-                    padding: '10px 20px',
+                    padding: '8px 18px',
                     borderRadius: '8px',
                     backgroundColor: 'var(--brand-secondary)',
                     color: '#0f172a',
@@ -992,10 +979,9 @@ export const AdminRosaView: React.FC<{
                     fontWeight: 700,
                     fontSize: '0.85rem',
                     cursor: submitting ? 'not-allowed' : 'pointer',
-                    opacity: submitting ? 0.7 : 1,
                   }}
                 >
-                  {submitting ? 'Salvataggio...' : 'Conferma Tesseramento'}
+                  {submitting ? 'Registrazione...' : 'Conferma Tesseramento'}
                 </button>
               </div>
             </form>
@@ -1003,7 +989,7 @@ export const AdminRosaView: React.FC<{
         </div>
       )}
 
-      {/* MODAL: TERMINA TESSERAMENTO */}
+      {/* DIALOG: TERMINA TESSERAMENTO */}
       {endingMembership && (
         <div style={{
           position: 'fixed',
@@ -1024,88 +1010,54 @@ export const AdminRosaView: React.FC<{
             borderRadius: '16px',
             border: '1px solid var(--border-subtle)',
             width: '100%',
-            maxWidth: '460px',
+            maxWidth: '440px',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
             boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>
-                Termina Tesseramento
-              </h3>
-              <button
-                onClick={() => setEndingMembership(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Imposta la data di fine per il tesseramento di{' '}
-              <strong>{playerNameMap.get(endingMembership.playerId) || 'questo giocatore'}</strong>.
-              Lo storico del giocatore rimarrà preservato nelle gare e nelle distinte disputate.
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
+              Termina Tesseramento Giocatore
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+              Imposta la data di fine validità per <strong>{playerNameMap.get(endingMembership.playerId) || 'Giocatore'}</strong> (Maglia: {endingMembership.jerseyNumber ? `#${endingMembership.jerseyNumber}` : '—'}). L'atleta non sarà rimosso dal database ma apparirà nello storico come non più attivo.
             </p>
 
             <form onSubmit={handleEndMembershipSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                  Data Fine Tesseramento *
+                  Data di Uscita (activeUntil) *
                 </label>
                 <input
                   type="date"
                   value={endDateInput}
-                  min={endingMembership.activeFrom}
                   onChange={(e) => setEndDateInput(e.target.value)}
+                  min={endingMembership.activeFrom}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                  }}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.85rem',
-                    outline: 'none',
-                  }}
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                  Motivazione / Note (opzionale)
-                </label>
-                <input
-                  type="text"
-                  placeholder="es. Trasferimento, fine prestito, infortunio"
-                  value={endReasonInput}
-                  onChange={(e) => setEndReasonInput(e.target.value)}
-                  maxLength={500}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.85rem',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
                   onClick={() => setEndingMembership(null)}
                   style={{
-                    padding: '10px 16px',
+                    padding: '8px 16px',
                     borderRadius: '8px',
                     backgroundColor: 'transparent',
-                    color: 'var(--text-muted)',
                     border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-muted)',
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                   }}
@@ -1116,7 +1068,7 @@ export const AdminRosaView: React.FC<{
                   type="submit"
                   disabled={endingSubmitting}
                   style={{
-                    padding: '10px 20px',
+                    padding: '8px 18px',
                     borderRadius: '8px',
                     backgroundColor: '#ef4444',
                     color: '#ffffff',
@@ -1124,16 +1076,16 @@ export const AdminRosaView: React.FC<{
                     fontWeight: 700,
                     fontSize: '0.85rem',
                     cursor: endingSubmitting ? 'not-allowed' : 'pointer',
-                    opacity: endingSubmitting ? 0.7 : 1,
                   }}
                 >
-                  {endingSubmitting ? 'Chiusura...' : 'Conferma Fine Tesseramento'}
+                  {endingSubmitting ? 'Salvataggio...' : 'Conferma Conclusione'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 };

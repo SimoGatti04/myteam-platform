@@ -37,6 +37,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 a {
@@ -47,6 +48,17 @@ a {
 button {
   font-family: inherit;
   cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* Responsive Table Wrapper */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Scrollbar */
@@ -78,4 +90,12 @@ button {
   border-radius: 50%;
   background-color: var(--status-live);
   animation: pulseLive 1.5s infinite ease-in-out;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
