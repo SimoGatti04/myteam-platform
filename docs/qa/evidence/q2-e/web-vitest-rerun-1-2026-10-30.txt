@@ -1,0 +1,11 @@
+
+ RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-e/apps/web
+
+
+ Test Files  8 passed (8)
+      Tests  96 passed (96)
+   Start at  12:35:01
+   Duration  1.01s (transform 405ms, setup 0ms, import 1.05s, tests 225ms, environment 4.25s)
+
+
+EXIT_CODE=0

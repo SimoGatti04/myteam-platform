@@ -1,0 +1,17 @@
+.env not found. Continuing without it.
+.env not found. Continuing without it.
+✔ PostgreSQL Real: Concurrency serialization on roster membership via pg_advisory_xact_lock (304.445041ms)
+✔ PostgreSQL Real: Atomic transaction rollback on constraint / business validation failure (98.981792ms)
+✔ PostgreSQL Real: Native check constraints and enum integrity (89.106833ms)
+✔ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (120.36175ms)
+✔ PostgreSQL Real: non-completed match remains reschedulable after C1.2 guard (no regression) (116.848208ms)
+.env not found. Continuing without it.
+✔ PostgreSQL Real: Complete Onboarding & Match Lifecycle (12-step path) (316.624709ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 874.484458

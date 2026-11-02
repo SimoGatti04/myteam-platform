@@ -1,0 +1,79 @@
+
+> @myteam/web@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-b/apps/web
+> vitest run
+
+
+ RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-b/apps/web
+
+ ❯ test/w2-r1-react-integration.test.tsx (0 test)
+ ❯ test/w2-r2-oidc-security.test.tsx (0 test)
+ ❯ test/w2-oidc-auth.test.ts (23 tests | 1 failed) 5017ms
+       × builds compliant authorization URL with code_challenge and state, storing PKCE context 5006ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w2-r1-react-integration.test.tsx [ test/w2-r1-react-integration.test.tsx ]
+Error: Failed to resolve import "@testing-library/react" from "test/w2-r1-react-integration.test.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/gatti/Workspace/myteam-platform-q2-b/apps/web/test/w2-r1-react-integration.test.tsx:4:65
+  2  |  import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+  3  |  import React, { useEffect } from "react";
+  4  |  import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
+     |                                                                    ^
+  5  |  import { AppProvider, useApp } from "../src/context/AppContext";
+  6  |  import { AdminLoginView } from "../src/views/admin/AdminLoginView";
+ ❯ TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8803:39
+ ❯ TransformPluginContext.error ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8800:14
+ ❯ resolveId ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26594:18
+ ❯ ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26693:23
+ ❯ TransformPluginContext.transform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26666:4
+ ❯ EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8582:14
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:20155:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/w2-r2-oidc-security.test.tsx [ test/w2-r2-oidc-security.test.tsx ]
+Error: Failed to resolve import "@testing-library/react" from "test/w2-r2-oidc-security.test.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/gatti/Workspace/myteam-platform-q2-b/apps/web/test/w2-r2-oidc-security.test.tsx:4:54
+  2  |  import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+  3  |  import React, { useEffect } from "react";
+  4  |  import { render, screen, waitFor, act, cleanup } from "@testing-library/react";
+     |                                                         ^
+  5  |  import { AppProvider, useApp } from "../src/context/AppContext";
+  6  |  import { authService } from "../src/services/auth";
+ ❯ TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8803:39
+ ❯ TransformPluginContext.error ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8800:14
+ ❯ resolveId ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26594:18
+ ❯ ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26693:23
+ ❯ TransformPluginContext.transform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:26666:4
+ ❯ EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:8582:14
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@8.3.5_@types+node@26.6.5_esbuild@0.28.2_tsx@4.23.15/node_modules/vite/dist/node/chunks/node.js:20155:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w2-oidc-auth.test.ts > Web W2 — Logto OIDC Admin Authentication Tests > 3. Login Redirect and Authorization URL Generation > builds compliant authorization URL with code_challenge and state, storing PKCE context
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/w2-oidc-auth.test.ts:141:5
+    139|   // ==========================================
+    140|   describe('3. Login Redirect and Authorization URL Generation', () =>…
+    141|     it('builds compliant authorization URL with code_challenge and sta…
+       |     ^
+    142|       const client = new OidcClient(mockConfig);
+    143|       const { url, state, codeVerifier } = await client.buildAuthoriza…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed | 4 passed (7)
+      Tests  1 failed | 56 passed (57)
+   Start at  15:23:18
+   Duration  6.09s (transform 457ms, setup 0ms, import 657ms, tests 5.03s, environment 5.27s)
+
+/Users/gatti/Workspace/myteam-platform-q2-b/apps/web:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @myteam/web@0.1.0 test: `vitest run`
+Exit status 1

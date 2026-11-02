@@ -1,0 +1,12 @@
+
+> @myteam/web@0.1.0 test /private/tmp/myteam-platform-q3/apps/web
+> vitest run
+
+
+ RUN  v4.1.12 /private/tmp/myteam-platform-q3/apps/web
+
+
+ Test Files  8 passed (8)
+      Tests  96 passed (96)
+   Start at  13:09:15
+   Duration  939ms (transform 338ms, setup 0ms, import 883ms, tests 219ms, environment 4.25s)
