@@ -17,9 +17,9 @@
 test at tests/integration/postgres-real-concurrency-and-rollback.test.ts:1:6553
 ✖ PostgreSQL Real: Completed match schedule immutability regression (CORE-BUG-01) (129.894417ms)
   AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-
+  
   200 !== 400
-
+  
       at TestContext.<anonymous> (/Users/gatti/Workspace/myteam-platform/tests/integration/postgres-real-concurrency-and-rollback.test.ts:349:14)
       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
       at async Test.run (node:internal/test_runner/test:1389:7)

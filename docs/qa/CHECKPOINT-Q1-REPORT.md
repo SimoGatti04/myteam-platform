@@ -1,9 +1,9 @@
 # Checkpoint Q1-R3.3 / Gate MVP-I1 — Rapporto Integrato di Rettifica Browser & Evidenze
 
-**Data:** 29 Ottobre 2026
-**Agente Responsabile:** Agente QA persistente (`QA`)
-**Repository:** `myteam-platform` (`https://github.com/SimoGatti04/myteam-platform`)
-**Ambiente di Verifica:** macOS ARM64, PostgreSQL 16 (porta 54329), Node.js v26.5.0, pnpm 10.32.1, Playwright Chromium headless
+**Data:** 29 Ottobre 2026  
+**Agente Responsabile:** Agente QA persistente (`QA`)  
+**Repository:** `myteam-platform` (`https://github.com/SimoGatti04/myteam-platform`)  
+**Ambiente di Verifica:** macOS ARM64, PostgreSQL 16 (porta 54329), Node.js v26.5.0, pnpm 10.32.1, Playwright Chromium headless  
 
 ---
 

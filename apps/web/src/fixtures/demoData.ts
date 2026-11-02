@@ -1,6 +1,6 @@
 /**
  * DEMO FIXTURES (Esplicitamente contrassegnate come DEMO)
- *
+ * 
  * Usate come fallback trasparente quando l'API backend non è raggiungibile o non contiene
  * ancora dati sufficienti. Rispettano fedelmente i contratti definiti in @myteam/contracts.
  */

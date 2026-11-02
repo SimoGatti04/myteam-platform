@@ -20,9 +20,9 @@
 test at tests/q1/03-match-lifecycle.test.ts:1:4986
 ✖ 3.5 Completed match schedule is immutable and transitions to completed are guarded (CORE-BUG-01) (23.367458ms)
   AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-
+  
   200 !== 400
-
+  
       at TestContext.<anonymous> (<repo>/tests/q1/03-match-lifecycle.test.ts:257:12)
       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
       at async Test.run (node:internal/test_runner/test:1389:7)
