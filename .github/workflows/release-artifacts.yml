@@ -1,0 +1,186 @@
+name: Release image artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full reviewed commit SHA at the protected main ref (must equal this run's SHA)
+        required: true
+        type: string
+      web_logto_app_id:
+        description: Approved, non-secret Logto web client ID to embed in the Web image
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-images:
+    name: Build, publish and attest API + Web images
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      API_IMAGE: ghcr.io/simogatti04/myteam-platform-api
+      WEB_IMAGE: ghcr.io/simogatti04/myteam-platform-web
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      WEB_LOGTO_APP_ID: ${{ inputs.web_logto_app_id }}
+    steps:
+      - name: Require manual dispatch from main at the exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || { echo "FAIL: only workflow_dispatch is allowed" >&2; exit 1; }
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "FAIL: dispatch this workflow from protected main" >&2; exit 1; }
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "FAIL: source_commit must be a full lowercase 40-character SHA" >&2; exit 1; }
+          [[ "$SOURCE_COMMIT" == "$GITHUB_SHA" ]] || { echo "FAIL: source_commit must equal this protected-main workflow run SHA" >&2; exit 1; }
+          [[ "$WEB_LOGTO_APP_ID" =~ ^[A-Za-z0-9._-]{1,200}$ ]] || { echo "FAIL: web_logto_app_id has an unexpected format" >&2; exit 1; }
+          echo "Building source $SOURCE_COMMIT from $GITHUB_REF."
+
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify checkout SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          [[ "$actual" == "$SOURCE_COMMIT" ]] || { echo "FAIL: checkout $actual differs from $SOURCE_COMMIT" >&2; exit 1; }
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        id: api
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.api
+          push: true
+          tags: ${{ env.API_IMAGE }}:sha-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+          provenance: false
+
+      - name: Build and push Web image
+        id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.web
+          push: true
+          tags: ${{ env.WEB_IMAGE }}:sha-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+          provenance: false
+          build-args: |
+            VITE_APP_ENV=production
+            VITE_ENABLE_DEMO=false
+            VITE_LOGTO_APP_ID=${{ env.WEB_LOGTO_APP_ID }}
+
+      - name: Attest API image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.API_IMAGE }}
+          subject-digest: ${{ steps.api.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Web image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.WEB_IMAGE }}
+          subject-digest: ${{ steps.web.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Generate API image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.API_IMAGE }}@${{ steps.api.outputs.digest }}
+          format: spdx-json
+          output-file: api.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate Web image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.WEB_IMAGE }}@${{ steps.web.outputs.digest }}
+          format: spdx-json
+          output-file: web.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest API image SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.API_IMAGE }}
+          subject-digest: ${{ steps.api.outputs.digest }}
+          sbom-path: api.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Web image SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.WEB_IMAGE }}
+          subject-digest: ${{ steps.web.outputs.digest }}
+          sbom-path: web.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Write pending release handoff record
+        shell: bash
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "FAIL: invalid API OCI digest" >&2; exit 1; }
+          [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "FAIL: invalid Web OCI digest" >&2; exit 1; }
+          python3 - <<'PY'
+          import json, os
+          record = {
+              "schemaVersion": 1,
+              "sourceRepository": "https://github.com/SimoGatti04/myteam-platform",
+              "sourceCommit": os.environ["SOURCE_COMMIT"],
+              "artifacts": {
+                  "api": {"repository": os.environ["API_IMAGE"], "digest": os.environ["API_DIGEST"]},
+                  "web": {"repository": os.environ["WEB_IMAGE"], "digest": os.environ["WEB_DIGEST"]},
+              },
+              "verification": {
+                  "method": "GitHub SLSA provenance attestation",
+                  "status": "pending",
+                  "sbomAttestations": ["api.spdx.json", "web.spdx.json"],
+              },
+          }
+          with open("release-provenance.json", "w", encoding="utf-8") as stream:
+              json.dump(record, stream, indent=2)
+              stream.write("\n")
+          PY
+
+      - name: Upload digest, provenance and SBOM handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-artifacts-${{ env.SOURCE_COMMIT }}
+          path: |
+            release-provenance.json
+            api.spdx.json
+            web.spdx.json
+          if-no-files-found: error
+          retention-days: 30
