@@ -424,6 +424,7 @@ export const AdminRosaView: React.FC<{
         gap: '8px',
         borderBottom: '1px solid var(--border-subtle)',
         paddingBottom: '8px',
+        flexWrap: 'wrap',
       }}>
         <button
           onClick={() => setActiveSubTab('appartenenze')}
@@ -563,9 +564,11 @@ export const AdminRosaView: React.FC<{
               backgroundColor: 'var(--bg-card)',
               borderRadius: '16px',
               border: '1px solid var(--border-subtle)',
-              overflow: 'hidden',
+              overflowX: 'auto',
+              maxWidth: '100%',
+              WebkitOverflowScrolling: 'touch',
             }} className="table-responsive">
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <table style={{ width: '100%', minWidth: '580px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', borderBottom: '1px solid var(--border-subtle)' }}>
                     <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>N°</th>
@@ -695,9 +698,11 @@ export const AdminRosaView: React.FC<{
               backgroundColor: 'var(--bg-card)',
               borderRadius: '16px',
               border: '1px solid var(--border-subtle)',
-              overflow: 'hidden',
+              overflowX: 'auto',
+              maxWidth: '100%',
+              WebkitOverflowScrolling: 'touch',
             }} className="table-responsive">
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <table style={{ width: '100%', minWidth: '580px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', borderBottom: '1px solid var(--border-subtle)' }}>
                     <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>ID Anagrafica</th>

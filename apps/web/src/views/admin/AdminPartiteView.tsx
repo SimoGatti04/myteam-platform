@@ -581,6 +581,7 @@ export const AdminPartiteView: React.FC<{
         gap: '8px',
         borderBottom: '1px solid var(--border-subtle)',
         paddingBottom: '8px',
+        flexWrap: 'wrap',
       }}>
         <button
           onClick={() => setActiveSubTab('calendario')}
@@ -610,7 +611,7 @@ export const AdminPartiteView: React.FC<{
             cursor: 'pointer',
           }}
         >
-          Competizioni (${competitions.length})
+          Competizioni ({competitions.length})
         </button>
         <button
           onClick={() => setActiveSubTab('avversari')}

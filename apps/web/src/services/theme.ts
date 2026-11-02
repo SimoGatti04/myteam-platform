@@ -28,7 +28,8 @@ export const NEUTRAL_THEME: ThemeTokens = {
 };
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const clean = hex.replace('#', '');
+  if (!hex || typeof hex !== 'string') return null;
+  const clean = hex.replace('#', '').trim();
   if (clean.length !== 6 && clean.length !== 3) return null;
   const normalized = clean.length === 3
     ? clean.split('').map(c => c + c).join('')
@@ -52,11 +53,98 @@ export function rgbToHex(r: number, g: number, b: number): string {
   return '#' + [clamp(r), clamp(g), clamp(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-export function getContrastYIQ(hex: string): string {
+/**
+ * Converts an sRGB color component (0..255) to linear light value.
+ * WCAG 2.1 Formula: https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
+ */
+export function srgbToLinear(c: number): number {
+  const norm = c / 255;
+  return norm <= 0.04045
+    ? norm / 12.92
+    : Math.pow((norm + 0.055) / 1.055, 2.4);
+}
+
+/**
+ * Calculates the relative luminance of a HEX color according to WCAG 2.1 specification.
+ * Value is in the range 0.0 (darkest black) to 1.0 (lightest white).
+ */
+export function getRelativeLuminance(hex: string): number {
   const rgb = hexToRgb(hex);
-  if (!rgb) return '#ffffff';
-  const yiq = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-  return yiq >= 140 ? '#0f172a' : '#ffffff';
+  if (!rgb) return 0;
+  const rLin = srgbToLinear(rgb.r);
+  const gLin = srgbToLinear(rgb.g);
+  const bLin = srgbToLinear(rgb.b);
+  return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+}
+
+/**
+ * Calculates the contrast ratio between two HEX colors according to WCAG 2.1.
+ * Returns a ratio between 1:1 and 21:1.
+ */
+export function getContrastRatio(hex1: string, hex2: string): number {
+  const l1 = getRelativeLuminance(hex1);
+  const l2 = getRelativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Checks whether the contrast ratio between two colors meets WCAG criteria.
+ * - 'AA': 4.5:1 for normal text (default)
+ * - 'large': 3.0:1 for large text (>= 18pt or >= 14pt bold)
+ * - 'AAA': 7.0:1 for enhanced contrast
+ */
+export function isWcagCompliant(
+  fgHex: string,
+  bgHex: string,
+  level: 'AA' | 'large' | 'AAA' = 'AA'
+): boolean {
+  const ratio = getContrastRatio(fgHex, bgHex);
+  if (level === 'large') return ratio >= 3.0;
+  if (level === 'AAA') return ratio >= 7.0;
+  return ratio >= 4.5;
+}
+
+/**
+ * Selects the optimal text color against a given background color using WCAG 2.1 relative luminance.
+ * Evaluates candidates (#ffffff, preferred dark, and #000000) to ensure the 4.5:1 WCAG AA threshold is met.
+ * Handles tricky edge-case colors like olive #808000 where white contrast is only ~4.20:1 (< 4.5:1)
+ * but dark/black reaches >= 5.0:1 (>= 4.5:1).
+ */
+export function getContrastColor(bgHex: string, preferredDark: string = '#0f172a'): string {
+  const ratioWhite = getContrastRatio('#ffffff', bgHex);
+  const ratioPreferredDark = getContrastRatio(preferredDark, bgHex);
+  const ratioBlack = getContrastRatio('#000000', bgHex);
+
+  // If white reaches 4.5:1 and is better than or equal to preferred dark, select white
+  if (ratioWhite >= 4.5 && ratioWhite >= ratioPreferredDark) {
+    return '#ffffff';
+  }
+
+  // If preferred dark (#0f172a) reaches 4.5:1, select preferred dark
+  if (ratioPreferredDark >= 4.5) {
+    return preferredDark;
+  }
+
+  // If pure black reaches 4.5:1 (e.g. #808000 olive), select pure black
+  if (ratioBlack >= 4.5) {
+    return '#000000';
+  }
+
+  // If none reaches 4.5:1, pick whichever maximizes contrast
+  const maxRatio = Math.max(ratioWhite, ratioPreferredDark, ratioBlack);
+  if (maxRatio === ratioWhite) return '#ffffff';
+  if (maxRatio === ratioPreferredDark) return preferredDark;
+  return '#000000';
+}
+
+/**
+ * Deprecated alias retained for backward compatibility with existing tests/callers,
+ * now using full WCAG relative luminance contrast instead of simple YIQ.
+ */
+export function getContrastYIQ(hex: string): string {
+  return getContrastColor(hex);
 }
 
 export function adjustBrightness(hex: string, percent: number): string {
@@ -95,7 +183,7 @@ export function deriveThemeTokens(
     secondaryLight: adjustBrightness(s, 20),
     surface: adjustBrightness(p, -80), // Deep tinted surface
     border: adjustBrightness(p, -40),
-    textOnPrimary: getContrastYIQ(p),
+    textOnPrimary: getContrastColor(p),
     heroBg: `linear-gradient(135deg, ${adjustBrightness(p, -70)} 0%, #0b0f17 100%)`,
     isNeutralDefault: false,
   };

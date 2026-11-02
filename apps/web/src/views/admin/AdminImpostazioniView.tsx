@@ -20,7 +20,7 @@ import {
   HelpCircle,
   ChevronRight
 } from 'lucide-react';
-import { NEUTRAL_THEME, type ThemeTokens, isValidHexColor, deriveThemeTokens } from '../../services/theme';
+import { NEUTRAL_THEME, type ThemeTokens, isValidHexColor, deriveThemeTokens, getContrastRatio, isWcagCompliant } from '../../services/theme';
 
 export const AdminImpostazioniView: React.FC = () => {
   const {
@@ -173,7 +173,7 @@ export const AdminImpostazioniView: React.FC = () => {
   const canPublish = Boolean(name.trim() && crestUrl.trim());
 
   // Anteprima live derivata
-  const effectivePrimary = isValidHexColor(primaryColor) ? primaryColor.trim() : null;
+  const targetPrimary = isValidHexColor(primaryColor) ? primaryColor.trim() : NEUTRAL_THEME.primary;
   const effectiveSecondary = isValidHexColor(secondaryColor) ? secondaryColor.trim() : null;
 
   const currentOverrides = {
@@ -183,7 +183,7 @@ export const AdminImpostazioniView: React.FC = () => {
   };
 
   const previewTokens: ThemeTokens = deriveThemeTokens(
-    effectivePrimary,
+    targetPrimary,
     effectiveSecondary,
     Object.keys(currentOverrides).length > 0 ? currentOverrides : tokenOverrides
   );
@@ -196,7 +196,17 @@ export const AdminImpostazioniView: React.FC = () => {
 
     const result = Object.keys(overrides).length > 0 ? overrides : null;
     setTokenOverrides(result);
-    setStatusMessage({ type: 'success', text: 'Colori derivati applicati con successo alla sessione!' });
+
+    const isCompliant = !textOnPrimaryOverride || !isValidHexColor(textOnPrimaryOverride) || isWcagCompliant(textOnPrimaryOverride, targetPrimary);
+    if (!isCompliant) {
+      const ratio = getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2);
+      setStatusMessage({
+        type: 'success',
+        text: `Colori derivati applicati alla sessione. Nota accessibilità: il contrasto testo/primario è ${ratio}:1, inferiore a 4.5:1 (WCAG AA).`,
+      });
+    } else {
+      setStatusMessage({ type: 'success', text: 'Colori derivati applicati con successo alla sessione (conforme WCAG AA)!' });
+    }
   };
 
   const handleResetColorOverrides = () => {
@@ -1032,6 +1042,28 @@ export const AdminImpostazioniView: React.FC = () => {
                         style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-subtle)', color: '#ffffff', fontSize: '0.8rem', fontFamily: 'monospace' }}
                       />
                     </div>
+                    {textOnPrimaryOverride && isValidHexColor(textOnPrimaryOverride) && (
+                      <div style={{
+                        marginTop: '4px',
+                        fontSize: '0.72rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: isWcagCompliant(textOnPrimaryOverride, targetPrimary) ? '#34d399' : '#fbbf24',
+                      }}>
+                        {isWcagCompliant(textOnPrimaryOverride, targetPrimary) ? (
+                          <>
+                            <CheckCircle2 size={12} />
+                            <span>Contrasto WCAG AA conforme ({getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2)}:1)</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={12} />
+                            <span>Attenzione contrasto: {getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2)}:1 (&lt; 4.5:1 raccomandato WCAG AA)</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

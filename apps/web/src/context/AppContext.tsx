@@ -68,6 +68,8 @@ interface AppContextType {
   dismissPwaBanner: () => void;
   isPwaInstallable: boolean;
   installPwa: () => Promise<void>;
+  pwaUpdateAvailable: boolean;
+  applyPwaUpdate: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -208,6 +210,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setShowPwaBanner(false);
     }
     setDeferredPrompt(null);
+  };
+
+  // PWA Update Management
+  const [pwaUpdateAvailable, setPwaUpdateAvailable] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setPwaUpdateAvailable(true);
+    };
+    window.addEventListener('pwa-update-available', handleUpdate);
+    return () => {
+      window.removeEventListener('pwa-update-available', handleUpdate);
+    };
+  }, []);
+
+  const applyPwaUpdate = () => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+      window.location.reload();
+    }
   };
 
   // Caricamento Dati Squadra Pubblica
@@ -516,6 +542,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dismissPwaBanner,
         isPwaInstallable,
         installPwa,
+        pwaUpdateAvailable,
+        applyPwaUpdate,
       }}
     >
       {children}
