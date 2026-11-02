@@ -1,6 +1,11 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { HealthResponseSchema } from "@myteam/contracts";
+import {
+  HealthResponseSchema,
+  ReadyOkResponseSchema,
+  ReadyUnavailableResponseSchema,
+} from "@myteam/contracts";
 import type { Pool } from "pg";
+import { checkDatabaseReadiness } from "./persistence/readiness.js";
 import type { AdminTokenVerifier } from "./platform/auth.js";
 import { DomainError } from "./platform/errors.js";
 import { registerPlatformRoutes } from "./platform/routes.js";
@@ -8,6 +13,7 @@ import { registerPlatformRoutes } from "./platform/routes.js";
 export interface AppOptions {
   logger?: boolean;
   pool?: Pool;
+  readinessTimeoutMs?: number;
   verifyAdminToken?: AdminTokenVerifier;
 }
 
@@ -39,6 +45,39 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
       service: "myteam-platform-api" as const,
       apiVersion: "v1" as const,
     }),
+  );
+
+  app.get(
+    "/ready",
+    {
+      schema: {
+        response: {
+          200: ReadyOkResponseSchema,
+          503: ReadyUnavailableResponseSchema,
+        },
+      },
+    },
+    async (_request, reply) => {
+      const result = await checkDatabaseReadiness(options.pool, {
+        timeoutMs: options.readinessTimeoutMs,
+      });
+
+      if (!result.ok) {
+        return reply.code(503).send({
+          status: "not_ready" as const,
+          service: "myteam-platform-api" as const,
+          apiVersion: "v1" as const,
+          error: "service_unavailable" as const,
+        });
+      }
+
+      return reply.code(200).send({
+        status: "ready" as const,
+        service: "myteam-platform-api" as const,
+        apiVersion: "v1" as const,
+        database: "connected" as const,
+      });
+    },
   );
 
   if (options.pool) {
