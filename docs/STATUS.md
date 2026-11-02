@@ -178,3 +178,11 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
     - I finding di sicurezza Q3-AUTH-01 e Q3-AUTH-02 dispongono di una remediation implementata e coperta da test unitari/integrazione approfonditi (111 test Web Vitest totali, di cui 37 test dedicati OIDC security e regressioni).
     - **La chiusura formale e indipendente dei finding è ancora PENDENTE** in attesa della revisione e validazione autonoma di QA (prevista nel checkpoint Q4).
     - **Logto staging reale e deployment rimangono NOT RUN**: nessun test sintetico o su mock è presentato come prova di login reale con l'Identity Provider remoto.
+
+## Web W3-R1 — chiusura mirata P1 OIDC (2 novembre 2026)
+
+- **W3-PWA-01: CLOSED** sul worktree `web/w3-r1-security-ux`, dopo prova Chromium reale con build production e soli `code/state` sintetici. La prova riproduce la persistenza nel worker W3 v1, poi verifica callback online non memorizzato, callback offline fail-closed, migrazione/rimozione cache v1, preservazione di una cache estranea e attivazione controllata con due schede.
+- Test riproducibile: `apps/web/test/w3-r1-service-worker-browser.py`; rapporto: `docs/qa/CHECKPOINT-WEB-W3-R1-P1-OIDC-REPORT.md`.
+- `pnpm check`, suite Web (138 test) e prova Chromium: **PASS** in questo checkpoint.
+- **Non equivale a GO W3-R1 generale.** W3-PWA-02 rimane aperto/parziale: `CACHE_VERSION` è ancora il valore fisso `v2`; build successive, asset fingerprinted obsoleti e click UI/reload non sono verificati. Finding P2 WCAG/mobile non sono stati riesaminati. Login/logout Logto reale non eseguito.
+- **Prossimo gate:** verifica indipendente della prova/browser e decisione separata sulla versionatura per build e sui finding P2.
