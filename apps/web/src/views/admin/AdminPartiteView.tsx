@@ -448,7 +448,7 @@ export const AdminPartiteView: React.FC<{
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ width: '100%', minWidth: 0, maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -717,8 +717,8 @@ export const AdminPartiteView: React.FC<{
                     gap: '12px',
                   }}
                 >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{ minWidth: 0, maxWidth: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '0.72rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--brand-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                         {compName}
                       </span>

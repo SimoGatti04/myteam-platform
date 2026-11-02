@@ -357,7 +357,7 @@ export const AdminRosaView: React.FC<{
   });
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ width: '100%', minWidth: 0, maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -496,7 +496,7 @@ export const AdminRosaView: React.FC<{
             flexWrap: 'wrap',
             gap: '12px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', minWidth: 0, maxWidth: '100%' }}>
               <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-dim)' }}>
                 Stagione:
               </label>
@@ -511,6 +511,7 @@ export const AdminRosaView: React.FC<{
                   border: '1px solid var(--border-subtle)',
                   fontSize: '0.85rem',
                   outline: 'none',
+                  maxWidth: '100%',
                 }}
               >
                 <option value="">Tutte le stagioni</option>

@@ -179,10 +179,11 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
     - **La chiusura formale e indipendente dei finding è ancora PENDENTE** in attesa della revisione e validazione autonoma di QA (prevista nel checkpoint Q4).
     - **Logto staging reale e deployment rimangono NOT RUN**: nessun test sintetico o su mock è presentato come prova di login reale con l'Identity Provider remoto.
 
-## Web W3-R1 — chiusura mirata P1 OIDC (2 novembre 2026)
+## Web W3-R1 — P1 OIDC e remediation P2 responsive (2 novembre 2026)
 
-- **W3-PWA-01: CLOSED** sul worktree `web/w3-r1-security-ux`, dopo prova Chromium reale con build production e soli `code/state` sintetici. La prova riproduce la persistenza nel worker W3 v1, poi verifica callback online non memorizzato, callback offline fail-closed, migrazione/rimozione cache v1, preservazione di una cache estranea e attivazione controllata con due schede.
-- Test riproducibile: `apps/web/test/w3-r1-service-worker-browser.py`; rapporto: `docs/qa/CHECKPOINT-WEB-W3-R1-P1-OIDC-REPORT.md`.
-- `pnpm check`, suite Web (138 test) e prova Chromium: **PASS** in questo checkpoint.
-- **Non equivale a GO W3-R1 generale.** W3-PWA-02 rimane aperto/parziale: `CACHE_VERSION` è ancora il valore fisso `v2`; build successive, asset fingerprinted obsoleti e click UI/reload non sono verificati. Finding P2 WCAG/mobile non sono stati riesaminati. Login/logout Logto reale non eseguito.
-- **Prossimo gate:** verifica indipendente della prova/browser e decisione separata sulla versionatura per build e sui finding P2.
+- **W3-PWA-01: CLOSED, senza modifiche alla remediation P1.** Test Chromium production con soli `code/state` sintetici: regressione positiva sul worker W3 v1, callback online non memorizzato, callback offline fail-closed, rimozione cache v1, conservazione cache estranea e attivazione controllata multi-scheda. Report: `docs/qa/CHECKPOINT-WEB-W3-R1-P1-OIDC-REPORT.md`.
+- **P2 contrasto: verificato come già implementato nel WIP** con luminanza relativa/rapporto WCAG, caso `#808000` (testo nero AA); l’override manuale resta libero e mostra un avviso quando il rapporto testo/primario è sotto 4.5:1. Suite Web: 138 test PASS.
+- **P2 overflow mobile: corretto e verificato in Chromium.** Prima: a 320 px l’admin Partite raggiungeva 323 px e l’admin Rosa 476 px (a 360 px Rosa 476 px). Dopo il fix, Partite/Rosa pubbliche e admin hanno `documentElement.scrollWidth === innerWidth` a 320, 360, 375, 390 e 414 px; la tabella Rosa resta scorribile nel proprio wrapper (602 px di contenuto dentro 286 px visibili a viewport 320 px, documento sempre 320 px).
+- `pnpm check` (build/typecheck/test monorepo), suite Web (138 test) e regression Chromium P1: **PASS**. La matrice Chromium responsive è una prova manuale/diagnostica con dati DEMO sintetici; non è stata aggiunta al runner automatico.
+- **Non equivale a GO W3-R1 generale.** `CACHE_VERSION` rimane il valore fisso `v2`: invalidazione per build/asset fingerprinted e click UI di aggiornamento/reload non sono coperti. Login/logout Logto reale non eseguito. Nessuna verifica indipendente QA3 in questo checkpoint.
+- **Prossimo gate:** re-QA indipendente QA3 su P1/P2; poi valutazione separata del versionamento build e del ciclo completo di aggiornamento PWA. Nessun push, merge o deploy.
