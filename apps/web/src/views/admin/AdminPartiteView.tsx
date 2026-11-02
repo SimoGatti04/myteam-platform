@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { apiService } from '../../services/api';
-import type { MatchDto, OpponentDto, CompetitionDto } from '@myteam/contracts';
+import type { MatchDto, OpponentDto, CompetitionDto, CompetitionCreateRequest, MatchSchedulePatchRequest, MatchStatus } from '@myteam/contracts';
 import {
   Calendar,
   PlusCircle,
@@ -10,6 +10,7 @@ import {
   Shield,
   CheckCircle2,
   Clock,
+  Edit3,
   X,
   AlertCircle,
   Info,
@@ -25,7 +26,20 @@ export const AdminPartiteView: React.FC<{
 }> = ({ openModalWithMatchId, onCloseModal }) => {
   const { adminTeam, isDemoData } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'avversari' | 'importazioni'>('calendario');
+  const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'avversari' | 'competizioni' | 'importazioni'>('calendario');
+
+  // Modalita aggiunta competizione da subtab
+  const [newCompName, setNewCompName] = useState<string>('');
+  const [newCompCategory, setNewCompCategory] = useState<'league' | 'cup' | 'tournament' | 'friendly' | 'other'>('league');
+  const [newCompIsOfficial, setNewCompIsOfficial] = useState<boolean>(true);
+  const [creatingCompetition, setCreatingCompetition] = useState<boolean>(false);
+
+  // Modal modifica programmazione (Schedule)
+  const [editingScheduleMatch, setEditingScheduleMatch] = useState<MatchDto | null>(null);
+  const [editScheduledAtInput, setEditScheduledAtInput] = useState<string>('');
+  const [editStatusInput, setEditStatusInput] = useState<MatchStatus>('scheduled');
+  const [editReasonInput, setEditReasonInput] = useState<string>('');
+  const [savingSchedule, setSavingSchedule] = useState<boolean>(false);
   const [matches, setMatches] = useState<MatchDto[]>([]);
   const [opponents, setOpponents] = useState<OpponentDto[]>([]);
   const [competitions, setCompetitions] = useState<CompetitionDto[]>([]);
@@ -292,6 +306,109 @@ export const AdminPartiteView: React.FC<{
     }
   };
 
+  // Creazione inline competizione da sub-tab
+  const handleCreateCompetitionInline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCompName.trim()) {
+      setStatusMsg({ type: "error", text: "Inserisci il nome della competizione." });
+      return;
+    }
+
+    setCreatingCompetition(true);
+    setStatusMsg(null);
+
+    if (isDemoData) {
+      const mockComp: CompetitionDto = {
+        id: `demo-comp-${Date.now()}`,
+        name: newCompName.trim(),
+        category: newCompCategory,
+        isOfficial: newCompIsOfficial,
+      };
+      setCompetitions(prev => [...prev, mockComp]);
+      setNewCompName("");
+      setCreatingCompetition(false);
+      setStatusMsg({
+        type: "success",
+        text: `Competizione "${mockComp.name}" creata con successo (DEMO).`,
+      });
+      return;
+    }
+
+    const res = await apiService.createCompetition({
+      name: newCompName.trim(),
+      category: newCompCategory,
+      isOfficial: newCompIsOfficial,
+    });
+    setCreatingCompetition(false);
+
+    if (res.success) {
+      setNewCompName("");
+      setStatusMsg({
+        type: "success",
+        text: `Competizione "${res.data.name}" registrata con successo su Core!`,
+      });
+      await loadData(true);
+    } else {
+      setStatusMsg({
+        type: "error",
+        text: `Errore creazione competizione (${res.status}): ${res.message}`,
+      });
+    }
+  };
+
+  // Apertura modal modifica programmazione
+  const handleOpenScheduleModal = (match: MatchDto) => {
+    setEditingScheduleMatch(match);
+    setEditScheduledAtInput(match.scheduledAt ? match.scheduledAt.slice(0, 16) : "");
+    setEditStatusInput(match.status);
+    setEditReasonInput("");
+  };
+
+  // Salvataggio aggiornamento programmazione
+  const handleSaveSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingScheduleMatch) return;
+
+    setSavingSchedule(true);
+    setStatusMsg(null);
+
+    const scheduledAtVal = editScheduledAtInput ? new Date(editScheduledAtInput).toISOString() : null;
+    const req: MatchSchedulePatchRequest = {
+      scheduledAt: scheduledAtVal,
+      status: editStatusInput,
+      reason: editReasonInput.trim() || undefined,
+    };
+
+    if (isDemoData) {
+      setMatches(prev => prev.map(m => m.id === editingScheduleMatch.id ? {
+        ...m,
+        scheduledAt: scheduledAtVal,
+        status: editStatusInput,
+      } : m));
+      setSavingSchedule(false);
+      setEditingScheduleMatch(null);
+      setStatusMsg({ type: "success", text: "Programmazione partita aggiornata (DEMO)." });
+      return;
+    }
+
+    const res = await apiService.updateMatchSchedule(editingScheduleMatch.id, req);
+    setSavingSchedule(false);
+
+    if (res.success) {
+      setEditingScheduleMatch(null);
+      setStatusMsg({
+        type: "success",
+        text: "Programmazione partita aggiornata con successo su Core!",
+      });
+      await loadData(true);
+    } else {
+      setStatusMsg({
+        type: "error",
+        text: `Errore aggiornamento programmazione (${res.status}): ${res.message}`,
+      });
+    }
+  };
+
   // Creazione rapida avversario da subtab Avversari
   const handleCreateOpponentInline = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,7 +448,7 @@ export const AdminPartiteView: React.FC<{
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ width: '100%', minWidth: 0, maxWidth: '1000px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -464,6 +581,7 @@ export const AdminPartiteView: React.FC<{
         gap: '8px',
         borderBottom: '1px solid var(--border-subtle)',
         paddingBottom: '8px',
+        flexWrap: 'wrap',
       }}>
         <button
           onClick={() => setActiveSubTab('calendario')}
@@ -479,6 +597,21 @@ export const AdminPartiteView: React.FC<{
           }}
         >
           Calendario & Bozze ({matches.length})
+        </button>
+        <button
+          onClick={() => setActiveSubTab('competizioni')}
+          style={{
+            padding: '6px 14px',
+            borderRadius: '6px',
+            fontSize: '0.82rem',
+            fontWeight: activeSubTab === 'competizioni' ? 700 : 500,
+            backgroundColor: activeSubTab === 'competizioni' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+            color: activeSubTab === 'competizioni' ? '#ffffff' : 'var(--text-muted)',
+            border: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          Competizioni ({competitions.length})
         </button>
         <button
           onClick={() => setActiveSubTab('avversari')}
@@ -584,8 +717,8 @@ export const AdminPartiteView: React.FC<{
                     gap: '12px',
                   }}
                 >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{ minWidth: 0, maxWidth: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '0.72rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--brand-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                         {compName}
                       </span>
@@ -611,7 +744,27 @@ export const AdminPartiteView: React.FC<{
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => handleOpenScheduleModal(match)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid var(--border-subtle)',
+                        color: 'var(--text-main)',
+                        fontWeight: 600,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                      title="Modifica programmazione data/ora e status"
+                    >
+                      <Edit3 size={13} />
+                      Programmazione
+                    </button>
                     {!isPublished ? (
                       <button
                         onClick={() => handlePublishExistingMatch(match.id)}
@@ -771,6 +924,135 @@ export const AdminPartiteView: React.FC<{
         </div>
       )}
 
+      {activeSubTab === 'competizioni' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Form rapido aggiunta competizione */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '14px',
+            border: '1px solid var(--border-subtle)',
+            padding: '18px',
+          }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
+              Registra Nuova Competizione
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Le competizioni categorizzano le gare (Campionato, Coppe, Tornei, Amichevoli) via <code>POST /api/v1/admin/competitions</code>.
+            </p>
+            <form onSubmit={handleCreateCompetitionInline} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="es. Campionato Serie B CSI"
+                value={newCompName}
+                onChange={e => setNewCompName(e.target.value)}
+                style={{
+                  flex: '1 1 200px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-subtle)',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+              />
+              <select
+                value={newCompCategory}
+                onChange={e => setNewCompCategory(e.target.value as any)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <option value="league">Campionato (League)</option>
+                <option value="cup">Coppa (Cup)</option>
+                <option value="tournament">Torneo (Tournament)</option>
+                <option value="friendly">Amichevole (Friendly)</option>
+                <option value="other">Altro (Other)</option>
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: 'var(--text-dim)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={newCompIsOfficial}
+                  onChange={e => setNewCompIsOfficial(e.target.checked)}
+                />
+                Ufficiale
+              </label>
+              <button
+                type="submit"
+                disabled={creatingCompetition || !newCompName.trim()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--brand-secondary)',
+                  color: '#0f172a',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: creatingCompetition || !newCompName.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {creatingCompetition ? 'Creazione...' : 'Salva Competizione'}
+              </button>
+            </form>
+          </div>
+
+          {/* Elenco competizioni censite */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '14px',
+            border: '1px solid var(--border-subtle)',
+            overflow: 'hidden',
+          }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 700, fontSize: '0.9rem', color: '#ffffff' }}>
+              Competizioni Registrate (${competitions.length})
+            </div>
+            {loading ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Caricamento competizioni in corso...
+              </div>
+            ) : competitions.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {competitions.map((cp) => (
+                  <div
+                    key={cp.id}
+                    style={{
+                      padding: '12px 18px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#ffffff', fontSize: '0.88rem' }}>
+                        {cp.name}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Categoria: <code>{cp.category}</code> • {cp.isOfficial ? 'Gara Ufficiale' : 'Non ufficiale'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                      ID: {cp.id}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Nessuna competizione registrata.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {activeSubTab === 'importazioni' && (
         <div style={{
           backgroundColor: 'var(--bg-card)',
@@ -790,7 +1072,167 @@ export const AdminPartiteView: React.FC<{
         </div>
       )}
 
-      {/* Modal Nuova Partita */}
+{/* Modal Modifica Programmazione Partita */}
+      {editingScheduleMatch && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '16px',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: '16px',
+            border: '1px solid var(--border-subtle)',
+            padding: '24px',
+            maxWidth: '480px',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={20} color="var(--brand-secondary)" />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ffffff', margin: 0 }}>
+                  Aggiorna Programmazione
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditingScheduleMatch(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
+              Gara vs <strong>{opponentsMap.get(editingScheduleMatch.opponentId) || 'Squadra Avversaria'}</strong> (<code>PATCH /api/v1/admin/matches/:id/schedule</code>)
+            </div>
+
+            <form onSubmit={handleSaveSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                  Data e Ora Calcio d'Inizio
+                </label>
+                <input
+                  type="datetime-local"
+                  value={editScheduledAtInput}
+                  onChange={e => setEditScheduledAtInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.88rem',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Lascia vuoto se la gara è "to_be_scheduled" (data da definire).
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                  Stato Gara
+                </label>
+                <select
+                  value={editStatusInput}
+                  onChange={e => setEditStatusInput(e.target.value as MatchStatus)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.88rem',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="scheduled">Programmata (scheduled)</option>
+                  <option value="to_be_scheduled">Da programmare (to_be_scheduled)</option>
+                  <option value="postponed">Rinviata (postponed)</option>
+                  <option value="cancelled">Annullata (cancelled)</option>
+                  <option value="completed">Completata (completed)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
+                  Motivazione / Note di rinvio o variazione
+                </label>
+                <input
+                  type="text"
+                  placeholder="es. Rinviata per impraticabilità di campo"
+                  value={editReasonInput}
+                  onChange={e => setEditReasonInput(e.target.value)}
+                  maxLength={500}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border-subtle)',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingScheduleMatch(null)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSchedule}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--brand-secondary)',
+                    color: '#0f172a',
+                    border: 'none',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: savingSchedule ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {savingSchedule ? 'Salvataggio...' : 'Salva Programmazione'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+            {/* Modal Nuova Partita */}
       {isModalOpen && (
         <div style={{
           position: 'fixed',

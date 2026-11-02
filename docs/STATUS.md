@@ -1,5 +1,32 @@
 # Stato — myteam-platform
 
+## Web — W3: MVP Functional Advancement (1 novembre 2026)
+
+- **Branch / Worktree:** `web/w3-mvp-functional` (originato da `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`).
+- **Obiettivo raggiunto:** Avanzamento funzionale completo del sito pubblico, della PWA e dell'amministrazione sulle API Core C1.1/C1.2 esistenti, senza persistenze fittizie o alterazioni di contratti.
+- **Interventi completati:**
+  1. **Branding e Dynamic Theming (Mode A approvata):**
+     - Scelta cromatica libera con validazione HEX rigorosa `#RRGGBB`.
+     - Calcolo armoniato di contrasti e token derivati (`surface`, `border`, `textOnPrimary`) e anteprima componenti live.
+     - Interfaccia di fine-tuning dei singoli token derivati con ripristino valori armonici predefiniti.
+     - Checklist/wizard passo-passo guidato in Panoramica e Impostazioni.
+  2. **Completamento UX Amministrativa:**
+     - Aggiunta gestione **Competizioni** (`GET/POST /api/v1/admin/competitions`) in Partite.
+     - Aggiunta modifica e rinvio programmazione gara (`PATCH /api/v1/admin/matches/:id/schedule`) con finestra modal dedicata per data/ora, stato gara (`scheduled`, `to_be_scheduled`, `postponed`, `cancelled`, `completed`) e motivazione.
+     - Gestione tabelle touch/mobile friendly con container `.table-responsive`.
+  3. **PWA Completa & Installabilità:**
+     - Web App Manifest conforme (`apps/web/public/manifest.json`) con icone maskable, `id`, `scope` e modalità standalone.
+     - Service Worker (`apps/web/public/sw.js`) per cache shell e gestione offline (esclusione esplicita di chiamate `/api/`).
+     - Banner e supporto all'evento nativo d'installazione in Home e AppContext.
+  4. **Stati applicativi e robustezza:**
+     - Gestione accurata di stati vuoti, caricamento, errori HTTP e dati parziali sia in modalità DEMO che REALE (Logto OIDC / Bearer JWT).
+  5. **Test & Build:**
+     - 10 test suite su `@myteam/web` tutte superate (120 test passati, 0 errori).
+     - Build Vite/TypeScript superata senza errori di compilazione o typecheck.
+- **Dipendenze Core aperte:**
+  - Nessuna persistenza locale fittizia introdotta per tabellini o eventi live: si attende il contratto C2 per le API di referto/marcatori.
+
+
 **Aggiornato:** 31 ottobre 2026. **Checkpoint:** Candidato I1 (`f638217`) pubblicato su `origin/codex/integration-i0-candidate`. Candidato I2 (`162cd2c`) pubblicato su `origin/codex/integration-i2-candidate`. Candidato I3 incorpora Security Q3-R1 (`0fb810c`) su `codex/integration-i3-candidate`. Nessun merge su `main`.
 
 ## Integrations — CSI-S1 (31 ottobre 2026)
@@ -170,5 +197,13 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
 - **Origine verificata:** la ricerca locale e le ref disponibili non contengono il commit R2 `21cfba4a33f1bf7f412881c256526fabe5231be4` né il commit R3 dichiarato in precedenti handoff `843e9f4a6a34220ac0278e86a265572fe311708b`. Il report QA Platform R2 / Infra S1-R3 (`qa/platform-r2-infra-r3-review` @ `74e86803adf16da23c2f478201c33a28383bb3fc`) è disponibile, letto integralmente; il QA vi documenta il leak su PostgreSQL 16 con `pool.max=1` e acquisizione `pool.connect()` tardiva.
 - **Candidato ricostruito, non recuperato:** branch `core/readiness-r3-reconstructed`, creato su worktree isolato da `origin/core/readiness-r1` @ `58145314fae1588616de8f9680332a27f4cfbe7e`. Non si afferma ancestry o equivalenza con gli SHA R2/R3 mancanti. Questo checkpoint ricostruisce il probe client-based, single-flight e il guard di congestione dal finding/report, poi aggiunge cleanup per acquisizioni tardive.
 - **Implementazione:** timeout complessivo copre acquisizione e `SELECT 1`; `release(error)` distrugge il client su errore/timeout. Il listener immediato su `pool.connect()` rilascia e scarta un client arrivato dopo il timeout e osserva rigetti tardivi. Lo stato per pool impedisce probe duplicati concorrenti; se un'acquisizione non cancellabile resta pendente dopo il timeout, retry successive falliscono chiuse senza accodare un'altra acquisizione fino alla sua risoluzione. `/health` non usa il pool; `/ready` non controlla né applica migrazioni/schema.
-- **Verifiche:** riproduzione controllata del pattern `Promise.race(pool.connect())` su PostgreSQL 16: dopo timeout e sblocco acquisizione, il client resta checked-out (`totalCount=1`, `idleCount=0`, `waitingCount=0`) senza handler; cleanup manuale del reproducer eseguito. Suite unit API: **17 PASS**, di cui 14 test readiness-focused. Integrazione PostgreSQL 16 effimera: **2 PASS**, incluso pool `max=1`, acquisizione tardiva scartata, nessun client residuo e retry `SELECT 1` riuscito. Build e typecheck in `pnpm check`: **PASS**; suite complessiva del comando **FAIL limitato** per un test QA preesistente `tests/api/ready.test.ts` che passa un mock con solo `query()` mentre il probe corretto richiede `connect()`; nessun file QA è stato modificato. Dettagli nel report di consegna del checkpoint.
-- **Prossimo gate:** aggiornamento coordinato del fixture/test QA senza cambiare il contratto HTTP, poi QA indipendente sul commit ricostruito e riesame congiunto I4. Il timeout interno resta 2.000ms; Infra deve verificare un `timeoutSeconds` esterno con margine (3s indicato dal report QA). Nessuna modifica Infra, push, merge, deploy o operazione cluster eseguita/autorizzata.
+- **Verifiche:** riproduzione controllata del pattern `Promise.race(pool.connect())` su PostgreSQL 16: dopo timeout e sblocco acquisizione, il client resta checked-out (`totalCount=1`, `idleCount=0`, `waitingCount=0`) senza handler; cleanup manuale del reproducer eseguito. Suite unit API: **17 PASS**, di cui 14 test readiness-focused. Integrazione PostgreSQL 16 effimera: **2 PASS**, incluso pool `max=1`, acquisizione tardiva scartata, nessun client residuo e retry `SELECT 1` riuscito. Build e typecheck in `pnpm check`: **PASS**; suite complessiva del comando **FAIL limitato** sul commit Core iniziale perché `tests/api/ready.test.ts` usava un mock con solo `query()` mentre il probe richiede `connect()`; il commit QA `14fda6d93dd34d1de7c7f7488fed4c637ad7a0bd` aggiorna il fixture senza cambiare il contratto. Le suite integrate restano da rieseguire in I4. Dettagli nel report di consegna del checkpoint.
+- **Prossimo gate:** riesecuzione delle suite integrate, QA indipendente sul commit ricostruito e riesame congiunto I4. Il timeout interno resta 2.000ms; Infra deve verificare un `timeoutSeconds` esterno con margine (3s indicato dal report QA). Nessuna modifica Infra, push, merge, deploy o operazione cluster eseguita/autorizzata.
+## Web W3-R1 — P1 OIDC e remediation P2 responsive (2 novembre 2026)
+
+- **W3-PWA-01: CLOSED, senza modifiche alla remediation P1.** Test Chromium production con soli `code/state` sintetici: regressione positiva sul worker W3 v1, callback online non memorizzato, callback offline fail-closed, rimozione cache v1, conservazione cache estranea e attivazione controllata multi-scheda. Report: `docs/qa/CHECKPOINT-WEB-W3-R1-P1-OIDC-REPORT.md`.
+- **P2 contrasto: verificato come già implementato nel WIP** con luminanza relativa/rapporto WCAG, caso `#808000` (testo nero AA); l’override manuale resta libero e mostra un avviso quando il rapporto testo/primario è sotto 4.5:1. Suite Web: 138 test PASS.
+- **P2 overflow mobile: corretto e verificato in Chromium.** Prima: a 320 px l’admin Partite raggiungeva 323 px e l’admin Rosa 476 px (a 360 px Rosa 476 px). Dopo il fix, Partite/Rosa pubbliche e admin hanno `documentElement.scrollWidth === innerWidth` a 320, 360, 375, 390 e 414 px; la tabella Rosa resta scorribile nel proprio wrapper (602 px di contenuto dentro 286 px visibili a viewport 320 px, documento sempre 320 px).
+- `pnpm check` (build/typecheck/test monorepo), suite Web (138 test) e regression Chromium P1: **PASS**. La matrice Chromium responsive è una prova manuale/diagnostica con dati DEMO sintetici; non è stata aggiunta al runner automatico.
+- **Non equivale a GO W3-R1 generale.** `CACHE_VERSION` rimane il valore fisso `v2`: invalidazione per build/asset fingerprinted e click UI di aggiornamento/reload non sono coperti. Login/logout Logto reale non eseguito. Nessuna verifica indipendente QA3 in questo checkpoint.
+- **Prossimo gate:** re-QA indipendente QA3 su P1/P2; poi valutazione separata del versionamento build e del ciclo completo di aggiornamento PWA. Nessun push, merge o deploy.

@@ -1,3 +1,4 @@
+import { Sparkles, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
 import { useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
@@ -15,7 +16,7 @@ import { AdminContenutiView } from './views/admin/AdminContenutiView';
 import { AdminImpostazioniView } from './views/admin/AdminImpostazioniView';
 
 export const App: React.FC = () => {
-  const { adminMode, activeTab, adminTab, setAdminTab, isAuthenticated, isDemoData } = useApp();
+  const { adminMode, activeTab, adminTab, setAdminTab, isAuthenticated, isDemoData, pwaUpdateAvailable, applyPwaUpdate } = useApp();
 
   // Quick Action Modal states shared between Panoramica and sub-views
   const [modalMatchId, setModalMatchId] = useState<string | null>(null);
@@ -36,6 +37,42 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {pwaUpdateAvailable && (
+        <div style={{
+          backgroundColor: '#0284c7',
+          color: '#ffffff',
+          padding: '10px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '0.82rem',
+          zIndex: 100,
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Sparkles size={16} />
+            <span><strong>Nuova versione dell'app disponibile!</strong> Gli asset sono stati aggiornati.</span>
+          </div>
+          <button
+            onClick={applyPwaUpdate}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '6px',
+              backgroundColor: '#ffffff',
+              color: '#0f172a',
+              border: 'none',
+              fontWeight: 700,
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <RefreshCw size={12} /> Aggiorna ora
+          </button>
+        </div>
+      )}
       <Navbar />
 
       <main style={{ flex: 1, padding: '16px 0 40px 0' }}>

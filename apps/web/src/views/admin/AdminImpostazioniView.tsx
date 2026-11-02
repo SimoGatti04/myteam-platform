@@ -15,9 +15,12 @@ import {
   RefreshCw,
   Globe,
   Sliders,
-  Eye
+  Eye,
+  RotateCcw,
+  HelpCircle,
+  ChevronRight
 } from 'lucide-react';
-import { NEUTRAL_THEME, type ThemeTokens } from '../../services/theme';
+import { NEUTRAL_THEME, type ThemeTokens, isValidHexColor, deriveThemeTokens, getContrastRatio, isWcagCompliant } from '../../services/theme';
 
 export const AdminImpostazioniView: React.FC = () => {
   const {
@@ -28,6 +31,7 @@ export const AdminImpostazioniView: React.FC = () => {
     tokenOverrides,
     setTokenOverrides,
     isDemoData,
+    setAdminTab,
   } = useApp();
 
   const [name, setName] = useState<string>(adminTeam?.name || '');
@@ -36,7 +40,7 @@ export const AdminImpostazioniView: React.FC = () => {
   const [secondaryColor, setSecondaryColor] = useState<string>(adminTeam?.secondaryColor || '');
   const [currentSeasonId, setCurrentSeasonId] = useState<string>(adminTeam?.currentSeasonId || '');
 
-  // Individual derived token overrides (Approved Mode A: fine-tuning)
+  // Fine-tuning token derivati (Mode A approvata)
   const [showTokenTuning, setShowTokenTuning] = useState<boolean>(false);
   const [surfaceOverride, setSurfaceOverride] = useState<string>(tokenOverrides?.surface || '');
   const [borderOverride, setBorderOverride] = useState<string>(tokenOverrides?.border || '');
@@ -103,18 +107,11 @@ export const AdminImpostazioniView: React.FC = () => {
       return;
     }
     if (!newSeasonStartsOn || !newSeasonEndsOn) {
-      setSeasonModalError('Inserisci sia la data di inizio che la data di fine stagione.');
+      setSeasonModalError('Inserisci data inizio e data fine della stagione.');
       return;
     }
-    if (newSeasonEndsOn < newSeasonStartsOn) {
-      setSeasonModalError('La data di conclusione della stagione non può precedere la data di inizio.');
-      return;
-    }
-
-    // Controllo client per evitare duplicazioni di etichetta già presenti
-    const alreadyExists = seasons.some(s => s.label.trim().toLowerCase() === trimmedLabel.toLowerCase());
-    if (alreadyExists) {
-      setSeasonModalError(`Una stagione con denominazione "${trimmedLabel}" è già presente nell'elenco.`);
+    if (newSeasonStartsOn > newSeasonEndsOn) {
+      setSeasonModalError('La data di inizio non può essere successiva alla data di fine.');
       return;
     }
 
@@ -174,51 +171,95 @@ export const AdminImpostazioniView: React.FC = () => {
   // Validazione secondo specifiche di prodotto:
   // Per pubblicare sono obbligatori: Nome della squadra e Stemma!
   const canPublish = Boolean(name.trim() && crestUrl.trim());
-  const isPublished = Boolean(adminTeam?.publishedAt);
+
+  // Anteprima live derivata
+  const targetPrimary = isValidHexColor(primaryColor) ? primaryColor.trim() : NEUTRAL_THEME.primary;
+  const effectiveSecondary = isValidHexColor(secondaryColor) ? secondaryColor.trim() : null;
+
+  const currentOverrides = {
+    ...(surfaceOverride && isValidHexColor(surfaceOverride) ? { surface: surfaceOverride.trim() } : {}),
+    ...(borderOverride && isValidHexColor(borderOverride) ? { border: borderOverride.trim() } : {}),
+    ...(textOnPrimaryOverride && isValidHexColor(textOnPrimaryOverride) ? { textOnPrimary: textOnPrimaryOverride.trim() } : {}),
+  };
+
+  const previewTokens: ThemeTokens = deriveThemeTokens(
+    targetPrimary,
+    effectiveSecondary,
+    Object.keys(currentOverrides).length > 0 ? currentOverrides : tokenOverrides
+  );
+
+  const handleApplyColorOverrides = () => {
+    const overrides: any = {};
+    if (surfaceOverride && isValidHexColor(surfaceOverride)) overrides.surface = surfaceOverride.trim();
+    if (borderOverride && isValidHexColor(borderOverride)) overrides.border = borderOverride.trim();
+    if (textOnPrimaryOverride && isValidHexColor(textOnPrimaryOverride)) overrides.textOnPrimary = textOnPrimaryOverride.trim();
+
+    const result = Object.keys(overrides).length > 0 ? overrides : null;
+    setTokenOverrides(result);
+
+    const isCompliant = !textOnPrimaryOverride || !isValidHexColor(textOnPrimaryOverride) || isWcagCompliant(textOnPrimaryOverride, targetPrimary);
+    if (!isCompliant) {
+      const ratio = getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2);
+      setStatusMessage({
+        type: 'success',
+        text: `Colori derivati applicati alla sessione. Nota accessibilità: il contrasto testo/primario è ${ratio}:1, inferiore a 4.5:1 (WCAG AA).`,
+      });
+    } else {
+      setStatusMessage({ type: 'success', text: 'Colori derivati applicati con successo alla sessione (conforme WCAG AA)!' });
+    }
+  };
+
+  const handleResetColorOverrides = () => {
+    setSurfaceOverride('');
+    setBorderOverride('');
+    setTextOnPrimaryOverride('');
+    setTokenOverrides(null);
+    setStatusMessage({ type: 'success', text: 'Colori derivati reimpostati ai valori armonici automatici.' });
+  };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setStatusMessage(null);
 
-    // Salva Token Overrides nel contesto
-    if (surfaceOverride || borderOverride || textOnPrimaryOverride) {
-      setTokenOverrides({
-        surface: surfaceOverride || undefined,
-        border: borderOverride || undefined,
-        textOnPrimary: textOnPrimaryOverride || undefined,
-      });
-    } else {
-      setTokenOverrides(null);
-    }
-
-    if (isDemoData) {
-      // In Demo Mode: feedback locale immediato
-      setTimeout(() => {
-        setSaving(false);
-        setStatusMessage({
-          type: 'success',
-          text: 'Impostazioni aggiornate nell\'anteprima grafica locale (DEMO).',
-        });
-      }, 300);
+    // Validazione Hex se compilati
+    if (primaryColor.trim() && !isValidHexColor(primaryColor)) {
+      setSaving(false);
+      setStatusMessage({ type: 'error', text: 'Il colore primario deve essere un codice HEX valido nel formato #RRGGBB (es. #1e3a8a).' });
       return;
     }
 
-    // Modalità REALE: invio al server Core /api/v1/admin/team con Bearer token
-    const result = await apiService.configureTeam({
+    if (secondaryColor.trim() && !isValidHexColor(secondaryColor)) {
+      setSaving(false);
+      setStatusMessage({ type: 'error', text: 'Il colore secondario deve essere un codice HEX valido nel formato #RRGGBB (es. #f59e0b).' });
+      return;
+    }
+
+    const payload = {
       name: name.trim() || null,
       crestUrl: crestUrl.trim() || null,
       primaryColor: primaryColor.trim() || null,
       secondaryColor: secondaryColor.trim() || null,
       currentSeasonId: currentSeasonId.trim() || null,
-    });
+    };
 
+    if (isDemoData) {
+      setSaving(false);
+      setStatusMessage({
+        type: 'success',
+        text: 'Configurazione salvata nell\'anteprima grafica locale (DEMO).',
+      });
+      return;
+    }
+
+    // Modalità REALE: chiamata a PATCH /api/v1/admin/team
+    const result = await apiService.configureTeam(payload);
     setSaving(false);
 
     if (result.success) {
       setStatusMessage({
         type: 'success',
-        text: 'Configurazione squadra salvata con successo sul server Core!',
+        text: 'Configurazione squadra salvata con successo sul database Core!',
       });
       await refreshAdminTeam();
       await refreshPublicTeam();
@@ -234,7 +275,7 @@ export const AdminImpostazioniView: React.FC = () => {
     if (!canPublish) {
       setStatusMessage({
         type: 'error',
-        text: 'Per pubblicare il sito sono obbligatori il Nome della squadra e lo Stemma.',
+        text: 'Impossibile pubblicare: Nome e Stemma della squadra sono obbligatori.',
       });
       return;
     }
@@ -280,6 +321,42 @@ export const AdminImpostazioniView: React.FC = () => {
     setStatusMessage({ type: 'success', text: 'Ripristinato stile tecnico neutro di visualizzazione.' });
   };
 
+  // Setup Wizard / Onboarding Status Checklist
+  const setupSteps = [
+    {
+      id: 'season',
+      title: 'Stagione Sportiva',
+      done: Boolean(adminTeam?.currentSeasonId),
+      desc: adminTeam?.currentSeasonId ? 'Stagione corrente configurata' : 'Crea e assegna la stagione sportiva attiva',
+    },
+    {
+      id: 'name',
+      title: 'Nome Squadra',
+      done: Boolean(adminTeam?.name && adminTeam.name.trim().length > 0),
+      desc: adminTeam?.name ? adminTeam.name : 'Inserisci la denominazione ufficiale',
+    },
+    {
+      id: 'crest',
+      title: 'Stemma Societario',
+      done: Boolean(adminTeam?.crestUrl && adminTeam.crestUrl.trim().length > 0),
+      desc: adminTeam?.crestUrl ? 'URL stemma configurato' : 'Inserisci l\'URL dello stemma',
+    },
+    {
+      id: 'colors',
+      title: 'Palette Sociale',
+      done: Boolean(adminTeam?.primaryColor && adminTeam?.secondaryColor),
+      desc: adminTeam?.primaryColor && adminTeam?.secondaryColor ? `${adminTeam.primaryColor} / ${adminTeam.secondaryColor}` : 'Opzionale: personalizza i colori sociali',
+    },
+    {
+      id: 'publish',
+      title: 'Pubblicazione Sito',
+      done: Boolean(adminTeam?.publishedAt),
+      desc: adminTeam?.publishedAt ? 'Squadra e sito pubblici attivi' : 'Rendi visibile il sito ai tifosi',
+    },
+  ];
+
+  const completedStepsCount = setupSteps.filter(s => s.done).length;
+
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
@@ -296,33 +373,109 @@ export const AdminImpostazioniView: React.FC = () => {
           )}
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Configura nome, stemma e la palette intelligente personalizzabile (Modalità A approvata).
+          Configura l'identità sociale, la palette cromatica e la pubblicazione ufficiale
         </p>
       </div>
 
+      {/* Setup Guidato / Onboarding Progress */}
+      <section style={{
+        backgroundColor: 'var(--bg-card)',
+        borderRadius: '16px',
+        border: '1px solid var(--border-subtle)',
+        padding: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={18} color="var(--brand-secondary)" />
+              Setup Guidato Squadra ({completedStepsCount}/{setupSteps.length})
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Passi essenziali per la configurazione e il lancio pubblico della piattaforma
+            </div>
+          </div>
+          <div style={{
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            padding: '4px 10px',
+            borderRadius: '9999px',
+            backgroundColor: completedStepsCount === setupSteps.length ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+            color: completedStepsCount === setupSteps.length ? '#34d399' : 'var(--brand-secondary)',
+          }}>
+            {completedStepsCount === setupSteps.length ? '✓ Configurazione Completa' : `${Math.round((completedStepsCount / setupSteps.length) * 100)}% Completato`}
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            width: `${(completedStepsCount / setupSteps.length) * 100}%`,
+            backgroundColor: completedStepsCount === setupSteps.length ? '#10b981' : 'var(--brand-secondary)',
+            transition: 'width 0.3s ease',
+          }} />
+        </div>
+
+        {/* Checklist Step Pills */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginTop: '6px' }}>
+          {setupSteps.map((step) => (
+            <div
+              key={step.id}
+              style={{
+                backgroundColor: step.done ? 'rgba(16, 185, 129, 0.08)' : 'rgba(15, 23, 42, 0.6)',
+                border: step.done ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-subtle)',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+              }}
+            >
+              {step.done ? (
+                <CheckCircle2 size={16} color="#34d399" style={{ marginTop: '2px', flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid var(--text-dim)', marginTop: '2px', flexShrink: 0 }} />
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: step.done ? '#ffffff' : 'var(--text-main)', lineHeight: 1.2 }}>
+                  {step.title}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: step.done ? '#34d399' : 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {step.desc}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Messaggi di Stato */}
       {statusMessage && (
         <div style={{
-          padding: '14px 16px',
-          borderRadius: '10px',
+          padding: '14px 18px',
+          borderRadius: '12px',
           backgroundColor: statusMessage.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
           border: `1px solid ${statusMessage.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
           color: statusMessage.type === 'success' ? '#34d399' : '#fca5a5',
           fontSize: '0.85rem',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '10px',
         }}>
           {statusMessage.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
           <span>{statusMessage.text}</span>
         </div>
       )}
 
-      {/* Box Stato Pubblicazione */}
+      {/* Banner Pubblicazione Squadra */}
       <section style={{
-        backgroundColor: 'var(--bg-card)',
+        backgroundColor: adminTeam?.publishedAt ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
         borderRadius: '16px',
-        border: '1px solid var(--border-subtle)',
-        padding: '20px 24px',
+        border: `1px solid ${adminTeam?.publishedAt ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+        padding: '20px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -331,33 +484,33 @@ export const AdminImpostazioniView: React.FC = () => {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '12px',
-            backgroundColor: isPublished ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-            border: `1px solid ${isPublished ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            backgroundColor: adminTeam?.publishedAt ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: isPublished ? '#34d399' : '#fbbf24',
+            color: adminTeam?.publishedAt ? '#34d399' : '#fbbf24',
           }}>
-            {isPublished ? <Globe size={22} /> : <AlertCircle size={22} />}
+            <Globe size={22} />
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#ffffff' }}>
-              Stato Sito: {isPublished ? 'PUBBLICATO' : 'BOZZA PRIVATA'}
+            <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>
+              Stato del Sito: {adminTeam?.publishedAt ? 'PUBBLICATO' : 'IN BOZZA PRIVATA'}
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {isPublished
-                ? `Visibile pubblicamente ai tifosi. Data pubblicazione: ${adminTeam?.publishedAt}`
-                : 'Il sito è visibile solo agli amministratori. I requisiti obbligatori sono Nome squadra e Stemma.'}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {adminTeam?.publishedAt
+                ? `Visibile pubblicamente ai tifosi. Ultima pubblicazione: ${new Date(adminTeam.publishedAt).toLocaleString('it-IT')}`
+                : 'I tifosi non vedono ancora le partite né la rosa sul sito pubblico.'}
             </div>
           </div>
         </div>
 
         <div>
-          {!isPublished ? (
+          {!adminTeam?.publishedAt ? (
             <button
+              type="button"
               onClick={handlePublish}
               disabled={saving || !canPublish}
               style={{
@@ -409,20 +562,23 @@ export const AdminImpostazioniView: React.FC = () => {
           gap: '16px',
         }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Shield size={18} color="var(--brand-secondary)" />
-            Dati Identificativi Squadra (Obbligatori per la pubblicazione)
+            <Shield size={18} color="var(--brand-secondary)" /> 1. Dati Anagrafici Obbligatori
           </h3>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+            Il Nome della squadra e lo Stemma societario sono requisiti vincolanti per consentire la pubblicazione del sito pubblico.
+          </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                Nome Ufficiale Squadra *
+                Denominazione Ufficiale Squadra *
               </label>
               <input
                 type="text"
-                placeholder="es. Nome Società Sportiva"
+                placeholder="es. ASD Aurora Calcio"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={120}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -438,13 +594,14 @@ export const AdminImpostazioniView: React.FC = () => {
 
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                URL Stemma Ufficiale *
+                URL Stemma Ufficiale (Crest URL) *
               </label>
               <input
-                type="text"
-                placeholder="https://.../crest.png"
+                type="url"
+                placeholder="https://.../stemma.png"
                 value={crestUrl}
                 onChange={(e) => setCrestUrl(e.target.value)}
+                maxLength={2048}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -458,9 +615,23 @@ export const AdminImpostazioniView: React.FC = () => {
               />
             </div>
           </div>
+
+          {crestUrl && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Anteprima stemma:</div>
+              <img
+                src={crestUrl}
+                alt="Anteprima Stemma"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+                style={{ width: '36px', height: '36px', objectFit: 'contain' }}
+              />
+            </div>
+          )}
         </section>
 
-        {/* 2. Stagione Sportiva Corrente & Gestione Calendario */}
+        {/* 2. Selezione Stagione Corrente */}
         <section style={{
           backgroundColor: 'var(--bg-card)',
           borderRadius: '16px',
@@ -470,34 +641,33 @@ export const AdminImpostazioniView: React.FC = () => {
           flexDirection: 'column',
           gap: '16px',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Calendar size={18} color="var(--brand-secondary)" />
-              Stagione Sportiva Corrente & Gestione Calendario
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <Calendar size={18} color="var(--brand-secondary)" /> 2. Stagione Sportiva Corrente
             </h3>
             <button
               type="button"
               onClick={openNewSeasonModal}
               style={{
-                padding: '6px 14px',
-                borderRadius: '8px',
+                padding: '6px 12px',
+                borderRadius: '6px',
                 backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
                 color: 'var(--brand-secondary)',
-                fontSize: '0.8rem',
-                fontWeight: 700,
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                fontSize: '0.78rem',
+                fontWeight: 600,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
               }}
             >
-              <PlusCircle size={15} /> Nuova Stagione
+              <PlusCircle size={14} /> Nuova Stagione
             </button>
           </div>
 
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-            La stagione corrente definisce l'intervallo temporale predefinito per la rosa atleti, i tesseramenti e le partite in calendario.
+            Collega la squadra alla stagione sportiva di riferimento (necessaria per il calendario gare e la rosa attiva).
           </p>
 
           {/* Caso caricamento in corso */}
@@ -548,92 +718,69 @@ export const AdminImpostazioniView: React.FC = () => {
               padding: '16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '12px',
+              gap: '10px',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '0.9rem' }}>
-                <AlertCircle size={18} /> Nessuna stagione registrata a sistema (Database Iniziale Vuoto)
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '0.85rem' }}>
+                <AlertCircle size={18} /> Nessuna stagione censita nel database
               </div>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)', margin: 0, lineHeight: 1.5 }}>
-                La piattaforma è al primo avvio su database pulito. Per poter tesserare atleti e inserire partite nel calendario, è necessario creare la prima stagione sportiva ufficiale.
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Il database Core è attualmente vuoto. Per configurare la squadra e associare calendario e rosa, è necessario creare la prima stagione sportiva (es. 2026/2027).
               </p>
-              <div>
-                <button
-                  type="button"
-                  onClick={openNewSeasonModal}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--brand-secondary)',
-                    color: '#0f172a',
-                    border: 'none',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <PlusCircle size={15} /> Crea la Prima Stagione
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={openNewSeasonModal}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--brand-secondary)',
+                  color: '#0f172a',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <PlusCircle size={16} /> Crea la Prima Stagione
+              </button>
             </div>
           )}
 
-          {/* Selezione Stagione Esistente */}
-          {!loadingSeasons && seasons.length > 0 && (
+          {/* Selettore Stagione Corrente */}
+          {seasons.length > 0 && (
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                Seleziona Stagione Corrente Squadra
+                Stagione Attiva Selezionata
               </label>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <select
-                  value={currentSeasonId}
-                  onChange={(e) => setCurrentSeasonId(e.target.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: '240px',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#ffffff',
-                    fontSize: '0.9rem',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="">-- Nessuna stagione selezionata (Bozza) --</option>
-                  {seasons.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.label} ({s.startsOn} - {s.endsOn}) {s.id === adminTeam?.currentSeasonId ? '★ Attuale sul Server' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Dettaglio/Stato Stagione Selezionata */}
-              <div style={{ marginTop: '8px', fontSize: '0.78rem' }}>
-                {currentSeasonId ? (
-                  currentSeasonId === adminTeam?.currentSeasonId ? (
-                    <span style={{ color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckCircle2 size={14} /> Questa è la stagione attualmente attiva e salvata per la squadra.
-                    </span>
-                  ) : (
-                    <span style={{ color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <AlertCircle size={14} /> Nuova stagione selezionata (non ancora salvata sul server). Clicca su "Salva Impostazioni" in fondo per confermare l'assegnazione.
-                    </span>
-                  )
-                ) : (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    Nessuna stagione attiva assegnata alla squadra. Le sezioni Rosa e Partite richiedono una stagione attiva per operare.
-                  </span>
-                )}
-              </div>
+              <select
+                value={currentSeasonId}
+                onChange={(e) => setCurrentSeasonId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid var(--border-subtle)',
+                  color: '#ffffff',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                }}
+              >
+                <option value="">-- Nessuna stagione selezionata --</option>
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label} ({s.startsOn} - {s.endsOn}) {s.id === adminTeam?.currentSeasonId ? '★ Attuale' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </section>
 
-        {/* 3. Personalizzazione Colori (Modalità A Approvata) */}
+        {/* 3. Branding & Personalizzazione Colori (Scelta cromatica libera + Anteprima Mode A) */}
         <section style={{
           backgroundColor: 'var(--bg-card)',
           borderRadius: '16px',
@@ -643,10 +790,9 @@ export const AdminImpostazioniView: React.FC = () => {
           flexDirection: 'column',
           gap: '16px',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Palette size={18} color="var(--brand-secondary)" />
-              Colori Sociali & Palette Intelligente (Modalità A)
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <Palette size={18} color="var(--brand-secondary)" /> 3. Identità Cromatica & Branding
             </h3>
             <button
               type="button"
@@ -678,8 +824,8 @@ export const AdminImpostazioniView: React.FC = () => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="color"
-                  value={primaryColor || '#334155'}
-                  onChange={(e) => setPrimaryColor(e.target.value)}
+                  value={isValidHexColor(primaryColor) ? primaryColor : '#334155'}
+                  onChange={(e) => setPrimaryColor(e.target.value.toLowerCase())}
                   style={{
                     width: '42px',
                     height: '42px',
@@ -717,8 +863,8 @@ export const AdminImpostazioniView: React.FC = () => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="color"
-                  value={secondaryColor || '#0ea5e9'}
-                  onChange={(e) => setSecondaryColor(e.target.value)}
+                  value={isValidHexColor(secondaryColor) ? secondaryColor : '#0ea5e9'}
+                  onChange={(e) => setSecondaryColor(e.target.value.toLowerCase())}
                   style={{
                     width: '42px',
                     height: '42px',
@@ -749,25 +895,46 @@ export const AdminImpostazioniView: React.FC = () => {
             </div>
           </div>
 
-          {/* Anteprima Token Derivati */}
+          {/* Anteprima Token Derivati & Preview */}
           <div style={{
             backgroundColor: 'rgba(15, 23, 42, 0.6)',
             borderRadius: '12px',
             padding: '16px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '10px',
+            gap: '12px',
           }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Eye size={14} /> Anteprima Componenti con la Palette Attiva
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Eye size={14} /> Anteprima Componenti con la Palette Attiva
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTokenTuning(!showTokenTuning)}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-subtle)',
+                  color: showTokenTuning ? 'var(--brand-secondary)' : 'var(--text-muted)',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '0.72rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Sliders size={13} /> {showTokenTuning ? 'Nascondi Fine-Tuning Derivati' : 'Modifica Colori Derivati (Fine-Tuning)'}
+              </button>
             </div>
 
+            {/* Campioni componenti */}
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               <div style={{
                 padding: '8px 14px',
                 borderRadius: '8px',
-                backgroundColor: themeTokens.primary,
-                color: themeTokens.textOnPrimary,
+                backgroundColor: previewTokens.primary,
+                color: previewTokens.textOnPrimary,
                 fontWeight: 700,
                 fontSize: '0.8rem',
               }}>
@@ -776,7 +943,7 @@ export const AdminImpostazioniView: React.FC = () => {
               <div style={{
                 padding: '8px 14px',
                 borderRadius: '8px',
-                backgroundColor: themeTokens.secondary,
+                backgroundColor: previewTokens.secondary,
                 color: '#0f172a',
                 fontWeight: 700,
                 fontSize: '0.8rem',
@@ -786,14 +953,158 @@ export const AdminImpostazioniView: React.FC = () => {
               <div style={{
                 padding: '8px 14px',
                 borderRadius: '8px',
-                backgroundColor: themeTokens.surface,
-                border: `1px solid ${themeTokens.border}`,
+                backgroundColor: previewTokens.surface,
+                border: `1px solid ${previewTokens.border}`,
                 color: '#ffffff',
                 fontSize: '0.8rem',
               }}>
                 Card Superficie
               </div>
             </div>
+
+            {/* Sezione Fine-Tuning Derivati (Opzione A) */}
+            {showTokenTuning && (
+              <div style={{
+                marginTop: '8px',
+                padding: '14px',
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                borderRadius: '10px',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                  Personalizza i token derivati calcolati dal sistema (Superficie, Bordo, Contrasto Testo su Primario).
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                  {/* Superficie */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '4px' }}>
+                      Superficie Card (Attuale: {previewTokens.surface})
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="color"
+                        value={isValidHexColor(surfaceOverride) ? surfaceOverride : previewTokens.surface}
+                        onChange={(e) => setSurfaceOverride(e.target.value.toLowerCase())}
+                        style={{ width: '36px', height: '36px', borderRadius: '6px', border: '1px solid var(--border-subtle)', cursor: 'pointer', backgroundColor: 'transparent' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder={previewTokens.surface}
+                        value={surfaceOverride}
+                        onChange={(e) => setSurfaceOverride(e.target.value)}
+                        style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-subtle)', color: '#ffffff', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bordo */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '4px' }}>
+                      Bordo Brand (Attuale: {previewTokens.border})
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="color"
+                        value={isValidHexColor(borderOverride) ? borderOverride : previewTokens.border}
+                        onChange={(e) => setBorderOverride(e.target.value.toLowerCase())}
+                        style={{ width: '36px', height: '36px', borderRadius: '6px', border: '1px solid var(--border-subtle)', cursor: 'pointer', backgroundColor: 'transparent' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder={previewTokens.border}
+                        value={borderOverride}
+                        onChange={(e) => setBorderOverride(e.target.value)}
+                        style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-subtle)', color: '#ffffff', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Testo su Primario */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '4px' }}>
+                      Testo su Primario (Attuale: {previewTokens.textOnPrimary})
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="color"
+                        value={isValidHexColor(textOnPrimaryOverride) ? textOnPrimaryOverride : previewTokens.textOnPrimary}
+                        onChange={(e) => setTextOnPrimaryOverride(e.target.value.toLowerCase())}
+                        style={{ width: '36px', height: '36px', borderRadius: '6px', border: '1px solid var(--border-subtle)', cursor: 'pointer', backgroundColor: 'transparent' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder={previewTokens.textOnPrimary}
+                        value={textOnPrimaryOverride}
+                        onChange={(e) => setTextOnPrimaryOverride(e.target.value)}
+                        style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-subtle)', color: '#ffffff', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                    {textOnPrimaryOverride && isValidHexColor(textOnPrimaryOverride) && (
+                      <div style={{
+                        marginTop: '4px',
+                        fontSize: '0.72rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: isWcagCompliant(textOnPrimaryOverride, targetPrimary) ? '#34d399' : '#fbbf24',
+                      }}>
+                        {isWcagCompliant(textOnPrimaryOverride, targetPrimary) ? (
+                          <>
+                            <CheckCircle2 size={12} />
+                            <span>Contrasto WCAG AA conforme ({getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2)}:1)</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={12} />
+                            <span>Attenzione contrasto: {getContrastRatio(textOnPrimaryOverride, targetPrimary).toFixed(2)}:1 (&lt; 4.5:1 raccomandato WCAG AA)</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={handleResetColorOverrides}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: 'transparent',
+                      border: '1px solid var(--border-subtle)',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <RotateCcw size={12} /> Reimposta automatici
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyColorOverrides}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--brand-secondary)',
+                      color: '#0f172a',
+                      border: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Applica Derivati alla Sessione
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -843,36 +1154,25 @@ export const AdminImpostazioniView: React.FC = () => {
             borderRadius: '16px',
             border: '1px solid var(--border-subtle)',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: '460px',
             padding: '24px',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={18} color="var(--brand-secondary)" />
-                Nuova Stagione Sportiva
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                Crea Nuova Stagione
               </h3>
               <button
                 type="button"
                 onClick={() => setIsSeasonModalOpen(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '1.2rem',
-                  cursor: 'pointer',
-                }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
               >
                 ✕
               </button>
             </div>
-
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-              Crea una nuova stagione sportiva registrata sul server Core (<code>POST /api/v1/admin/seasons</code>).
-            </p>
 
             {seasonModalError && (
               <div style={{
@@ -881,7 +1181,7 @@ export const AdminImpostazioniView: React.FC = () => {
                 backgroundColor: 'rgba(239, 68, 68, 0.15)',
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 color: '#fca5a5',
-                fontSize: '0.8rem',
+                fontSize: '0.82rem',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -931,7 +1231,7 @@ export const AdminImpostazioniView: React.FC = () => {
                       backgroundColor: 'rgba(15, 23, 42, 0.8)',
                       border: '1px solid var(--border-subtle)',
                       color: '#ffffff',
-                      fontSize: '0.9rem',
+                      fontSize: '0.85rem',
                       outline: 'none',
                     }}
                     required
@@ -940,7 +1240,7 @@ export const AdminImpostazioniView: React.FC = () => {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-dim)', marginBottom: '6px' }}>
-                    Data Conclusione *
+                    Data Fine *
                   </label>
                   <input
                     type="date"
@@ -953,7 +1253,7 @@ export const AdminImpostazioniView: React.FC = () => {
                       backgroundColor: 'rgba(15, 23, 42, 0.8)',
                       border: '1px solid var(--border-subtle)',
                       color: '#ffffff',
-                      fontSize: '0.9rem',
+                      fontSize: '0.85rem',
                       outline: 'none',
                     }}
                     required
@@ -968,7 +1268,7 @@ export const AdminImpostazioniView: React.FC = () => {
                   style={{
                     padding: '8px 16px',
                     borderRadius: '8px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    backgroundColor: 'transparent',
                     border: '1px solid var(--border-subtle)',
                     color: 'var(--text-muted)',
                     fontSize: '0.85rem',
@@ -989,24 +1289,16 @@ export const AdminImpostazioniView: React.FC = () => {
                     fontWeight: 700,
                     fontSize: '0.85rem',
                     cursor: creatingSeason ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
                   }}
                 >
-                  {creatingSeason ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" /> Creazione in corso...
-                    </>
-                  ) : (
-                    'Crea Stagione'
-                  )}
+                  {creatingSeason ? 'Salvataggio...' : 'Crea Stagione'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 };
