@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
 Test vincolante di sicurezza sul frontend compilato in produzione.
-Verifica:
-1. Form di inserimento JWT manuale NON utilizzabile / NON renderizzato.
-2. Modalità DEMO NON attivabile (via interfaccia, via ?demo=true, via sessionStorage o localStorage).
-3. Assenza di Logto configurato NON abilita accessi alternativi (mostra stato di provider non configurato fail-closed).
-4. Nessun pulsante o trigger per attivare la modalità demo.
+Verifica sul frontend compilato in produzione:
+1. Il form JWT manuale e il fallback DEMO non sono renderizzati.
+2. La modalità DEMO non è attivabile via UI, ?demo=true o storage.
+3. Il login Logto SSO configurato è visibile e utilizzabile come unico accesso admin.
+4. Nessun pulsante o trigger permette di attivare la modalità demo.
 """
 import asyncio
-import os
 import sys
-import re
 from playwright.async_api import async_playwright, expect
 
 EXIT_PASS = 0
@@ -50,8 +48,10 @@ async def run_security_test(target_url: str) -> int:
             assert "DEMO MOCK" not in body_text, "TEST 1 FAILED: DEMO MOCK label found in body with ?demo=true"
             assert "MAPI GROUP" not in body_text, "TEST 1 FAILED: Demo team branding 'MAPI GROUP' found with ?demo=true"
             assert "Passa a Demo" not in body_text, "TEST 1 FAILED: 'Passa a Demo' button found with ?demo=true"
+            assert await page.get_by_role("button", name="Passa a Demo", exact=True).count() == 0, "TEST 1 FAILED: Demo toggle is rendered with ?demo=true"
+            assert await page.get_by_role("button", name="Attiva Modalità Demo", exact=True).count() == 0, "TEST 1 FAILED: Demo activation button is rendered with ?demo=true"
 
-            print("  -> PASS: ?demo=true ignored in production build.")
+            print("  -> PASS: ?demo=true ignored and demo controls absent in production build.")
             await context.close()
 
             # -----------------------------------------------------------------
@@ -80,15 +80,16 @@ async def run_security_test(target_url: str) -> int:
             assert "MODALITÀ DIMOSTRATIVA" not in body_text2, "TEST 2 FAILED: Demo banner active via storage injection"
             assert "DEMO MOCK" not in body_text2, "TEST 2 FAILED: DEMO MOCK active via storage injection"
             assert "MAPI GROUP" not in body_text2, "TEST 2 FAILED: MAPI GROUP active via storage injection"
+            assert await page2.get_by_role("button", name="Passa a Demo", exact=True).count() == 0, "TEST 2 FAILED: Demo toggle is rendered after storage injection"
+            assert await page2.get_by_role("button", name="Attiva Modalità Demo", exact=True).count() == 0, "TEST 2 FAILED: Demo activation button is rendered after storage injection"
 
-            print("  -> PASS: Storage manipulation to force demo ignored in production build.")
+            print("  -> PASS: Storage manipulation ignored and demo controls absent in production build.")
             await context2.close()
 
             # -----------------------------------------------------------------
             # TEST 3: Navigazione in Area Admin:
-            # - Form JWT manuale assente
-            # - Demo fallback assente
-            # - Assenza OIDC non offre bypass o accessi alternativi
+            # - Login Logto SSO configurato visibile come accesso primario
+            # - Form JWT manuale e demo fallback assenti in produzione
             # -----------------------------------------------------------------
             print("\n[TEST 3] Testing Admin Login view for absence of manual auth & demo fallback...")
             context3 = await browser.new_context(viewport={"width": 1280, "height": 800})
@@ -106,30 +107,44 @@ async def run_security_test(target_url: str) -> int:
             await expect(admin_btn).to_be_visible()
             await admin_btn.click()
 
-            # Attendi rendering AdminLoginView
-            login_heading = page3.locator("h2:has-text('Accesso Amministrazione')")
+            # Attendi il titolo reale della AdminLoginView (heading semantico, non testo storico).
+            login_heading = page3.get_by_role("heading", name="Pannello Amministratore", exact=True)
             await expect(login_heading).to_be_visible()
 
-            # 3A. Verifica ASSENZA del form manuale JWT
-            # In sviluppo/staging il form ha textarea/input con placeholder eyJ o label 'Strumento di Collaudo'
-            manual_form = page3.locator("textarea, input[placeholder*='eyJ'], text='Strumento di Collaudo'")
-            assert await manual_form.count() == 0, "TEST 3A FAILED: Manual JWT input form is present in production build!"
+            # 3A. In questa build Logto è configurato: deve essere il percorso SSO visibile.
+            logto_description = page3.get_by_text(
+                "Autenticazione federata sicura basata su OpenID Connect Authorization Code Flow con PKCE (RFC 7636).",
+                exact=True,
+            )
+            await expect(logto_description).to_be_visible()
+            logto_button = page3.get_by_role("button", name="Accedi con Logto (SSO)", exact=True)
+            await expect(logto_button).to_be_visible()
+            await expect(logto_button).to_be_enabled()
+            print("  -> PASS: Configured Logto SSO is visible and enabled.")
 
-            manual_submit = page3.get_by_role("button", name=re.compile(r"Accedi con Bearer Token|Valida e accedi", re.I))
-            assert await manual_submit.count() == 0, "TEST 3A FAILED: Manual JWT submit button is present in production build!"
-            print("  -> PASS: Manual JWT entry form is strictly absent.")
+            # 3B. Verifica ASSENZA del form manuale JWT e dei suoi controlli.
+            manual_form_label = page3.get_by_text("Inserimento manuale Bearer Token JWT (Collaudo)", exact=True)
+            assert await manual_form_label.count() == 0, "TEST 3B FAILED: Manual JWT form label is present in production build!"
+            manual_form = page3.locator("main form")
+            assert await manual_form.count() == 0, "TEST 3B FAILED: Manual authentication form is present in production build!"
+            manual_fields = page3.locator("textarea, input[placeholder*='eyJ']")
+            assert await manual_fields.count() == 0, "TEST 3B FAILED: Manual JWT input is present in production build!"
+            manual_submit = page3.get_by_role("button", name="Valida e accedi", exact=True)
+            assert await manual_submit.count() == 0, "TEST 3B FAILED: Manual JWT submit button is present in production build!"
+            print("  -> PASS: Manual JWT entry form and submit control are strictly absent.")
 
-            # 3B. Verifica ASSENZA della sezione Demo in Login
-            demo_section = page3.locator("text='Collaudo grafico in Modalità Demo', text='Attiva Modalità Demo'")
-            assert await demo_section.count() == 0, "TEST 3B FAILED: Demo activation section is present in Admin Login!"
-            print("  -> PASS: Demo activation section in Admin Login is strictly absent.")
+            # 3C. Verifica ASSENZA della sezione e del trigger Demo in Login.
+            demo_section = page3.get_by_text("Collaudo grafico in Modalità Demo", exact=True)
+            demo_button = page3.get_by_role("button", name="Attiva Modalità Demo", exact=True)
+            assert await demo_section.count() == 0, "TEST 3C FAILED: Demo activation section is present in Admin Login!"
+            assert await demo_button.count() == 0, "TEST 3C FAILED: Demo activation button is present in Admin Login!"
+            print("  -> PASS: Demo activation section and button are strictly absent.")
 
-            # 3C. Verifica stato fail-closed per Logto non configurato o configurato
-            # Se Logto non è configurato o mock, deve mostrare lo stato senza aprire accessi alternativi
+            # 3D. Cross-check che la vista admin non mostri ulteriori bypass demo.
             body_login = await page3.inner_text("body")
-            assert "Passa a Demo" not in body_login
-            assert "MODALITÀ DIMOSTRATIVA" not in body_login
-            print("  -> PASS: No alternative or bypass authentication mechanism is surfaced.")
+            assert "Passa a Demo" not in body_login, "TEST 3D FAILED: Demo toggle is present in Admin Login!"
+            assert "MODALITÀ DIMOSTRATIVA" not in body_login, "TEST 3D FAILED: Demo banner is present in Admin Login!"
+            print("  -> PASS: No alternative demo/bypass mechanism is surfaced.")
 
             # -----------------------------------------------------------------
             # TEST 4: Verifica viste pubbliche (Statistiche, Votazioni, Rosa, Partite)
