@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: myteam-platform-migrate
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/name: myteam-platform-api
+    app.kubernetes.io/component: migration
+    environment: staging
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: myteam-platform-api
+        app.kubernetes.io/component: migration
+        environment: staging
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/simogatti04/myteam-platform-api:staging-latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "apps/api/dist/persistence/migrate-cli.js"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myteam-platform-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
