@@ -1,0 +1,15 @@
+
+> @myteam/api@0.1.0 test:integration /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/api
+> REQUIRE_POSTGRES_INTEGRATION=1 node --env-file-if-exists=../../.env --import tsx --test test/integration/*.test.ts
+
+../../.env not found. Continuing without it.
+../../.env not found. Continuing without it.
+✔ PostgreSQL migration and public platform flow (465.620041ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 647.037625

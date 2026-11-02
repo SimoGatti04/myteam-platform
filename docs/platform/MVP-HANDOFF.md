@@ -76,7 +76,7 @@ Le specifiche funzionali **approvate** dell'intero prodotto sono in [PUBLIC-WEB.
 
 ## Avvio operativo della nuova repository — 28 ottobre 2026
 
-**Repository remota creata:** `git@github.com:SimoGatti04/myteam-platform.git` (`SimoGatti04/myteam-platform`), **riscontrata vuota al controllo su GitHub**. La directory locale `myteam-platform` non risulta ancora presente nel workspace consultato; il bootstrap e il collegamento del remote sono **DA ESEGUIRE**, non dichiarati completati. **Non assegnare mai questa remota alla root Git `AURINFORMATC`**, che resta repository separata per l'app iOS. Nel nuovo repository trasferire una copia coerente delle specifiche da `AURINFORMATC/docs/platform/`, correggendo i riferimenti cross-repository e senza muovere/distruggere gli originali.
+**Stato di avvio:** il controllo di vuoto della remota e il bootstrap sono stati completati il 28 ottobre 2026. La copia delle specifiche è conservata in questa repository, senza spostare gli originali di `../AURINFORMATC/docs/platform/`. La baseline C0 è pubblicata su `main`; lo stato attuale, il branch Core, gli SHA e le verifiche viventi sono mantenuti in [`../STATUS.md`](../STATUS.md). Non assegnare mai questa remota alla root Git `AURINFORMATC`, che resta repository separata per l'app iOS.
 
 **Roster iniziale di agenti persistenti approvato come impostazione di avvio (proposta operativa del supervisore):**
 - `Core`: bootstrap Git/repo, contratti condivisi, dominio/API, persistenza; owner dei file di configurazione comuni e del baseline iniziale.
@@ -91,7 +91,7 @@ Le specifiche funzionali **approvate** dell'intero prodotto sono in [PUBLIC-WEB.
 
 ## Handoff per agenti senza contesto della chat
 
-1. Leggere `../../AGENTS.md`, [README.md](README.md), specifiche di competenza e gli snapshot ADR in `../decisions/ios/`. Prima di decisioni o modifiche iOS, consultare i documenti correnti nel repository separato `AURINFORMATC/app/`; leggere regole aggiornate `development-environment` e `infra` quando pertinenti.
+1. Leggere `../../AGENTS.md`, [README.md](README.md), specifiche di competenza e gli snapshot ADR in `../decisions/ios/`. Prima di decisioni o modifiche iOS, consultare i documenti correnti nella repository sorella `../AURINFORMATC/app/`; leggere regole aggiornate `development-environment` e `infra` quando pertinenti.
 2. Riconoscere `myteam-platform` e AURINFORMATC come repository Git separate. `myteam-platform` usa la remote SSH `git@github.com:SimoGatti04/myteam-platform.git`; AURINFORMATC resta senza remote. Il dossier è stato copiato, non spostato; l'app iOS non è stata migrata. `MyTeam Video` è un progetto e servizio distinto.
 3. Prima di modificare file, verificare HEAD, dirty/staged/untracked, eventuali worktree/writer paralleli: non assumere checkout pulito.
 4. Etichettare **APPROVATO / PROPOSTO / DA VERIFICARE / IMPLEMENTATO / TESTATO / NOT RUN**; il report iOS C3.3 dichiara 122 PASS su simulatore, non test eseguiti da questo lavoro documentale.

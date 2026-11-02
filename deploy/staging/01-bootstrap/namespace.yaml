@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+    simogatti.io/ghcr-pull: "true"

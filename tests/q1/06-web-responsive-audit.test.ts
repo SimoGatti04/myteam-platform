@@ -1,0 +1,61 @@
+import assert from "node:assert/strict";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+
+// Trova la root del pacchetto apps/web usando percorsi relativi al checkout corrente
+function findWebRoot(): string {
+  const localWeb = join(process.cwd(), "apps/web");
+  return localWeb;
+}
+
+const webRoot = findWebRoot();
+
+test("6.1 Web App Architecture & Responsiveness Static Audit", {
+  skip: !existsSync(join(webRoot, "index.html")) ? "apps/web/index.html not found; skipping web static audit in non-web worktree" : false
+}, () => {
+  const indexPath = join(webRoot, "index.html");
+
+  const html = readFileSync(indexPath, "utf8");
+  assert.ok(html.includes("width=device-width"), "Viewport meta tag must declare width=device-width");
+  assert.ok(html.includes("manifest.json"), "PWA manifest must be referenced");
+
+  // Check manifest.json
+  const manifestPath = join(webRoot, "public/manifest.json");
+  assert.ok(existsSync(manifestPath), "manifest.json must exist in public/");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  assert.equal(manifest.display, "standalone", "PWA display mode must be standalone");
+  assert.ok(manifest.icons && manifest.icons.length > 0, "PWA manifest must define icons");
+
+  // Check CSS theme contains neutral scales and CSS custom properties
+  const themePath = join(webRoot, "src/styles/theme.css");
+  assert.ok(existsSync(themePath), "theme.css must exist");
+  const css = readFileSync(themePath, "utf8");
+  assert.match(css, /--brand-primary:/, "CSS custom property --brand-primary must be defined");
+  assert.match(css, /--brand-secondary:/, "CSS custom property --brand-secondary must be defined");
+
+  // Check Navbar defines responsive toggle
+  const navbarPath = join(webRoot, "src/components/Navbar.tsx");
+  assert.ok(existsSync(navbarPath), "Navbar.tsx must exist");
+  const navbar = readFileSync(navbarPath, "utf8");
+  assert.match(navbar, /mobileMenuOpen/, "Navbar must implement mobile responsive menu state");
+});
+
+test("6.2 Web Build Artifacts Verification", {
+  skip: !existsSync(join(webRoot, "dist/index.html")) ? "dist/index.html not present; run pnpm --filter @myteam/web build first" : false
+}, () => {
+  const distIndex = join(webRoot, "dist/index.html");
+  const distHtml = readFileSync(distIndex, "utf8");
+  assert.match(distHtml, /<div id="root">/i, "Built index.html must mount root container");
+});
+
+// 6.3 è deliberatamente NON eseguito in questa suite Node: il gate browser reale
+// (desktop + viewport mobile, onboarding, 401/403/offline, bozza/pubblicazione) è
+// implementato in `tests/browser/browser-e2e.py` ed eseguito separatamente con
+// Playwright, con log e screenshot in `docs/qa/evidence/<checkpoint>/`.
+// Lo skip NON è una prova e NON va conteggiato come PASS.
+test("6.3 Live Browser Responsive E2E Gate (delegated to tests/browser/browser-e2e.py)", {
+  skip: "NOT RUN in TAP: gate browser reale delegato a tests/browser/browser-e2e.py (Playwright, desktop + mobile), eseguito e rendicontato separatamente. Questo SKIP non è un esito PASS."
+}, () => {
+  // Placeholder: nessuna asserzione qui, per non produrre un falso positivo.
+});

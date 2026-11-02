@@ -1,0 +1,14 @@
+[P1] ?demo=true on production bundle built with VITE_ENABLE_DEMO=true
+  PASS: no DEMO banner, no DEMO branding, real API called -> ['http://127.0.0.1:4180/api/v1/public/team']
+[P2] hostile sessionStorage after boot -> {'mode': 'demo', 'token': None}
+[P3] manual JWT form must not exist in production build
+  PASS: no manual token input; login view shows production policy
+[P4] DEMO toggle must not switch data mode
+  demo toggle buttons found: 0
+  PASS: ?demo=1 also ignored
+{
+  "p1_demo_blocked_in_prod_build": "PASS",
+  "p2_manual_token_purged": "PASS",
+  "p3_manual_auth_absent": "PASS",
+  "p4_demo_query_variants_blocked": "PASS"
+}

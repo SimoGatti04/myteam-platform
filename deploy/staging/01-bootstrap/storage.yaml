@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: myteam-platform-staging-postgres-data
+  labels:
+    app.kubernetes.io/name: myteam-platform-postgres
+    environment: staging
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: myteam-postgres-staging-local
+  local:
+    path: /srv/myteam-platform-staging/postgres
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - servergatti
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: myteam-platform-postgres-data
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/name: myteam-platform-postgres
+    environment: staging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: myteam-postgres-staging-local
+  resources:
+    requests:
+      storage: 20Gi

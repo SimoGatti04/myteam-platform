@@ -1,0 +1,36 @@
+✔ 3.1 Create match in draft state with date and official status (97.883917ms)
+✔ 3.2 Draft match is isolated and NOT visible in public matches list (24.379041ms)
+✔ 3.3 Create match without date requires to_be_scheduled status (25.088083ms)
+✔ 3.4 Reschedule match updates history, logs audit, and handles postponed state (23.082042ms)
+✖ 3.5 Completed match schedule is immutable and transitions to completed are guarded (CORE-BUG-01) (23.367458ms)
+✔ 3.6 Publishing matches exposes them in public list separated by scheduled vs toBeScheduled (24.84375ms)
+✔ 3.7 Match Detail: Single public match detail endpoint GET /api/v1/public/matches/:id status and contract (22.368375ms)
+✔ 3.8 Match reschedule chain preserves stable match UUID identity across multiple changes (24.516958ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 7
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 426.114958
+
+✖ failing tests:
+
+test at tests/q1/03-match-lifecycle.test.ts:1:4986
+✖ 3.5 Completed match schedule is immutable and transitions to completed are guarded (CORE-BUG-01) (23.367458ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (<repo>/tests/q1/03-match-lifecycle.test.ts:257:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
