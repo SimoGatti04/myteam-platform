@@ -2,130 +2,123 @@
 set -euo pipefail
 
 # ==============================================================================
-# MYTEAM-PLATFORM STAGING DEPLOYMENT RUNNER (FAIL-CLOSED STAGED ROLLOUT)
-# ==============================================================================
-# Esegue il rollout ordinato e fail-closed per staging su K3s in 5 fasi:
-# 1. Concurrency Lock & Preflight (INFRA-R2-05)
-# 2. Bootstrap: Namespace, Storage PV/PVC, ExternalSecret, PostgreSQL, NetworkPolicy
-# 3. Attesa Database Ready
-# 4. Esecuzione e verifica del Job migrazioni SQL deterministico (fail-closed)
-# 5. Rollout applicativo: API Core e Web Frontend
-# 6. Routing: Abilitazione Traefik Gateway HTTPRoute e smoke test
+# MYTEAM PLATFORM STAGING — fail-closed staged rollout
+# The lock is a Kubernetes Lease acquired before any stage except the
+# idempotent namespace bootstrap required to host that Lease.
 # ==============================================================================
 
 NAMESPACE="myteam-platform-staging"
 STAGING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_ID="${RELEASE_ID:-$(date +%Y%m%d%H%M%S)}"
-JOB_NAME="myteam-platform-migrate-${RELEASE_ID}"
+RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%d%H%M%S)}"
 LOCK_NAME="myteam-platform-deploy-lock"
+LOCK_TOOL="${STAGING_DIR}/../../scripts/k8s-lease-lock.py"
+LOCK_DURATION=180
+LOCK_INTERVAL=30
 
-echo "=== INIZIALIZZAZIONE DEPLOYMENT STAGING (RELEASE: ${RELEASE_ID}) ==="
+# Unique process identity prevents reuse/collision when the same release is
+# retried. A separate unique Job suffix prevents collisions with prior runs.
+LOCK_OWNER="myteam-platform/$(python3 -c 'import uuid; print(uuid.uuid4())')"
+RUN_SUFFIX="${LOCK_OWNER##*/}"
+RUN_SUFFIX="${RUN_SUFFIX//-/}"
+RUN_SUFFIX="${RUN_SUFFIX:0:12}"
+JOB_NAME="myteam-platform-migrate-${RUN_SUFFIX}"
+HEARTBEAT_PID=""
+LOCK_ACQUIRED=0
+TEMP_MIGRATE_YAML=""
 
-# ------------------------------------------------------------------------------
-# FASE 0: LOCK DI CONCORRENZA AMBIENTE (INFRA-R2-05)
-# ------------------------------------------------------------------------------
-# Utilizza una risorsa Lease Kubernetes nel namespace per evitare che due runner
-# o processi di deployment si sovrappongano e interferiscano l'uno con l'altro.
-acquire_lock() {
-  echo "Verifica e acquisizione concurrency lock staging..."
-  # Verifica se il namespace esiste già
-  if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
-    echo "Namespace ${NAMESPACE} non ancora presente (primo bootstrap); skip acquisizione lease."
+cleanup() {
+  local original_status=$?
+  trap - EXIT INT TERM
+  if [[ -n "${HEARTBEAT_PID}" ]]; then
+    kill "${HEARTBEAT_PID}" 2>/dev/null || true
+    wait "${HEARTBEAT_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${TEMP_MIGRATE_YAML}" ]]; then
+    rm -f -- "${TEMP_MIGRATE_YAML}"
+  fi
+  if (( LOCK_ACQUIRED )); then
+    python3 "${LOCK_TOOL}" release --namespace "${NAMESPACE}" --name "${LOCK_NAME}" --owner "${LOCK_OWNER}" || \
+      echo "WARNING: Lease not released; ownership was not confirmed. It will expire naturally." >&2
+  fi
+  exit "${original_status}"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+ensure_lock_namespace() {
+  # Bootstrap is idempotent and create is atomic. Concurrent first-run
+  # contenders may both observe absence; AlreadyExists is accepted only after
+  # a successful read confirms the namespace now exists.
+  if kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
     return 0
   fi
-
-  # Tenta la creazione atomica del Lease
-  local now
-  now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  if ! kubectl -n "${NAMESPACE}" create lease "${LOCK_NAME}" \
-    --holder-identity="runner-${RELEASE_ID}" \
-    --duration=900 >/dev/null 2>&1; then
-    # Se il lease esiste già, controlla se è ancora attivo
-    echo "ATTENZIONE: Trovato un lease di deployment attivo (${LOCK_NAME})!" >&2
-    local holder
-    holder=$(kubectl -n "${NAMESPACE}" get lease "${LOCK_NAME}" -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)
-    echo "ERRORE: Deployment concorrente già in esecuzione da parte di '${holder}'." >&2
-    echo "Attendere il completamento o rimuovere il lease manualmente se stale." >&2
-    exit 1
+  if kubectl create namespace "${NAMESPACE}" >/dev/null 2>&1; then
+    return 0
   fi
-  echo "Lock di deployment acquisito da runner-${RELEASE_ID}."
+  if kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: Cannot ensure namespace ${NAMESPACE}; deployment stopped before lock acquisition." >&2
+  return 1
 }
 
-release_lock() {
-  echo "Rilascio concurrency lock staging..."
-  kubectl -n "${NAMESPACE}" delete lease "${LOCK_NAME}" --ignore-not-found >/dev/null 2>&1 || true
-}
-trap release_lock EXIT
+echo "=== STAGING RELEASE ${RELEASE_ID} / RUN ${RUN_SUFFIX} ==="
+echo "Ensuring lock namespace, then acquiring an exclusive Lease..."
+ensure_lock_namespace
+python3 "${LOCK_TOOL}" acquire --namespace "${NAMESPACE}" --name "${LOCK_NAME}" \
+  --owner "${LOCK_OWNER}" --duration "${LOCK_DURATION}"
+LOCK_ACQUIRED=1
+python3 "${LOCK_TOOL}" heartbeat --namespace "${NAMESPACE}" --name "${LOCK_NAME}" \
+  --owner "${LOCK_OWNER}" --duration "${LOCK_DURATION}" --interval "${LOCK_INTERVAL}" \
+  --parent-pid "$$" &
+HEARTBEAT_PID=$!
 
-acquire_lock
-
-# ------------------------------------------------------------------------------
-# FASE 1: BOOTSTRAP (Namespace, Storage, Secrets, DB, NetworkPolicy)
-# ------------------------------------------------------------------------------
-echo "=== FASE 1: BOOTSTRAP (Namespace, Storage, Secrets, DB, NetworkPolicy) ==="
+# FASE 1 — bootstrap namespace metadata, storage, secrets, PostgreSQL, policy.
+echo "=== FASE 1: BOOTSTRAP ==="
 kubectl apply -k "${STAGING_DIR}/01-bootstrap"
 
-# ------------------------------------------------------------------------------
-# FASE 2: ATTESA DATABASE READY
-# ------------------------------------------------------------------------------
-echo "=== FASE 2: ATTESA DATABASE READY ==="
-echo "Attesa sincronizzazione secret Infisical..."
+# FASE 2 — hard gate: credentials and PostgreSQL must be Ready before migration.
+echo "=== FASE 2: DATABASE READY ==="
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready externalsecret/myteam-platform-secrets --timeout=120s
-
-echo "Attesa rollout PostgreSQL StatefulSet..."
 kubectl -n "${NAMESPACE}" rollout status statefulset/myteam-platform-postgres --timeout=180s
-
-echo "Verifica probe pg_isready..."
 kubectl -n "${NAMESPACE}" exec statefulset/myteam-platform-postgres -- pg_isready -U myteam_app -d myteam_platform
 
-# ------------------------------------------------------------------------------
-# FASE 3: JOB MIGRAZIONI DETERMINISTICO (FAIL-CLOSED GATE - INFRA-R2-05)
-# ------------------------------------------------------------------------------
-echo "=== FASE 3: JOB MIGRAZIONI (FAIL-CLOSED GATE) ==="
-
-# Verifica se esiste già un Job di migrazione attualmente attivo (non cancellare un Job running!)
-RUNNING_JOBS=$(kubectl -n "${NAMESPACE}" get jobs -l app.kubernetes.io/component=migration -o jsonpath='{range .items[?(@.status.active>0)]}{.metadata.name}{" "}{end}')
-if [ -n "${RUNNING_JOBS}" ]; then
-  echo "ERRORE: Rilevato Job di migrazione già attivo (${RUNNING_JOBS})!" >&2
-  echo "Non è consentito cancellare o sovrapporre una migrazione in esecuzione." >&2
-  echo "Attendere il completamento del Job attivo." >&2
+# FASE 3 — never delete or replace an existing migration Job. Each invocation
+# gets a unique name. Any active migration (including one started elsewhere)
+# blocks this run; completed jobs from previous releases remain untouched.
+echo "=== FASE 3: MIGRATIONS (FAIL-CLOSED) ==="
+RUNNING_JOBS="$(kubectl -n "${NAMESPACE}" get jobs -l app.kubernetes.io/component=migration \
+  -o jsonpath='{range .items[?(@.status.active>0)]}{.metadata.name}{" "}{end}')"
+if [[ -n "${RUNNING_JOBS}" ]]; then
+  echo "ERROR: Active migration Job(s) detected: ${RUNNING_JOBS}. No Job was deleted." >&2
   exit 1
 fi
 
-echo "Generazione manifest Kustomize migrazione con Job deterministico '${JOB_NAME}'..."
-# Renderizza il manifest Kustomize sostituendo il nome del Job con quello univoco di release
-TMP_MIGRATE_YAML=$(mktemp /tmp/myteam-migrate-XXXXXX.yaml)
-kubectl kustomize "${STAGING_DIR}/02-migration" | sed "s/name: myteam-platform-migrate$/name: ${JOB_NAME}/" > "${TMP_MIGRATE_YAML}"
+TEMP_MIGRATE_YAML="$(mktemp "${TMPDIR:-/tmp}/myteam-migrate-XXXXXX.yaml")"
+kubectl kustomize "${STAGING_DIR}/02-migration" |
+  sed "s/^  name: myteam-platform-migrate$/  name: ${JOB_NAME}/" > "${TEMP_MIGRATE_YAML}"
+if ! grep -Fq "name: ${JOB_NAME}" "${TEMP_MIGRATE_YAML}"; then
+  echo "ERROR: Could not render a unique migration Job name; refusing apply." >&2
+  exit 1
+fi
+kubectl apply -f "${TEMP_MIGRATE_YAML}"
+rm -f -- "${TEMP_MIGRATE_YAML}"
+TEMP_MIGRATE_YAML=""
 
-kubectl apply -f "${TMP_MIGRATE_YAML}"
-rm -f "${TMP_MIGRATE_YAML}"
-
-echo "Monitoraggio esecuzione migrazioni (Job: ${JOB_NAME}, timeout 180s)..."
-if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout=180s; then
-  echo "ERRORE CRITICO: Il Job di migrazione '${JOB_NAME}' è fallito o andato in timeout!" >&2
-  echo "Dump dei log del pod di migrazione:" >&2
+if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout=300s; then
+  echo "ERROR: Migration Job ${JOB_NAME} failed or timed out; application and routing stages are blocked." >&2
   kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" --tail=50 >&2 || true
-  echo "ROLLOUT BLOCCATO: Le applicazioni API e Web NON verranno distribuite (Fail-Closed)." >&2
   exit 1
 fi
-echo "Migrazioni database completate con successo per la release ${RELEASE_ID}."
 
-# ------------------------------------------------------------------------------
-# FASE 4: ROLLOUT APPLICATIVO (API & Web)
-# ------------------------------------------------------------------------------
-echo "=== FASE 4: ROLLOUT APPLICATIVO (API & Web) ==="
+# FASE 4 — only after successful migration.
+echo "=== FASE 4: APPLICATION ROLLOUT ==="
 kubectl apply -k "${STAGING_DIR}/03-apps"
-
-echo "Attesa disponibilità API Core..."
 kubectl -n "${NAMESPACE}" rollout status deployment/myteam-platform-api --timeout=180s
-
-echo "Attesa disponibilità Web Frontend..."
 kubectl -n "${NAMESPACE}" rollout status deployment/myteam-platform-web --timeout=180s
 
-# ------------------------------------------------------------------------------
-# FASE 5: ABILITAZIONE HTTPROUTE & SMOKE
-# ------------------------------------------------------------------------------
-echo "=== FASE 5: ABILITAZIONE HTTPROUTE & SMOKE ==="
+# FASE 5 — routing is the final stage, after healthy app rollouts.
+echo "=== FASE 5: ROUTING / TRAFFIC ==="
 kubectl apply -k "${STAGING_DIR}/04-routing"
-
-echo "Rollout staging completato con successo. Procedere con la verifica degli endpoint HTTPS."
+echo "Staging release ${RELEASE_ID} completed (run ${RUN_SUFFIX})."
