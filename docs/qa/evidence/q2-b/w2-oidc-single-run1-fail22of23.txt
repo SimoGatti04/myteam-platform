@@ -1,0 +1,29 @@
+npm notice run @myteam/web@0.1.0 npx
+npm notice run 'vitest' run test/w2-oidc-auth.test.ts
+
+ RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform/apps/web
+
+ ❯ test/w2-oidc-auth.test.ts (23 tests | 1 failed) 5017ms
+       × builds compliant authorization URL with code_challenge and state, storing PKCE context 5005ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w2-oidc-auth.test.ts > Web W2 — Logto OIDC Admin Authentication Tests > 3. Login Redirect and Authorization URL Generation > builds compliant authorization URL with code_challenge and state, storing PKCE context
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/w2-oidc-auth.test.ts:141:5
+    139|   // ==========================================
+    140|   describe('3. Login Redirect and Authorization URL Generation', () =>…
+    141|     it('builds compliant authorization URL with code_challenge and sta…
+       |     ^
+    142|       const client = new OidcClient(mockConfig);
+    143|       const { url, state, codeVerifier } = await client.buildAuthoriza…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 22 passed (23)
+   Start at  15:19:05
+   Duration  5.57s (transform 40ms, setup 0ms, import 86ms, tests 5.02s, environment 377ms)
+

@@ -1,0 +1,166 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS Egress per tutti i pod del namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Traefik -> Web Frontend (HTTP :8080)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-web
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Traefik -> API Core (HTTP :3000)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-to-api
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# API Core & Migrations -> PostgreSQL (:5432)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-ingress
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: myteam-platform-api
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# API Core & Migrations Egress -> PostgreSQL (:5432)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-postgres
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: myteam-platform-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# API Core Egress -> Logto OIDC JWKS (HTTPS :443 o Traefik :3001)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-logto-jwks
+  namespace: myteam-platform-staging
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: myteam-platform-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        # Se Logto è contattato via HTTPS esterno attraverso Cloudflare
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
