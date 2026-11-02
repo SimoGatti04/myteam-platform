@@ -207,3 +207,14 @@ Al 31/10/2026, il candidato `codex/integration-i0-candidate` @ `f6382175b2fa9488
 - `pnpm check` (build/typecheck/test monorepo), suite Web (138 test) e regression Chromium P1: **PASS**. La matrice Chromium responsive è una prova manuale/diagnostica con dati DEMO sintetici; non è stata aggiunta al runner automatico.
 - **Non equivale a GO W3-R1 generale.** `CACHE_VERSION` rimane il valore fisso `v2`: invalidazione per build/asset fingerprinted e click UI di aggiornamento/reload non sono coperti. Login/logout Logto reale non eseguito. Nessuna verifica indipendente QA3 in questo checkpoint.
 - **Prossimo gate:** re-QA indipendente QA3 su P1/P2; poi valutazione separata del versionamento build e del ciclo completo di aggiornamento PWA. Nessun push, merge o deploy.
+
+## Candidato locale I4 Web + API + Infra (2 novembre 2026)
+
+- **Base:** I3 `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2` (verificato sul branch remoto `codex/integration-i3-candidate`).
+- **Revisioni integrate con merge ordinari:** Core Readiness R3 ricostruito `418bac465b0eca4f3371468594dfa7a29c7302f0`, fixture QA `14fda6d93dd34d1de7c7f7488fed4c637ad7a0bd`, Infra S1-R4 ricostruito `d1be5b5064fdd9e56c9a03e154467bbcf2b6ea6d`, Web W3-R1 corrente `51575be7c21acfe2393d410928740037b6a91ae6`. Gli SHA R3/R4 originali persi non sono dichiarati recuperati né sostituiti: i commit sopra sono ricostruzioni locali identificate dai propri SHA.
+- **Conflitto documentale:** `docs/STATUS.md` riconciliato conservando i checkpoint Core e Web, senza alterare i loro esiti storici; il fixture Core readiness aggiornato dal commit QA è registrato e il riesame indipendente resta pendente.
+- **Verifiche locali sul candidato:** `pnpm install --frozen-lockfile` PASS (pnpm store riutilizzato); `pnpm check` PASS; Web Vitest **138 PASS**; QA Vitest **28 PASS**; QA Node/API/contratti/auth **71 PASS, 1 SKIP** (lo skip è il browser E2E, non un PASS). Le verifiche che richiedono listener loopback sono state eseguite con permessi runtime autorizzati.
+- **Infra:** build statiche Kustomize PASS per `01-bootstrap`, `02-migration`, `03-apps` e `04-routing`. Nessun `apply`, deploy, accesso/modifica K3s o gestione di credenziali.
+- **NOT RUN / gate aperti:** PostgreSQL reale non eseguito perché `TEST_DATABASE_URL` non è configurata; browser E2E e QA Web indipendente restano in corso; CI remota sul candidato non avviata perché il branch non è stato pubblicato. Nessun login Logto reale o staging verificato.
+- **Perimetro:** iOS escluso da I4 Web+API secondo decisione dell'utente; nessun deliverable o finding iOS è incluso nel gate.
+- **Esito:** candidato locale per handoff QA, **non è un GO di release**. Prima di una promozione servono chiusura QA indipendente Web/API, PostgreSQL reale su database isolato `*_test`, CI sul commit pubblicato e gate Infra/registry/GHCR e staging autorizzati.
