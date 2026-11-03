@@ -2,6 +2,14 @@
 
 **Status:** PROPOSED build/tooling preparation. No production image has been built or published, no production namespace, route, secret, migration, database or workload exists, and no production hostname or Logto client metadata has been approved in this repository.
 
+## Base image support policy
+
+Web runner: `nginx:1.30.6-alpine-slim` pinned by multi-arch index digest `sha256:dede8895648b461178c3bc604f7eed4423efe5220b2c4d839f5eb3d34ac3f8f7`. The index lists `linux/amd64` and `linux/arm64` (plus arm/v6, arm/v7, 386, ppc64le, riscv64, s390x), so either K3s node architecture resolves through the same reference. The previous `1.27` branch reached upstream end-of-life on 2025-06-24 and receives no security fixes, so it must not back a public production image.
+
+The non-root contract is unchanged: the upstream image still ships `nginx` as UID/GID `101:101`, the Dockerfile keeps `USER nginx`, and `deploy/docker/nginx.conf` keeps `pid /tmp/nginx.pid` plus `listen 8080`. `tests/infra` fails if an EOL nginx branch is reintroduced or if the non-root runtime assumptions disappear.
+
+Base-image branches must be re-verified against upstream support status before each production release; an end-of-life base is a release blocker, not a follow-up.
+
 ## Current source facts
 
 - `.github/workflows/release-artifacts.yml` is manual-only and accepts a dispatch only from `refs/heads/main`, at an exact full source SHA. It publishes API and Web OCI images to GHCR, creates SLSA provenance and SPDX SBOM attestations, and uploads a pending handoff record.

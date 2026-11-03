@@ -6,12 +6,18 @@ indentation so the suite runs on a stock Python interpreter.
 from __future__ import annotations
 
 import importlib.util
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/release-artifacts.yml"
+
+# nginx 1.27 reached upstream end-of-life on 2025-06-24 (endoflife.date/nginx) and
+# receives no security fixes: the Web runner must stay on a supported stable branch.
+NGINX_MIN_SUPPORTED = (1, 28)
+NGINX_EOL_BRANCHES = {(1, 27)}
 
 def indented_block(text: str, header: str) -> str:
     """Return the lines nested under the first exact `header` line."""
@@ -101,6 +107,23 @@ class DockerBaseImageTests(unittest.TestCase):
             self.assertTrue(from_lines)
             for line in from_lines:
                 self.assertRegex(line, r"@sha256:[0-9a-f]{64}(?:\s|$)", line)
+
+    def test_web_runner_uses_supported_nginx_and_stays_non_root(self) -> None:
+        text = (ROOT / "deploy/docker/Dockerfile.web").read_text()
+        runner = [line for line in text.splitlines() if line.startswith("FROM ") and "nginx" in line]
+        self.assertEqual(len(runner), 1, runner)
+        found = re.search(r"nginx:(\d+)\.(\d+)\.(\d+)-alpine-slim@sha256:([0-9a-f]{64})", runner[0])
+        self.assertIsNotNone(found, f"unexpected nginx runner line: {runner[0]}")
+        major, minor, _patch, _digest = found.groups()
+        branch = (int(major), int(minor))
+        self.assertNotIn(branch, NGINX_EOL_BRANCHES, "nginx 1.27 is EOL since 2025-06-24")
+        self.assertGreaterEqual(branch, NGINX_MIN_SUPPORTED, "nginx runner is below the supported stable branch")
+        self.assertNotIn("nginx:1.27", text)
+        # Non-root runtime and writable pid/paths must survive the base image bump.
+        self.assertIn("USER nginx", text)
+        conf = (ROOT / "deploy/docker/nginx.conf").read_text()
+        self.assertIn("pid /tmp/nginx.pid;", conf)
+        self.assertIn("listen 8080 default_server;", conf)
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
     @classmethod
