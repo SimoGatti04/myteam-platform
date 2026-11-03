@@ -78,6 +78,9 @@ jobs:
       - name: Gate 5 - QA Node Suite
         run: pnpm exec tsx --test tests/api/*.test.ts tests/contracts/*.test.ts tests/auth/*.test.ts tests/q1/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts
 
+      - name: Gate 5b - Infra Script Regression Tests
+        run: python3 -m unittest discover -s tests/infra -p 'test_*.py' -v
+
       - name: Gate 6 - PostgreSQL Integration Tests
         env:
           TEST_DATABASE_URL: postgresql://myteam:local-dev-only@127.0.0.1:54329/myteam_platform_test

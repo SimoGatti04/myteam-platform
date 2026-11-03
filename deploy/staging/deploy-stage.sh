@@ -82,7 +82,9 @@ kubectl apply -k "${STAGING_DIR}/01-bootstrap"
 echo "=== FASE 2: DATABASE READY ==="
 kubectl -n "${NAMESPACE}" wait --for=condition=Ready externalsecret/myteam-platform-secrets --timeout=120s
 kubectl -n "${NAMESPACE}" rollout status statefulset/myteam-platform-postgres --timeout=180s
-kubectl -n "${NAMESPACE}" exec statefulset/myteam-platform-postgres -- pg_isready -U myteam_app -d myteam_platform
+# shellcheck disable=SC2016  # Expand inside PostgreSQL, not on the host.
+kubectl -n "${NAMESPACE}" exec statefulset/myteam-platform-postgres -- \
+  sh -ec 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 # FASE 3 — never delete or replace an existing migration Job. Each invocation
 # gets a unique name. Any active migration (including one started elsewhere)

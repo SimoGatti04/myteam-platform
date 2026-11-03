@@ -70,7 +70,7 @@ def verify_attestation(image: str, digest: str, source_commit: str, signer_workf
         "gh", "attestation", "verify", f"oci://{image}",
         "--repo", REPOSITORY,
         "--signer-workflow", signer_workflow,
-        "--source-digest", f"sha1:{source_commit}",
+        "--source-digest", source_commit,
         "--format", "json",
     ]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
