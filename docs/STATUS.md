@@ -1,5 +1,13 @@
 # Stato — myteam-platform
 
+## Infra — consolidamento script post-staging (3 novembre 2026)
+
+- **Base verificata:** `main` protetta `7a010fd5362ba01bc9cf1260684128c4e263a453`.
+- **Verificato sul contenuto della base:** `scripts/k8s-lease-lock.py` produce timestamp RFC3339 a precisione di secondo e `scripts/validate-release-images.py` passa a `gh` il source digest con prefisso `sha1:`.
+- **Correzione locale:** `deploy/staging/deploy-stage.sh` esegue `pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"` dentro il container PostgreSQL, invece di valori hardcoded; aggiunti test sintetici in `tests/infra/`.
+- **Stato:** correzione e regressioni verificate localmente; nessuna modifica al cluster, al registry, ai secret o allo stato staging.
+- **Prossimo gate:** review e merge della branch dedicata; un'eventuale nuova esecuzione di staging resta responsabilità INFRA/owner.
+
 ## Web — W3: MVP Functional Advancement (1 novembre 2026)
 
 - **Branch / Worktree:** `web/w3-mvp-functional` (originato da `codex/integration-i3-candidate` @ `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`).
