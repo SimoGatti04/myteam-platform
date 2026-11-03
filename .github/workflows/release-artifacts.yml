@@ -7,9 +7,42 @@ on:
         description: Full reviewed commit SHA at the protected main ref (must equal this run's SHA)
         required: true
         type: string
-      web_logto_app_id:
-        description: Approved, non-secret Logto web client ID to embed in the Web image
+      target_environment:
+        description: Release target; production requires explicit OIDC metadata and confirmation
         required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      production_confirmation:
+        description: Type PRODUCTION to acknowledge a production image build
+        required: false
+        default: ''
+        type: string
+      web_logto_app_id:
+        description: Approved, non-secret Logto public Web client ID to embed in this image
+        required: true
+        type: string
+      web_logto_endpoint:
+        description: Public Logto issuer/OIDC endpoint (required for production; staging default is used otherwise)
+        required: false
+        default: ''
+        type: string
+      web_logto_api_resource:
+        description: Public API audience/resource (required for production; staging default is used otherwise)
+        required: false
+        default: ''
+        type: string
+      web_logto_redirect_uri:
+        description: Public OAuth callback URL (required for production; staging default is used otherwise)
+        required: false
+        default: ''
+        type: string
+      web_logto_post_logout_redirect_uri:
+        description: Public post-logout URL (required for production; staging default is used otherwise)
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -29,7 +62,13 @@ jobs:
       API_IMAGE: ghcr.io/simogatti04/myteam-platform-api
       WEB_IMAGE: ghcr.io/simogatti04/myteam-platform-web
       SOURCE_COMMIT: ${{ inputs.source_commit }}
-      WEB_LOGTO_APP_ID: ${{ inputs.web_logto_app_id }}
+      TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+      PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+      WEB_LOGTO_APP_ID_INPUT: ${{ inputs.web_logto_app_id }}
+      WEB_LOGTO_ENDPOINT_INPUT: ${{ inputs.web_logto_endpoint }}
+      WEB_LOGTO_API_RESOURCE_INPUT: ${{ inputs.web_logto_api_resource }}
+      WEB_LOGTO_REDIRECT_URI_INPUT: ${{ inputs.web_logto_redirect_uri }}
+      WEB_LOGTO_POST_LOGOUT_REDIRECT_URI_INPUT: ${{ inputs.web_logto_post_logout_redirect_uri }}
     steps:
       - name: Require manual dispatch from main at the exact source SHA
         shell: bash
@@ -39,8 +78,8 @@ jobs:
           [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "FAIL: dispatch this workflow from protected main" >&2; exit 1; }
           [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "FAIL: source_commit must be a full lowercase 40-character SHA" >&2; exit 1; }
           [[ "$SOURCE_COMMIT" == "$GITHUB_SHA" ]] || { echo "FAIL: source_commit must equal this protected-main workflow run SHA" >&2; exit 1; }
-          [[ "$WEB_LOGTO_APP_ID" =~ ^[A-Za-z0-9._-]{1,200}$ ]] || { echo "FAIL: web_logto_app_id has an unexpected format" >&2; exit 1; }
-          echo "Building source $SOURCE_COMMIT from $GITHUB_REF."
+          [[ "$TARGET_ENVIRONMENT" == "staging" || "$TARGET_ENVIRONMENT" == "production" ]] || { echo "FAIL: unsupported target_environment" >&2; exit 1; }
+          echo "Building source $SOURCE_COMMIT for $TARGET_ENVIRONMENT from $GITHUB_REF."
 
       - name: Checkout exact source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -55,6 +94,20 @@ jobs:
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           [[ "$actual" == "$SOURCE_COMMIT" ]] || { echo "FAIL: checkout $actual differs from $SOURCE_COMMIT" >&2; exit 1; }
+
+      - name: Resolve and validate public Web OIDC build inputs
+        id: web_oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/resolve-release-web-config.py \
+            --environment "$TARGET_ENVIRONMENT" \
+            --endpoint "$WEB_LOGTO_ENDPOINT_INPUT" \
+            --app-id "$WEB_LOGTO_APP_ID_INPUT" \
+            --api-resource "$WEB_LOGTO_API_RESOURCE_INPUT" \
+            --redirect-uri "$WEB_LOGTO_REDIRECT_URI_INPUT" \
+            --post-logout-redirect-uri "$WEB_LOGTO_POST_LOGOUT_REDIRECT_URI_INPUT" \
+            --confirmation "$PRODUCTION_CONFIRMATION"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -73,8 +126,10 @@ jobs:
           context: .
           file: deploy/docker/Dockerfile.api
           push: true
-          tags: ${{ env.API_IMAGE }}:sha-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
-          labels: org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+          tags: ${{ env.API_IMAGE }}:sha-${{ env.TARGET_ENVIRONMENT }}-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+            com.myteam-platform.environment=${{ env.TARGET_ENVIRONMENT }}
           provenance: false
 
       - name: Build and push Web image
@@ -84,13 +139,19 @@ jobs:
           context: .
           file: deploy/docker/Dockerfile.web
           push: true
-          tags: ${{ env.WEB_IMAGE }}:sha-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
-          labels: org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+          tags: ${{ env.WEB_IMAGE }}:sha-${{ env.TARGET_ENVIRONMENT }}-${{ env.SOURCE_COMMIT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+            com.myteam-platform.environment=${{ env.TARGET_ENVIRONMENT }}
           provenance: false
           build-args: |
             VITE_APP_ENV=production
             VITE_ENABLE_DEMO=false
-            VITE_LOGTO_APP_ID=${{ env.WEB_LOGTO_APP_ID }}
+            VITE_LOGTO_ENDPOINT=${{ steps.web_oidc.outputs.VITE_LOGTO_ENDPOINT }}
+            VITE_LOGTO_APP_ID=${{ steps.web_oidc.outputs.VITE_LOGTO_APP_ID }}
+            VITE_LOGTO_API_RESOURCE=${{ steps.web_oidc.outputs.VITE_LOGTO_API_RESOURCE }}
+            VITE_LOGTO_REDIRECT_URI=${{ steps.web_oidc.outputs.VITE_LOGTO_REDIRECT_URI }}
+            VITE_LOGTO_POST_LOGOUT_REDIRECT_URI=${{ steps.web_oidc.outputs.VITE_LOGTO_POST_LOGOUT_REDIRECT_URI }}
 
       - name: Attest API image provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
@@ -159,6 +220,7 @@ jobs:
               "schemaVersion": 1,
               "sourceRepository": "https://github.com/SimoGatti04/myteam-platform",
               "sourceCommit": os.environ["SOURCE_COMMIT"],
+              "targetEnvironment": os.environ["TARGET_ENVIRONMENT"],
               "artifacts": {
                   "api": {"repository": os.environ["API_IMAGE"], "digest": os.environ["API_DIGEST"]},
                   "web": {"repository": os.environ["WEB_IMAGE"], "digest": os.environ["WEB_DIGEST"]},
@@ -177,7 +239,7 @@ jobs:
       - name: Upload digest, provenance and SBOM handoff
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-artifacts-${{ env.SOURCE_COMMIT }}
+          name: release-artifacts-${{ env.TARGET_ENVIRONMENT }}-${{ env.SOURCE_COMMIT }}
           path: |
             release-provenance.json
             api.spdx.json
