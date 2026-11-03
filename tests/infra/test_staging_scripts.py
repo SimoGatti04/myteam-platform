@@ -40,12 +40,16 @@ class LeaseTimestampTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.module = load_module("k8s_lease_lock", ROOT / "scripts/k8s-lease-lock.py")
 
-    def test_timestamp_is_whole_second_rfc3339_utc(self) -> None:
+    def test_timestamp_is_rfc3339_microseconds_utc(self) -> None:
         value = datetime(2026, 11, 3, 1, 2, 3, 456789, tzinfo=timezone.utc)
         rendered = self.module.timestamp(value)
-        self.assertEqual(rendered, "2026-11-03T01:02:03Z")
-        self.assertNotIn(".", rendered)
-        self.assertEqual(self.module.parse_time(rendered), datetime(2026, 11, 3, 1, 2, 3, tzinfo=timezone.utc))
+        self.assertEqual(rendered, "2026-11-03T01:02:03.456789Z")
+        self.assertRegex(rendered, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+        self.assertEqual(self.module.parse_time(rendered), value)
+
+    def test_timestamp_keeps_six_digits_when_microsecond_is_zero(self) -> None:
+        value = datetime(2026, 11, 3, 1, 2, 3, tzinfo=timezone.utc)
+        self.assertEqual(self.module.timestamp(value), "2026-11-03T01:02:03.000000Z")
 
 
 class AttestationCommandTests(unittest.TestCase):
@@ -53,7 +57,7 @@ class AttestationCommandTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.module = load_module("validate_release_images", ROOT / "scripts/validate-release-images.py")
 
-    def test_source_digest_uses_git_sha1_prefix(self) -> None:
+    def test_source_digest_is_bare_full_sha(self) -> None:
         digest = "a" * 64
         source_commit = "b" * 40
         captured: dict[str, list[str]] = {}
@@ -89,7 +93,8 @@ class AttestationCommandTests(unittest.TestCase):
 
         command = captured["command"]
         index = command.index("--source-digest")
-        self.assertEqual(command[index + 1], f"sha1:{source_commit}")
+        self.assertEqual(command[index + 1], source_commit)
+        self.assertFalse(command[index + 1].startswith("sha1:"))
         self.assertNotIn("--source-commit", command)
 
 

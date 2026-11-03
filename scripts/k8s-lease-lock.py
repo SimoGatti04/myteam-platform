@@ -33,7 +33,7 @@ def utc_now() -> datetime:
 
 
 def timestamp(value: datetime | None = None) -> str:
-    return (value or utc_now()).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return (value or utc_now()).astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def parse_time(value: str | None) -> datetime | None:
