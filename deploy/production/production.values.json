@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "namespace": "myteam-platform-prod",
+  "hostname": {
+    "value": "team.simogatti.it",
+    "approved": false,
+    "decisionGate": "Owner must explicitly approve the production hostname and Logto redirect/logout URIs before setting approved=true."
+  },
+  "storage": {
+    "node": "REPLACE_WITH_APPROVED_STORAGE_NODE",
+    "capacity": "REPLACE_WITH_APPROVED_STORAGE_CAPACITY"
+  },
+  "images": {
+    "api": "ghcr.io/simogatti04/myteam-platform-api@sha256:REPLACE_WITH_APPROVED_API_DIGEST",
+    "web": "ghcr.io/simogatti04/myteam-platform-web@sha256:REPLACE_WITH_APPROVED_WEB_DIGEST",
+    "postgres": "postgres@sha256:REPLACE_WITH_APPROVED_POSTGRES_DIGEST"
+  },
+  "release": {
+    "sourceCommit": "REPLACE_WITH_APPROVED_40_CHARACTER_SOURCE_SHA"
+  },
+  "logto": {
+    "issuer": "https://auth.simogatti.it/oidc",
+    "apiResource": "https://team.simogatti.it/api",
+    "webAppId": "REPLACE_WITH_APPROVED_PRODUCTION_WEB_APP_ID"
+  }
+}
