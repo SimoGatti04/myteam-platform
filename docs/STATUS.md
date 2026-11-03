@@ -1,5 +1,14 @@
 # Stato — myteam-platform
 
+## Core C2 — risultati e eventi gara, slice verticale (3 novembre 2026)
+
+- **Base verificata:** `origin/main` @ `77cf1302c44d78a9ab547b6ebedabd304b801bff` (PR #5 e #6 integrati). Branch/worktree isolato `core/c2-match-results-events`; nessun merge, push o deploy.
+- **Implementato:** `PUT/GET /api/v1/admin/matches/{id}/result`, `POST/GET /api/v1/admin/matches/{id}/events`, `GET /api/v1/public/matches/{id}/scoreboard`; migrazione additiva `0002-match-results-and-events.sql`; audit e provenienza admin.
+- **Pubblicazione:** riuso esplicito di `matches.published_at`. Scrivere risultato/eventi non pubblica; la proiezione pubblica richiede squadra e partita pubblicate, partita `completed` e risultato presente. `PublicMatchDto` resta invariato.
+- **Decisioni da preview owner:** lato evento `team/opponent` (il modello non ha casa/trasferta), minuto dentro il periodo con ordinamento `(period, minute)`, risultato come unica transizione a `completed`, punteggio autorevole non derivato dagli eventi, eventi parziali ammessi senza dichiarazione di completezza.
+- **Verifiche:** `pnpm check` PASS; integrazione PostgreSQL 16 reale effimera 3/3 PASS; demo admin write → DB/audit → public projection acquisita. Dettaglio in `docs/CORE-C2-MATCH-RESULTS-EVENTS-SLICE.md`.
+- **Fuori perimetro / non eseguito:** distinte e presenze effettive, correzioni multi-fonte/override (C2-R1), deploy, staging/prod, consumer Web/iOS, push/merge. **Prossimo gate:** preview owner sulle ambiguità e re-QA indipendente.
+
 ## Release — pipeline immagini produzione: preparazione tooling (3 novembre 2026)
 
 - **Base verificata:** `main` protetta `fa34c6de38e964a6546a643437276507a0901b79` (PR #4 merged; staging rilasciata da `7a010fd`).
