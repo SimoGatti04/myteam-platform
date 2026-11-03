@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { apiService } from '../../services/api';
 import type { MatchDto, OpponentDto, CompetitionDto, CompetitionCreateRequest, MatchSchedulePatchRequest, MatchStatus } from '@myteam/contracts';
+import type { MatchDetail } from '../../types/domain';
+import { AdminMatchReportPanel, type ReportRosterPlayer } from './AdminMatchReportPanel';
+import { hasLocalPreviewEdits, resetMatchPreview, savePreviewMatch } from '../../services/matchPreviewStore';
 import {
   Calendar,
   PlusCircle,
@@ -17,13 +20,15 @@ import {
   Globe,
   FileText,
   UploadCloud,
-  RefreshCw
+  RefreshCw,
+  ClipboardList
 } from 'lucide-react';
 
 export const AdminPartiteView: React.FC<{
   openModalWithMatchId?: string | null;
   onCloseModal?: () => void;
-}> = ({ openModalWithMatchId, onCloseModal }) => {
+  initialReportMatchId?: string | null;
+}> = ({ openModalWithMatchId, onCloseModal, initialReportMatchId }) => {
   const { adminTeam, isDemoData } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'avversari' | 'competizioni' | 'importazioni'>('calendario');
@@ -60,6 +65,11 @@ export const AdminPartiteView: React.FC<{
   // Stato pubblicazione riga singola
   const [publishingMatchId, setPublishingMatchId] = useState<string | null>(null);
 
+  // W4 preview: referto locale (sessionStorage only)
+  const [reportMatch, setReportMatch] = useState<MatchDetail | null>(null);
+  const [localReportEdits, setLocalReportEdits] = useState<boolean>(() => hasLocalPreviewEdits());
+  const initialReportOpenedRef = useRef(false);
+
   // Modalità aggiunta avversario rapida da subtab
   const [newOpponentInlineName, setNewOpponentInlineName] = useState<string>('');
   const [creatingOpponent, setCreatingOpponent] = useState<boolean>(false);
@@ -67,6 +77,15 @@ export const AdminPartiteView: React.FC<{
   useEffect(() => {
     loadData();
   }, [isDemoData, adminTeam?.currentSeasonId]);
+
+  useEffect(() => {
+    if (!isDemoData || loading || !initialReportMatchId || reportMatch || initialReportOpenedRef.current) return;
+    const detail = apiService.getDemoMatchDetails().find((match) => match.id === initialReportMatchId);
+    if (detail) {
+      initialReportOpenedRef.current = true;
+      setReportMatch(detail);
+    }
+  }, [isDemoData, loading, initialReportMatchId, reportMatch]);
 
   const loadData = async (preserveStatus = false) => {
     setLoading(true);
@@ -121,6 +140,23 @@ export const AdminPartiteView: React.FC<{
     }
     setLoading(false);
   };
+
+  const openLocalReport = (matchId: string) => {
+    if (!isDemoData) return;
+    const detail = apiService.getDemoMatchDetails().find((match) => match.id === matchId);
+    if (detail) {
+      setReportMatch(detail);
+      setLocalReportEdits(hasLocalPreviewEdits());
+    }
+  };
+
+  const demoReportRoster: ReportRosterPlayer[] = isDemoData
+    ? apiService.getDemoRoster().players.map((player) => ({
+        id: player.id,
+        displayName: player.displayName,
+        jerseyNumber: player.jerseyNumber,
+      }))
+    : [];
 
   const opponentsMap = new Map<string, string>();
   for (const op of opponents) {
@@ -745,6 +781,29 @@ export const AdminPartiteView: React.FC<{
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    {isDemoData && apiService.getDemoMatchDetails().some((detail) => detail.id === match.id) && (
+                      <button
+                        onClick={() => openLocalReport(match.id)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(14, 165, 233, 0.14)',
+                          border: '1px solid rgba(14, 165, 233, 0.45)',
+                          color: 'var(--brand-secondary-light)',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                        title="Anteprima locale del referto: nessun salvataggio backend"
+                      >
+                        <ClipboardList size={13} />
+                        Referto
+                        <span style={{ fontSize: '0.62rem', opacity: 0.8 }}>DEMO</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => handleOpenScheduleModal(match)}
                       style={{
@@ -1491,6 +1550,29 @@ export const AdminPartiteView: React.FC<{
             </form>
           </div>
         </div>
+      )}
+      {reportMatch && (
+        <AdminMatchReportPanel
+          match={reportMatch}
+          roster={demoReportRoster}
+          hasLocalEdits={localReportEdits}
+          onClose={() => setReportMatch(null)}
+          onSaved={(updated) => {
+            savePreviewMatch(updated);
+            setLocalReportEdits(true);
+            void loadData(true);
+          }}
+          onViewPublic={(matchId) => {
+            window.location.assign(`?demo=true&preview=match-detail&match=${encodeURIComponent(matchId)}`);
+          }}
+          onResetFixture={() => {
+            resetMatchPreview();
+            setLocalReportEdits(false);
+            const fixture = apiService.getDemoMatchDetails().find((match) => match.id === reportMatch.id);
+            if (fixture) setReportMatch(fixture);
+            void loadData(true);
+          }}
+        />
       )}
     </div>
   );

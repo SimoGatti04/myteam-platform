@@ -4,6 +4,8 @@ import { useApp } from '../context/AppContext';
 import { apiService } from '../services/api';
 import type { PublicMatchDto, PublicMatchesDto } from '@myteam/contracts';
 import type { MatchDetail, StandingRow } from '../types/domain';
+import { MatchDetailDialog } from './match/MatchDetailDialog';
+import { readW4PreviewState, type W4PreviewState } from '../utils/preview';
 import {
   Calendar,
   Clock,
@@ -38,6 +40,7 @@ export const PartiteView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'calendario' | 'classifica'>('calendario');
   const [selectedComp, setSelectedComp] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'completed'>('all');
+  const [previewState, setPreviewState] = useState<W4PreviewState>(() => (isDemoData ? readW4PreviewState() : 'ready'));
 
   useEffect(() => {
     loadPartiteData();
@@ -290,7 +293,15 @@ export const PartiteView: React.FC = () => {
               {filteredMatches.map((match) => (
                 <div
                   key={match.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedMatchId(match.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedMatchId(match.id);
+                    }
+                  }}
                   style={{
                     backgroundColor: 'var(--bg-card)',
                     borderRadius: '14px',
@@ -492,162 +503,24 @@ export const PartiteView: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DETTAGLIO PARTITA */}
+      {/* DETTAGLIO PARTITA — componente riusabile con stati anteprima */}
       {activeSelectedMatch && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(6px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 100,
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: '18px',
-            border: '1px solid var(--border-subtle)',
-            width: '100%',
-            maxWidth: '600px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  padding: '3px 8px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                  color: 'var(--brand-secondary)',
-                }}>
-                  {activeSelectedMatch.competitionName || (activeSelectedMatch.isOfficial ? 'Gara Ufficiale' : 'Amichevole')}
-                </span>
-                {activeSelectedMatch.isDemo && (
-                  <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', padding: '2px 6px', borderRadius: '4px' }}>
-                    DEMO
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setSelectedMatchId(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '4px',
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Titolo e Squadre */}
-            <div style={{ textAlign: 'center', padding: '12px 0' }}>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff', marginBottom: '6px' }}>
-                {getTeamDisplayName(publicTeam?.name, isDemoData)} vs {activeSelectedMatch.opponentName}
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--brand-secondary)' }}>
-                {activeSelectedMatch.scheduledAt ? formatDateTime(activeSelectedMatch.scheduledAt) : 'Data da definire'}
-              </div>
-            </div>
-
-            {/* Dettaglio Reale vs Dettaglio Demo */}
-            {activeSelectedMatch.isDemo && activeSelectedMatch.demoDetail ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {activeSelectedMatch.demoDetail.homeScore !== undefined && (
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '16px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                    borderRadius: '12px',
-                    fontSize: '2rem',
-                    fontWeight: 900,
-                    color: 'var(--brand-secondary)',
-                  }}>
-                    {activeSelectedMatch.demoDetail.homeScore} - {activeSelectedMatch.demoDetail.awayScore}
-                  </div>
-                )}
-
-                {activeSelectedMatch.demoDetail.events && activeSelectedMatch.demoDetail.events.length > 0 && (
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
-                      Eventi e Tabellino (Demo)
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {activeSelectedMatch.demoDetail.events.map(ev => (
-                        <div
-                          key={ev.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            fontSize: '0.8rem',
-                            padding: '6px 10px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '6px',
-                          }}
-                        >
-                          <span style={{ fontWeight: 700, color: 'var(--brand-secondary)', width: '32px' }}>
-                            {ev.minute}'
-                          </span>
-                          <span style={{ color: '#ffffff' }}>{ev.playerName}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                            ({ev.type === 'goal' ? 'Gol' : ev.type === 'yellow_card' ? 'Ammonizione' : 'Espulsione'})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{
-                padding: '16px',
-                backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                borderRadius: '10px',
-                fontSize: '0.82rem',
-                color: 'var(--text-muted)',
-                lineHeight: '1.5',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-dim)', marginBottom: '6px', fontWeight: 600 }}>
-                  <Info size={16} /> Dettaglio tabellino
-                </div>
-                I dettagli di marcatori, cartellini ed eventi di gara saranno disponibili quando il modulo tabellino verrà rilasciato nelle API Core (milestone C1.1/C2).
-              </div>
-            )}
-
-            <button
-              onClick={() => setSelectedMatchId(null)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '8px',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                color: '#ffffff',
-                border: '1px solid var(--border-subtle)',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              Chiudi
-            </button>
-          </div>
-        </div>
+        <MatchDetailDialog
+          match={activeSelectedMatch.isDemo ? activeSelectedMatch.demoDetail ?? null : null}
+          error={
+            activeSelectedMatch.isDemo
+              ? null
+              : 'Il dettaglio del tabellino richiede il contratto Core C2 (risultati ed eventi), non ancora pubblicato. Nessun dato è stato simulato in modalità reale.'
+          }
+          previewState={isDemoData ? previewState : 'ready'}
+          isDemo={activeSelectedMatch.isDemo}
+          onClose={() => setSelectedMatchId(null)}
+          onRetry={loadPartiteData}
+          onPreviewStateChange={isDemoData ? setPreviewState : undefined}
+          onOpenAdminReport={activeSelectedMatch.isDemo ? (match) => {
+            window.location.assign(`?demo=true&preview=admin-report&match=${encodeURIComponent(match.id)}`);
+          } : undefined}
+        />
       )}
     </div>
   );

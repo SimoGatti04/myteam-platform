@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AppProvider } from './context/AppContext';
 import { App } from './App';
 import './styles/theme.css';
+import './styles/match-preview.css';
 
 // PWA Service Worker Registration & Reliable Update Detection
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD) {

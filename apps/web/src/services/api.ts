@@ -38,6 +38,7 @@ import {
   DEMO_TEAM_STATS_ALL,
   DEMO_PLAYER_STATS,
 } from '../fixtures/demoData';
+import { applyMatchPreview } from './matchPreviewStore';
 
 export type ApiResult<T> =
   | { success: true; data: T }
@@ -341,7 +342,7 @@ class ApiService {
     const scheduled: PublicMatchDto[] = [];
     const toBeScheduled: PublicMatchDto[] = [];
 
-    for (const m of DEMO_MATCH_DETAILS) {
+    for (const m of applyMatchPreview(DEMO_MATCH_DETAILS)) {
       const publicItem: PublicMatchDto = {
         id: m.id,
         seasonId: m.seasonId,
@@ -363,7 +364,7 @@ class ApiService {
 
   getDemoAdminMatches(seasonId?: string): MatchDto[] {
     const list: MatchDto[] = [];
-    for (const m of DEMO_MATCH_DETAILS) {
+    for (const m of applyMatchPreview(DEMO_MATCH_DETAILS)) {
       if (seasonId && m.seasonId !== seasonId) continue;
       // map to MatchDto
       list.push({
@@ -381,7 +382,7 @@ class ApiService {
   }
 
   getDemoMatchDetails(): typeof DEMO_MATCH_DETAILS {
-    return DEMO_MATCH_DETAILS;
+    return applyMatchPreview(DEMO_MATCH_DETAILS);
   }
 
   getDemoStandings(): typeof DEMO_STANDINGS {
