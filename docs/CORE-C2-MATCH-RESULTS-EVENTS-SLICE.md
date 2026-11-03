@@ -1,6 +1,6 @@
 # Core C2 — risultati e eventi gara (thin slice)
 
-- **Stato:** IMPLEMENTATO e TESTATO in worktree locale; **PREVIEW OWNER / RE-QA richiesti**. Nessun merge o deploy.
+- **Stato:** IMPLEMENTATO, TESTATO e pubblicato come draft PR #7; **PREVIEW OWNER / RE-QA richiesti**. Nessun merge o deploy.
 - **Branch:** `core/c2-match-results-events`
 - **Base verificata:** `origin/main` @ `77cf1302c44d78a9ab547b6ebedabd304b801bff` (PR #5 e #6 integrati).
 - **Data:** 3 novembre 2026.
@@ -198,4 +198,4 @@ Eseguita contro PostgreSQL 16 effimero locale (container temporaneo, schema usa-
 - Contratto importabile da `@myteam/contracts` (nessun deep import).
 - Web può adottare la nuova rotta `/scoreboard` senza modificare il parsing di `/public/matches/:id`.
 - QA deve verificare: 200/404 di pubblicazione, ordine eventi tra periodi, idempotenza, assenza di campi amministrativi, `401/403`, e che il risultato non venga derivato dagli eventi.
-- Branch/worktree da condividere: `core/c2-match-results-events` (worktree isolato); nessun push/merge/deploy eseguito da Core in questa fase.
+- Branch pubblicato: `core/c2-match-results-events` (worktree isolato), draft PR #7; nessun merge/deploy eseguito da Core in questa fase.
