@@ -1,0 +1,32 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: myteam-platform-prod
+  namespace: myteam-platform-prod
+  labels:
+    app.kubernetes.io/part-of: myteam-platform
+    environment: production
+spec:
+  parentRefs:
+    - name: traefik-gateway
+      namespace: kube-system
+  hostnames:
+    - __PRODUCTION_HOSTNAME__
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: Exact
+            value: /health
+      backendRefs:
+        - name: myteam-platform-prod-api
+          port: 3000
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: myteam-platform-prod-web
+          port: 80

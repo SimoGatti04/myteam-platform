@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: myteam-platform-prod-migrate
+  namespace: myteam-platform-prod
+  labels:
+    app.kubernetes.io/name: myteam-platform-prod-api
+    app.kubernetes.io/component: migration
+    environment: production
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      annotations:
+        myteam-platform.simogatti.it/source-commit: __PRODUCTION_SOURCE_COMMIT__
+      labels:
+        app.kubernetes.io/name: myteam-platform-prod-api
+        app.kubernetes.io/component: migration
+        environment: production
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: __PRODUCTION_API_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: ["node", "apps/api/dist/persistence/migrate-cli.js"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myteam-platform-prod-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
