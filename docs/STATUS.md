@@ -1,5 +1,16 @@
 # Stato — myteam-platform
 
+## Release — pipeline immagini produzione: preparazione tooling (3 novembre 2026)
+
+- **Base verificata:** `main` protetta `fa34c6de38e964a6546a643437276507a0901b79` (PR #4 merged; staging rilasciata da `7a010fd`).
+- **Tooling:** `.github/workflows/release-artifacts.yml` espone `target_environment` (`staging` come default; `production` richiede conferma letterale `PRODUCTION`). La produzione non ha fallback OIDC: client ID Web pubblico, issuer/endpoint, API resource, redirect URI e post-logout URI sono obbligatori, validati come HTTPS senza query/fragment e rifiutati se puntano all'host staging (`scripts/resolve-release-web-config.py`). Lo staging conserva default e comportamento storici.
+- **Artifacts:** tag `sha-<env>-<sha>-<run>-<attempt>`, label `com.myteam-platform.environment`, nomi SBOM/evidenza per ambiente e `targetEnvironment` nel provenance JSON; restano invariati i guard su `refs/heads/main`, sullo SHA esatto e le attestazioni.
+- **Riproducibilità:** immagini base pinnate per digest in `deploy/docker/Dockerfile.api` e `Dockerfile.web` (`node:26-alpine@sha256:c6ad9e9c…`, `nginx:1.27.5-alpine-slim@sha256:b947b263…`), confrontate con il registry pubblico.
+- **Verifiche locali:** `mise exec -- pnpm check` PASS; `tests/infra` 17/17 PASS (12 nuove regressioni sulla pipeline); `actionlint .github/workflows/release-artifacts.yml` PASS; `git diff --check` pulito. Nessun build o push di immagine eseguito.
+- **Design e decisioni owner:** `docs/release/PRODUCTION-RELEASE-DESIGN.md` elenca gli input mancanti — hostname/route pubblici di produzione, client Logto Web pubblico separato (issuer, audience API, callback e post-logout), namespace e path ExternalSecret, ownership PostgreSQL/backup/migrazioni, autorizzazione al deploy e signer di attestazione fidato.
+- **Stato:** nessuna immagine di produzione costruita o pubblicata, nessuna modifica a `main`, cluster, registry, Logto o secret; nessun hostname o client ID inventato nel sorgente.
+- **Prossimo gate:** approvazione delle decisioni owner, poi dispatch `target_environment=production` dalla protected main.
+
 ## Infra — consolidamento script post-staging (3 novembre 2026)
 
 - **Base verificata:** `main` protetta `7a010fd5362ba01bc9cf1260684128c4e263a453`.
