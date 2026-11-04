@@ -1,1 +1,259 @@
-{"api_calls": [{"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 404}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 404}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/admin/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches?seasonId=3139e3b5-90f0-4939-ad17-a0201aa17913", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches?seasonId=3139e3b5-90f0-4939-ad17-a0201aa17913", "status": 200}, {"method": "GET", "url": "/api/v1/admin/opponents", "status": 200}, {"method": "GET", "url": "/api/v1/admin/competitions", "status": 200}, {"method": "GET", "url": "/api/v1/admin/opponents", "status": 200}, {"method": "GET", "url": "/api/v1/admin/competitions", "status": 200}, {"method": "GET", "url": "/api/v1/admin/players", "status": 200}, {"method": "GET", "url": "/api/v1/admin/players", "status": 200}, {"method": "GET", "url": "/api/v1/admin/roster-memberships?seasonId=3139e3b5-90f0-4939-ad17-a0201aa17913", "status": 200}, {"method": "GET", "url": "/api/v1/admin/roster-memberships?seasonId=3139e3b5-90f0-4939-ad17-a0201aa17913", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/result", "status": 404}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/events", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/result", "status": 404}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/events", "status": 200}, {"method": "PUT", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/result", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/result", "status": 200}, {"method": "POST", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/events", "status": 201}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/events", "status": 200}, {"method": "GET", "url": "/api/v1/admin/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/result", "status": 200}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 200}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/team", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 200}, {"method": "GET", "url": "/api/v1/public/matches/f7b4c523-8205-4c02-a67f-89b4eccf9fb7/scoreboard", "status": 200}], "public_404": true, "result_put": true, "event_post": true, "scoreboard_200": true, "admin_auth_header_ok": true}
+{
+  "admin_auth_header_ok": true,
+  "api_calls": [
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches?seasonId=a154f197-cb7e-4279-8645-00f19afe6e81"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches?seasonId=a154f197-cb7e-4279-8645-00f19afe6e81"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/opponents"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/opponents"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/competitions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/competitions"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/players"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/players"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/roster-memberships?seasonId=a154f197-cb7e-4279-8645-00f19afe6e81"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/roster-memberships?seasonId=a154f197-cb7e-4279-8645-00f19afe6e81"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/result"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/events"
+    },
+    {
+      "method": "GET",
+      "status": 404,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/result"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/events"
+    },
+    {
+      "method": "PUT",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/result"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/result"
+    },
+    {
+      "method": "POST",
+      "status": 201,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/events"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/events"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/admin/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/result"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/team"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    },
+    {
+      "method": "GET",
+      "status": 200,
+      "url": "/api/v1/public/matches/3d85750d-066d-49bd-9060-3a5c44b81eb4/scoreboard"
+    }
+  ],
+  "event_post": true,
+  "public_404": true,
+  "result_put": true,
+  "scoreboard_200": true
+}

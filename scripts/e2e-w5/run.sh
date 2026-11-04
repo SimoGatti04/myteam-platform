@@ -1,9 +1,11 @@
 #!/bin/bash
 # W5 real-stack E2E: real Chromium -> real Vite (apps/web) -> real Fastify (apps/api)
 # -> real PostgreSQL 16. No page.route interception of /api/**; the only non-product
-# pieces are (a) a local self-signed OIDC issuer used to sign short-lived test JWTs and
-# (b) one SQL UPDATE that marks the seeded match completed, because Core currently
-# exposes no API transition to status=completed (see evidence README).
+# piece is a local self-signed OIDC issuer used to sign short-lived test JWTs (explicitly
+# NOT Logto). The match is created as `scheduled`; the match lifecycle transition to
+# `completed` is performed ONLY by the product API (PUT /api/v1/admin/matches/:id/result,
+# apps/api/src/platform/service.ts upsertMatchResult), never by SQL. The SQL in this
+# script is SELECT-only proof of persisted state.
 #
 # Requires: docker (postgres:16 image), pnpm deps installed, openssl,
 #           python3 with Playwright + Chromium installed (PY_PLAYWRIGHT).
@@ -23,14 +25,29 @@ mkdir -p "$RUN/shots"
 echo "RUN=$RUN"
 
 pids=()
+KEYGEN_PATH=""
+KEYGEN_OWNED=0
+PG_VOL=""
 cleanup() {
   set +e
   for p in "${pids[@]:-}"; do kill "$p" 2>/dev/null; done
   wait 2>/dev/null
   sleep 1
-  docker rm -f "$PG_NAME" >/dev/null 2>&1
-  rm -f "$REPO/apps/api/.e2e-keygen.mjs"
-  echo "CLEANUP done; container gone: $(docker ps -a --format '{{.Names}}' | grep -c "^$PG_NAME$")"
+  # -v removes only this container's own anonymous volume; never prune or touch
+  # volumes belonging to other projects.
+  docker rm -fv "$PG_NAME" >/dev/null 2>&1
+  if [ "$KEYGEN_OWNED" = "1" ] && [ -n "$KEYGEN_PATH" ]; then rm -f "$KEYGEN_PATH"; fi
+  # Short-lived private key + test JWTs never outlive the run; screenshots stay.
+  rm -f "$RUN/key.pem" "$RUN/token.txt" "$RUN/token_noscope.txt"
+  local vol_left="n/a"
+  if [ -n "$PG_VOL" ]; then
+    if docker volume inspect "$PG_VOL" >/dev/null 2>&1; then vol_left="no"; else vol_left="yes"; fi
+  fi
+  local keygen_left="n/a"
+  if [ "$KEYGEN_OWNED" = "1" ]; then
+    if [ -e "$KEYGEN_PATH" ]; then keygen_left="no"; else keygen_left="yes"; fi
+  fi
+  echo "CLEANUP done; container gone: $(docker ps -a --format '{{.Names}}' | grep -c "^$PG_NAME$"); own volume removed: $vol_left; own keygen removed: $keygen_left"
 }
 trap cleanup EXIT
 
@@ -43,9 +60,12 @@ echo "== local TLS + JWKS + test JWT (NOT Logto) =="
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUN/key.pem" -out "$RUN/cert.pem" -days 1 \
   -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" -addext "basicConstraints=critical,CA:TRUE" >/dev/null 2>&1
 printf '%s' '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" rx="8" fill="#0ea5e9"/></svg>' > "$RUN/crest.svg"
-cp "$SCRIPT_DIR/keygen.mjs" "$REPO/apps/api/.e2e-keygen.mjs"
+# Unique per-run module name: never clobber a pre-existing local file in apps/api.
+KEYGEN_PATH="$REPO/apps/api/.e2e-keygen-$SUF.mjs"
+if [ -e "$KEYGEN_PATH" ]; then echo "BLOCKED: $KEYGEN_PATH already exists"; exit 1; fi
+cp "$SCRIPT_DIR/keygen.mjs" "$KEYGEN_PATH"; KEYGEN_OWNED=1
 ISS="https://127.0.0.1:$JWKS_PORT/"
-( cd "$REPO/apps/api" && node .e2e-keygen.mjs "$RUN" "$ISS" "myteam-platform" "$RUN/jwks.json" )
+( cd "$REPO/apps/api" && node "$KEYGEN_PATH" "$RUN" "$ISS" "myteam-platform" "$RUN/jwks.json" )
 TOKEN=$(cat "$RUN/token.txt"); TOKEN_NOSCOPE=$(cat "$RUN/token_noscope.txt")
 
 "$PY" "$SCRIPT_DIR/jwks_server.py" "$RUN" "$JWKS_PORT" >"$RUN/jwks.log" 2>&1 &
@@ -54,6 +74,8 @@ for i in $(seq 1 30); do curl -s --cacert "$RUN/cert.pem" --max-time 2 "https://
 
 echo "== disposable postgres:16 =="
 docker run -d --name "$PG_NAME" -e POSTGRES_PASSWORD="$PG_PASS" -e POSTGRES_DB="$DB" -p 127.0.0.1:$PG_PORT:5432 postgres:16-alpine >/dev/null
+PG_VOL=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$PG_NAME" 2>/dev/null || true)
+echo "own anonymous volume: ${PG_VOL:-none}"
 for i in $(seq 1 60); do docker exec "$PG_NAME" pg_isready -U postgres -d "$DB" >/dev/null 2>&1 && break; sleep 0.5; done
 DATABASE_URL="postgres://postgres:$PG_PASS@127.0.0.1:$PG_PORT/$DB"
 echo "== migrations 0001+0002 =="
@@ -93,10 +115,7 @@ COMPID=$(adm -X POST "$API/api/v1/admin/competitions" -d '{"name":"Campionato E2
 CREST="https://127.0.0.1:$JWKS_PORT/crest.svg"
 adm -X PUT "$API/api/v1/admin/team" -d "{\"name\":\"MAPI E2E\",\"crestUrl\":\"$CREST\",\"currentSeasonId\":\"$SID\"}" >/dev/null
 MID=$(adm -X POST "$API/api/v1/admin/matches" -d "{\"seasonId\":\"$SID\",\"opponentId\":\"$OPPID\",\"competitionId\":\"$COMPID\",\"isOfficial\":true,\"scheduledAt\":\"2026-10-25T14:00:00.000Z\"}" | jget "['id']")
-# TEST FIXTURE ONLY: Core exposes no API transition to status=completed
-# (create rejects it; PATCH returns completed_match_schedule_is_immutable).
-docker exec -i "$PG_NAME" psql -U postgres -d "$DB" -c "UPDATE matches SET status='completed' WHERE id='$MID';" >/dev/null
-echo "season=$SID match=$MID"
+echo "season=$SID match=$MID (scheduled; the UI PUT result performs the completion transition)"
 
 echo "== before publish: public must fail closed =="
 SB404=$(curl -s -o /dev/null -w '%{http_code}' "$API/api/v1/public/matches/$MID/scoreboard")
@@ -123,6 +142,15 @@ echo "== DB evidence =="
 docker exec -i "$PG_NAME" psql -U postgres -d "$DB" -c "select match_id, team_score, opponent_score from match_results;" | tee "$RUN/db_result.txt"
 docker exec -i "$PG_NAME" psql -U postgres -d "$DB" -c "select match_id, kind, team_side, period, minute, player_id is not null as has_player, client_event_id is not null as has_client_id from match_events order by created_at;" | tee "$RUN/db_events.txt"
 docker exec -i "$PG_NAME" psql -U postgres -d "$DB" -c "select operation, source_kind, actor_subject, count(*) from audit_events group by 1,2,3 order by 1;" | tee "$RUN/db_audit.txt"
+
+q() { docker exec -i "$PG_NAME" psql -U postgres -d "$DB" -tAc "$1"; }
+STATUS_Q=$(q "select status from matches where id='$MID'")
+COMPLETE_Q=$(q "select count(*) from audit_events where entity_type='match' and entity_id='$MID' and operation='complete' and source_kind='admin_entry' and actor_subject='e2e-admin'")
+RESULT_Q=$(q "select count(*) from match_results where match_id='$MID' and team_score=2 and opponent_score=1")
+EVENT_Q=$(q "select count(*) from match_events where match_id='$MID' and kind='goal' and team_side='team' and period=1 and minute=23 and player_id is not null and client_event_id is not null")
+HIST_Q=$(q "select count(*) from match_schedule_history where match_id='$MID' and status='completed'")
+echo "DB_ASSERT status=$STATUS_Q complete_audit=$COMPLETE_Q result=$RESULT_Q event=$EVENT_Q history=$HIST_Q" | tee "$RUN/db_assert.txt"
+[ "$STATUS_Q" = "completed" ] && [ "$COMPLETE_Q" = "1" ] && [ "$RESULT_Q" = "1" ] && [ "$EVENT_Q" = "1" ] && [ "$HIST_Q" = "1" ] || { echo "FAIL DB assertions"; exit 1; }
 
 echo "E2E_RUN_DIR=$RUN"
 echo "ALL_CHECKS_PASS"
