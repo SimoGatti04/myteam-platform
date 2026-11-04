@@ -1,9 +1,9 @@
 
-> @myteam/web@0.1.0 test /Users/gatti/Workspace/myteam-platform/apps/web
+> @myteam/web@0.1.0 test <local-workspace>/myteam-platform/apps/web
 > vitest run
 
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform/apps/web
 
  ❯ test/w2-oidc-auth.test.ts (23 tests | 1 failed) 5021ms
        × builds compliant authorization URL with code_challenge and state, storing PKCE context 5007ms
@@ -29,6 +29,6 @@ If this is a long-running test, pass a timeout value as the last argument or con
    Start at  15:18:51
    Duration  5.81s (transform 376ms, setup 0ms, import 947ms, tests 5.99s, environment 3.91s)
 
-/Users/gatti/Workspace/myteam-platform/apps/web:
+<local-workspace>/myteam-platform/apps/web:
  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @myteam/web@0.1.0 test: `vitest run`
 Exit status 1

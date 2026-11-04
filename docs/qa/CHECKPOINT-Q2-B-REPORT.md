@@ -13,11 +13,11 @@
 | QA base | `qa/q2-a-w2-integration` | `390faa578a3a04fef8d6cc8e83527fefa0ab6a33` | Rettifica Q2-A-R1 |
 
 **Checkout effettivamente esercitato per le prove automatiche in questo rapporto:**
-`web/w2-logto-auth` @ `478b742` (worktree `/Users/gatti/Workspace/myteam-platform`) per
+`web/w2-logto-auth` @ `478b742` (worktree `<local-workspace>/myteam-platform`) per
 build/typecheck/Vitest/suite QA; worktree Core C1.2
-(`/Users/gatti/Workspace/myteam-platform-core-c1-1` @ `1ab7179`) per la controprova
+(`<local-workspace>/myteam-platform-core-c1-1` @ `1ab7179`) per la controprova
 della regressione CORE-BUG-01. Suite QA presa dal worktree Q2-A
-(`/Users/gatti/Workspace/myteam-platform-q2-a` @ `8c02c9f` + rettifica `390faa5` su remoto).
+(`<local-workspace>/myteam-platform-q2-a` @ `8c02c9f` + rettifica `390faa5` su remoto).
 
 > Nota di tracciabilità: il commit remoto `390faa5` (rettifica Q2-A-R1) non è
 > scaricabile nel checkout locale (rete/DNS sandbox bloccati, `.git` read-only);
@@ -132,7 +132,7 @@ branch Web che non contiene C1.2.
 - **Evidenze:** 11 screenshot in `docs/qa/evidence/q2-b/screenshots/` + log completo in
   `docs/qa/evidence/q2-b/browser-e2e-desktop-mobile.txt`.
 - **Correzione QA applicata e riverificata:** `browser-e2e.py` conteneva un percorso assoluto
-  hardcoded (`/Users/gatti/Library/Caches/...`) come fallback dell'eseguibile Chromium.
+  hardcoded (`<local-home>/Library/Caches/...`) come fallback dell'eseguibile Chromium.
   Rimosso (ora solo `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` opzionale, altrimenti browser
   Playwright predefinito) e **gate rieseguito**: exit 0, tutti gli scenari di nuovo PASS
   (`browser-e2e-desktop-mobile-run2-after-path-fix.txt`).
@@ -313,12 +313,12 @@ dispositivo reale restano gate separati e **NOT RUN**.
 
 | Path | HEAD | Branch |
 | :--- | :--- | :--- |
-| `/Users/gatti/Workspace/myteam-platform` | `478b742` | `web/w2-logto-auth` |
-| `/Users/gatti/Workspace/myteam-platform-core-c1-1` | `1ab7179` | `codex/core-persistent-flow` |
-| `/Users/gatti/Workspace/myteam-platform-mvp-i1` | `e8b90b4` | `qa/mvp-i1-integration` |
-| `/Users/gatti/Workspace/myteam-platform-q2-a` | `8c02c9f` | `qa/q2-a-w2-integration` |
-| `/Users/gatti/Workspace/myteam-platform-qa` | `0437b93` | `qa/q1-suite-consolidation` |
-| `/Users/gatti/Workspace/myteam-platform-q2-b` | `03824da` | `qa/q2-b-w2r2-verification` (worktree usato per l'integrazione) |
+| `<local-workspace>/myteam-platform` | `478b742` | `web/w2-logto-auth` |
+| `<local-workspace>/myteam-platform-core-c1-1` | `1ab7179` | `codex/core-persistent-flow` |
+| `<local-workspace>/myteam-platform-mvp-i1` | `e8b90b4` | `qa/mvp-i1-integration` |
+| `<local-workspace>/myteam-platform-q2-a` | `8c02c9f` | `qa/q2-a-w2-integration` |
+| `<local-workspace>/myteam-platform-qa` | `0437b93` | `qa/q1-suite-consolidation` |
+| `<local-workspace>/myteam-platform-q2-b` | `03824da` | `qa/q2-b-w2r2-verification` (worktree usato per l'integrazione) |
 
 **Pubblicazione:** il branch è nato da `390faa5` tramite API GitHub (la shell in sandbox
 non può scrivere su `.git` né risolvere `github.com`), poi è stato completato via `git`

@@ -1,9 +1,9 @@
 
-> myteam-platform@0.1.0 check /Users/gatti/Workspace/myteam-platform-q2-c-int
+> myteam-platform@0.1.0 check <local-workspace>/myteam-platform-q2-c-int
 > pnpm build && pnpm typecheck && pnpm test
 
 
-> myteam-platform@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-c-int
+> myteam-platform@0.1.0 build <local-workspace>/myteam-platform-q2-c-int
 > pnpm -r --if-present run build
 
 Scope: 3 of 4 workspace projects
@@ -23,11 +23,11 @@ apps/web build: dist/assets/index-v_OuApIB.js   420.02 kB │ gzip: 109.35 kB
 apps/web build: ✓ built in 248ms
 apps/web build: Done
 
-> myteam-platform@0.1.0 typecheck /Users/gatti/Workspace/myteam-platform-q2-c-int
+> myteam-platform@0.1.0 typecheck <local-workspace>/myteam-platform-q2-c-int
 > pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck
 
 
-> @myteam/contracts@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-c-int/packages/contracts
+> @myteam/contracts@0.1.0 build <local-workspace>/myteam-platform-q2-c-int/packages/contracts
 > tsc -p tsconfig.json
 
 Scope: 3 of 4 workspace projects
@@ -38,15 +38,15 @@ apps/api typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json
 apps/web typecheck: Done
 apps/api typecheck: Done
 
-> myteam-platform@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-c-int
+> myteam-platform@0.1.0 test <local-workspace>/myteam-platform-q2-c-int
 > pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api test && pnpm exec tsx --test tests/api/*.test.ts
 
 
-> @myteam/contracts@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-c-int/packages/contracts
+> @myteam/contracts@0.1.0 build <local-workspace>/myteam-platform-q2-c-int/packages/contracts
 > tsc -p tsconfig.json
 
 
-> @myteam/api@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/api
+> @myteam/api@0.1.0 test <local-workspace>/myteam-platform-q2-c-int/apps/api
 > node --import tsx --test test/unit/*.test.ts
 
 ✔ Logto verifier accepts a correctly signed admin access token (43.216625ms)

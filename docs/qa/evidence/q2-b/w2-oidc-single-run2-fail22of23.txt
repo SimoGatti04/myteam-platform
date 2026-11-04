@@ -1,7 +1,7 @@
 npm notice run @myteam/web@0.1.0 npx
 npm notice run 'vitest' run test/w2-oidc-auth.test.ts
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform/apps/web
 
  ❯ test/w2-oidc-auth.test.ts (23 tests | 1 failed) 5021ms
        × builds compliant authorization URL with code_challenge and state, storing PKCE context 5006ms

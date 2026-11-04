@@ -1,5 +1,5 @@
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform-q2-c-int/apps/web
 
  ❯ ../../tests/q1/10-web-w2-r3-oidc-failclosed.vitest.ts (6 tests | 3 failed) 59ms
      × X1: HTTP 500 sulla discovery interrompe il login senza costruire alcun URL di autorizzazione 6ms

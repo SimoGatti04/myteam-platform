@@ -1,5 +1,5 @@
 
-> @myteam/api@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/api
+> @myteam/api@0.1.0 test <local-workspace>/myteam-platform-q2-c-int/apps/api
 > node --import tsx --test test/unit/*.test.ts
 
 ✔ Logto verifier accepts a correctly signed admin access token (42.305584ms)

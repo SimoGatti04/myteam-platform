@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@myteam/contracts": "workspace:*",
-    "fastify": "^5.0.0",
-    "jose": "^6.2.13",
+    "fastify": "^5.12.8",
+    "jose": "^6.2.15",
     "pg": "^8.23.1"
   },
   "devDependencies": {

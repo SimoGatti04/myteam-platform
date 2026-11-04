@@ -12,7 +12,7 @@ Questo rapporto è una verifica QA, non un'approvazione di release. Non sono sta
 ## 1. Preflight, provenienza e ambiente
 
 - `git ls-remote origin refs/heads/codex/integration-i0-candidate` ha restituito esattamente `f6382175b2fa9488994d3dfbb460d995ede97e5c` prima dei test.
-- Il worktree QA è stato creato isolato e pulito da quel commit: `/private/tmp/myteam-platform-q3` (branch locale `qa/q3-release-gate`). Non sono stati riutilizzati `node_modules` o risultati di test del worktree I1. `node_modules` era assente all'ingresso.
+- Il worktree QA è stato creato isolato e pulito da quel commit: `<local-tmp>/myteam-platform-q3` (branch locale `qa/q3-release-gate`). Non sono stati riutilizzati `node_modules` o risultati di test del worktree I1. `node_modules` era assente all'ingresso.
 - `git status` prima delle verifiche era pulito. L'installazione locale ha usato Node `v26.5.0` e pnpm `10.32.1` tramite `mise`; la versione `packageManager` dichiarata è `pnpm@10.32.1`.
 - `pnpm install --frozen-lockfile` è riuscito nel worktree fresco. La policy versione-controllata consente il solo build script `esbuild@0.28.2`; lockfile invariato. Nessuna configurazione pnpm è stata modificata in Q3.
 - Ancestry controllata nel candidato: Core C1.2 `1ab71792929bef1009e3ecab57adf3d333d58ceb`; Web W2-R5 `667b12bc7cccb428a81803a3b3b4d8877d41ce3b`; QA R2 `8a9a261d3f4e0d9b81224eea39b88e11ea6f4b56`; iOS R1-D importato (commit documentale `cb69f605f2d53f73695a5d327dd0c82b726e5e1b`); build B1 `d53a976e3a2f3bb56e327ca22b9db48402ae9a0e`.

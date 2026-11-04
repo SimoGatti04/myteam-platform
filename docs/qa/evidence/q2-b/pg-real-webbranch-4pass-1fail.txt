@@ -20,7 +20,7 @@ test at tests/integration/postgres-real-concurrency-and-rollback.test.ts:1:6553
   
   200 !== 400
   
-      at TestContext.<anonymous> (/Users/gatti/Workspace/myteam-platform/tests/integration/postgres-real-concurrency-and-rollback.test.ts:349:14)
+      at TestContext.<anonymous> (<local-workspace>/myteam-platform/tests/integration/postgres-real-concurrency-and-rollback.test.ts:349:14)
       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
       at async Test.run (node:internal/test_runner/test:1389:7)
       at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
