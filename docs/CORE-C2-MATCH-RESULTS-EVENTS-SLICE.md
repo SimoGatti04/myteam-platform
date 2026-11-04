@@ -2,7 +2,7 @@
 
 - **Stato:** IMPLEMENTATO, TESTATO e pubblicato come draft PR #7; **PREVIEW OWNER / RE-QA richiesti**. Nessun merge o deploy.
 - **Branch:** `core/c2-match-results-events`
-- **Base verificata:** `origin/main` @ `77cf1302c44d78a9ab547b6ebedabd304b801bff` (PR #5 e #6 integrati).
+- **Base verificata:** `origin/main` @ `08763f60bbf0550b8a5f212c5a552da6cbaec9c3` (riconciliata il 4 novembre 2026: PR #5, #6, #9 documentazione portabile e #10 dipendenze). Il candidato originale era basato su `77cf1302`.
 - **Data:** 3 novembre 2026.
 - **Ownership:** `apps/api`, `packages/contracts`, migrazione additiva, test Core e documentazione Core. Nessuna modifica a Web, iOS, Infra, CSI, workflow o manifest di deploy.
 
@@ -179,6 +179,7 @@ Eseguita contro PostgreSQL 16 effimero locale (container temporaneo, schema usa-
   - proiezione pubblica senza metadati amministrativi;
   - partita cancellata fail-closed; partita inesistente `404`;
   - suite preesistenti `platform-flow` e readiness PostgreSQL: PASS.
+- **Ricontrollo su base combinata (4 novembre 2026):** dopo il merge di `origin/main` @ `08763f6`, `CI=true pnpm install --frozen-lockfile` PASS, `pnpm check` PASS (22 test unitari + 5 HTTP), integrazione PostgreSQL 16 reale 3/3 PASS con migrazioni `0001` + `0002`.
 - Migrazione/round-trip: verificati dalla suite di integrazione.
 - **NOT RUN:** nessun deploy, nessun test staging/prod, nessuna verifica Web/iOS consumer su questa branch.
 
@@ -195,7 +196,38 @@ Eseguita contro PostgreSQL 16 effimero locale (container temporaneo, schema usa-
 
 ## 8. Handoff Web / QA
 
-- Contratto importabile da `@myteam/contracts` (nessun deep import).
-- Web può adottare la nuova rotta `/scoreboard` senza modificare il parsing di `/public/matches/:id`.
-- QA deve verificare: 200/404 di pubblicazione, ordine eventi tra periodi, idempotenza, assenza di campi amministrativi, `401/403`, e che il risultato non venga derivato dagli eventi.
-- Branch pubblicato: `core/c2-match-results-events` (worktree isolato), draft PR #7; nessun merge/deploy eseguito da Core in questa fase.
+### 8.1 Superficie stabile per il primo verticale Web
+
+Le rotte admin richiedono `Authorization: Bearer <access token OIDC>` con scope admin; le rotte pubbliche non richiedono token. I DTO sono esportati da `@myteam/contracts` (nessun deep import).
+
+| Uso nella UI | Endpoint | Risposta |
+| --- | --- | --- |
+| Elenco partite (bozze e pubblicate) | `GET /api/v1/admin/matches` (+ `?seasonId=`) | `MatchDto[]` |
+| Elenco giocatori | `GET /api/v1/admin/players` | `PlayerDto[]` |
+| Appartenenze rosa | `GET /api/v1/admin/roster-memberships` (+ `?seasonId=`, `?playerId=`) | `RosterMembershipDto[]` |
+| Avversarie | `GET /api/v1/admin/opponents` | `OpponentDto[]` |
+| Leggere il risultato | `GET /api/v1/admin/matches/{id}/result` | `MatchResultDto` (`404 match_result_not_found` se assente) |
+| Salvare o correggere il risultato | `PUT /api/v1/admin/matches/{id}/result` | `MatchResultDto` (`200`) |
+| Leggere gli eventi | `GET /api/v1/admin/matches/{id}/events` | `MatchEventDto[]` |
+| Registrare un evento | `POST /api/v1/admin/matches/{id}/events` | `MatchEventDto` (`201` creato, `200` replay idempotente) |
+| Punteggio pubblico | `GET /api/v1/public/matches/{id}/scoreboard` | `PublicMatchScoreboardDto` |
+
+Questa superficie è sufficiente per il primo verticale: **non servono nuove API**. Non esistono `PATCH`/`DELETE` evento né una rotta separata di correzione risultato; il `PUT` del risultato è l'unica correzione prevista.
+
+### 8.2 Comportamento UI sicuro
+
+- **Bozza locale prima dell'invio.** Il server accetta solo la creazione di eventi: modifiche e rimozioni vivono nella bozza client finché l'utente non invia il `POST`. Dopo l'invio l'evento non è modificabile lato server.
+- **Nessuna falsa promessa di correzione.** La UI non deve offrire "modifica/elimina evento" contro il server; al massimo un'azione locale prima dell'invio.
+- **Nessun successo atomico su salvataggi parziali.** Risultato ed eventi sono operazioni separate: se il risultato riesce e un evento fallisce, la UI riporta l'esito reale di ciascuna operazione, non un "salvato" complessivo. Il `PUT` è idempotente; ogni `POST` evento è indipendente e idempotente tramite `clientEventId`.
+- **Nessuna pubblicazione implicita.** Salvare risultato o eventi non pubblica nulla: `POST /api/v1/admin/matches/{id}/publish` resta l'unica azione di pubblicazione e non va chiamata come effetto collaterale. Finché squadra o partita non sono pubblicate, lo scoreboard pubblico risponde `404`.
+- **Punteggio autorevole.** La UI mostra e salva `teamScore`/`opponentScore` dal `PUT` e non deriva il punteggio dal numero di eventi. Eventi parziali non implicano un referto completo.
+- **Lato `team`/`opponent`.** Il modello non ha casa/trasferta: la UI usa `side` con l'etichetta di prodotto scelta (es. "noi"/"loro") senza introdurre un campo home/away.
+- **Errori da trattare come errori.** `409 idempotency_key_conflict` = stesso `clientEventId` con payload diverso; `409 cancelled_match_*` = partita annullata; `404 match_event_player_not_found` / `match_event_assist_player_not_found` = riferimenti non validi; `400 match_event_*` = regole semantiche (marcatore obbligatorio per `team`, vietato per `opponent`, assist solo su gol `team` e diverso dal marcatore).
+- **Generazione `clientEventId`.** Deve essere stabile per l'evento in bozza e cambiare solo se cambia il contenuto dell'evento; è il meccanismo che rende sicuro il retry di rete.
+
+QA deve verificare: `200`/`404` di pubblicazione, ordine eventi tra periodi, idempotenza, assenza di campi amministrativi nelle proiezioni pubbliche, `401/403`, e che il risultato non venga derivato dagli eventi.
+
+### 8.3 Stato di pubblicazione
+
+- Branch pubblicato: `core/c2-match-results-events`, riconciliato su `main` @ `08763f60bbf0550b8a5f212c5a552da6cbaec9c3`, draft PR #7; nessun merge o deploy eseguito da Core.
+- Verifica su base combinata: `pnpm install --frozen-lockfile`, `pnpm check`, integrazione PostgreSQL 16 reale (migrazioni `0001` + `0002`) — cfr. sezione 6.
