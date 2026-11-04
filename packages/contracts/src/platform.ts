@@ -241,6 +241,92 @@ export const PublicMatchesSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const MatchEventKindSchema = Type.Union([
+  Type.Literal("goal"),
+  Type.Literal("yellow_card"),
+  Type.Literal("red_card"),
+]);
+
+/**
+ * Which team the event belongs to. The current match model does not persist
+ * home/away venue, so this slice deliberately uses team/opponent rather than
+ * inferring a home/away side.
+ */
+export const MatchEventSideSchema = Type.Union([
+  Type.Literal("team"),
+  Type.Literal("opponent"),
+]);
+
+export const MatchPeriodSchema = Type.Union([Type.Literal(1), Type.Literal(2)]);
+
+/** Minute as recorded inside the given period, not a normalized match clock. */
+export const MatchMinuteSchema = Type.Integer({ minimum: 1, maximum: 120 });
+
+export const MatchResultUpsertRequestSchema = Type.Object(
+  {
+    teamScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    opponentScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    reason: Type.Optional(Type.String({ maxLength: 500 })),
+  },
+  { additionalProperties: false },
+);
+
+export const MatchResultSchema = Type.Object(
+  {
+    matchId: UuidSchema,
+    teamScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    opponentScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    recordedAt: DateTimeSchema,
+    updatedAt: DateTimeSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const MatchEventCreateRequestSchema = Type.Object(
+  {
+    kind: MatchEventKindSchema,
+    side: MatchEventSideSchema,
+    period: MatchPeriodSchema,
+    minute: MatchMinuteSchema,
+    playerId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    assistPlayerId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    clientEventId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  },
+  { additionalProperties: false },
+);
+
+const MatchEventPersonSchema = Type.Object(
+  { id: UuidSchema, displayName: Type.String() },
+  { additionalProperties: false },
+);
+
+export const MatchEventSchema = Type.Object(
+  {
+    id: UuidSchema,
+    matchId: UuidSchema,
+    kind: MatchEventKindSchema,
+    side: MatchEventSideSchema,
+    period: MatchPeriodSchema,
+    minute: MatchMinuteSchema,
+    player: Type.Union([MatchEventPersonSchema, Type.Null()]),
+    assist: Type.Union([MatchEventPersonSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export const AdminMatchEventsSchema = Type.Array(MatchEventSchema);
+
+export const PublicMatchScoreboardSchema = Type.Object(
+  {
+    matchId: UuidSchema,
+    status: Type.Literal("completed"),
+    teamScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    opponentScore: Type.Integer({ minimum: 0, maximum: 99 }),
+    events: Type.Array(MatchEventSchema),
+  },
+  { additionalProperties: false },
+);
+
 export const ApiErrorSchema = Type.Object(
   { error: Type.String() },
   { additionalProperties: false },
@@ -275,3 +361,11 @@ export type AdminMatchesQuery = Static<typeof AdminMatchesQuerySchema>;
 export type PublicMatchDto = Static<typeof PublicMatchSchema>;
 export type PublicMatchesDto = Static<typeof PublicMatchesSchema>;
 export type MatchStatus = Static<typeof MatchStatusSchema>;
+export type MatchEventKind = Static<typeof MatchEventKindSchema>;
+export type MatchEventSide = Static<typeof MatchEventSideSchema>;
+export type MatchResultUpsertRequest = Static<typeof MatchResultUpsertRequestSchema>;
+export type MatchResultDto = Static<typeof MatchResultSchema>;
+export type MatchEventCreateRequest = Static<typeof MatchEventCreateRequestSchema>;
+export type MatchEventDto = Static<typeof MatchEventSchema>;
+export type AdminMatchEventsDto = Static<typeof AdminMatchEventsSchema>;
+export type PublicMatchScoreboardDto = Static<typeof PublicMatchScoreboardSchema>;

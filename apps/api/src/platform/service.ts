@@ -7,8 +7,15 @@ import type {
   CompetitionDto,
   MatchCreateRequest,
   MatchDto,
+  MatchEventCreateRequest,
+  MatchEventDto,
+  MatchEventKind,
+  MatchEventSide,
+  MatchResultDto,
+  MatchResultUpsertRequest,
   MatchSchedulePatchRequest,
   MatchStatus,
+  PublicMatchScoreboardDto,
   OpponentCreateRequest,
   OpponentDto,
   PlayerCreateRequest,
@@ -85,6 +92,28 @@ interface MatchRow extends QueryResultRow {
   published_at: Date | string | null;
 }
 
+interface MatchResultRow extends QueryResultRow {
+  match_id: string;
+  team_score: number;
+  opponent_score: number;
+  recorded_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface MatchEventRow extends QueryResultRow {
+  id: string;
+  match_id: string;
+  kind: MatchEventKind;
+  team_side: MatchEventSide;
+  period: 1 | 2;
+  minute: number;
+  player_id: string | null;
+  player_name: string | null;
+  assist_player_id: string | null;
+  assist_player_name: string | null;
+  client_event_id: string | null;
+}
+
 interface PublicMatchRow extends QueryResultRow {
   id: string;
   season_id: string;
@@ -150,6 +179,34 @@ function validateMatchSchedule(scheduledAt: string | null, status: MatchStatus):
   if (scheduledAt !== null && Number.isNaN(Date.parse(scheduledAt))) {
     throw new DomainError(400, "invalid_scheduled_at");
   }
+}
+
+export interface ValidatedMatchEventInput {
+  playerId: string | null;
+  assistPlayerId: string | null;
+}
+
+/**
+ * Applies the slice's identity rules before any persistence occurs.
+ * Opponent events intentionally carry no our-player identity.
+ */
+export function validateMatchEventCreateInput(input: MatchEventCreateRequest): ValidatedMatchEventInput {
+  const playerId = input.playerId ?? null;
+  const assistPlayerId = input.assistPlayerId ?? null;
+  if (input.side === "team" && playerId === null) {
+    throw new DomainError(400, "match_event_player_required");
+  }
+  if (input.side === "opponent" && playerId !== null) {
+    throw new DomainError(400, "match_event_player_not_allowed");
+  }
+  if (assistPlayerId !== null) {
+    if (input.kind !== "goal") throw new DomainError(400, "match_event_assist_requires_goal");
+    if (input.side !== "team") throw new DomainError(400, "match_event_assist_requires_team_goal");
+    if (playerId !== null && assistPlayerId === playerId) {
+      throw new DomainError(400, "match_event_assist_must_differ");
+    }
+  }
+  return { playerId, assistPlayerId };
 }
 
 function isValidDate(value: string): boolean {
@@ -257,6 +314,44 @@ function matchDto(row: MatchRow): MatchDto {
     publishedAt: toDateTime(row.published_at),
   };
 }
+
+function matchResultDto(row: MatchResultRow): MatchResultDto {
+  const recordedAt = toDateTime(row.recorded_at);
+  const updatedAt = toDateTime(row.updated_at);
+  if (recordedAt === null || updatedAt === null) throw new Error("Match result timestamps missing");
+  return {
+    matchId: row.match_id,
+    teamScore: row.team_score,
+    opponentScore: row.opponent_score,
+    recordedAt,
+    updatedAt,
+  };
+}
+
+function matchEventDto(row: MatchEventRow): MatchEventDto {
+  return {
+    id: row.id,
+    matchId: row.match_id,
+    kind: row.kind,
+    side: row.team_side,
+    period: row.period,
+    minute: row.minute,
+    player: row.player_id !== null && row.player_name !== null
+      ? { id: row.player_id, displayName: row.player_name }
+      : null,
+    assist: row.assist_player_id !== null && row.assist_player_name !== null
+      ? { id: row.assist_player_id, displayName: row.assist_player_name }
+      : null,
+  };
+}
+
+const MATCH_EVENT_COLUMNS = `e.id, e.match_id, e.kind, e.team_side, e.period, e.minute,
+  e.player_id, p.display_name AS player_name,
+  e.assist_player_id, a.display_name AS assist_player_name,
+  e.client_event_id`;
+const MATCH_EVENT_JOINS = `FROM match_events e
+  LEFT JOIN players p ON p.id = e.player_id
+  LEFT JOIN players a ON a.id = e.assist_player_id`;
 
 export class PlatformService {
   constructor(private readonly pool: Pool) {}
@@ -762,6 +857,201 @@ export class PlatformService {
     });
   }
 
+  async upsertMatchResult(
+    matchId: string,
+    input: MatchResultUpsertRequest,
+    actor: AdminActor,
+  ): Promise<MatchResultDto> {
+    const reason = textOrNull(input.reason);
+    return inTransaction(this.pool, async (client) => {
+      const match = (await client.query<MatchRow>(
+        `SELECT id, season_id, opponent_id, competition_id, is_official, scheduled_at, status, published_at
+         FROM matches WHERE id = $1 FOR UPDATE`,
+        [matchId],
+      )).rows[0];
+      if (!match) throw new DomainError(404, "match_not_found");
+      if (match.status === "cancelled") {
+        throw new DomainError(409, "cancelled_match_result_not_allowed");
+      }
+
+      const current = (await client.query<MatchResultRow>(
+        `SELECT match_id, team_score, opponent_score, recorded_at, updated_at
+         FROM match_results WHERE match_id = $1 FOR UPDATE`,
+        [matchId],
+      )).rows[0];
+      const unchanged = current !== undefined
+        && current.team_score === input.teamScore
+        && current.opponent_score === input.opponentScore;
+      if (unchanged && match.status === "completed") return matchResultDto(current);
+
+      const result = await client.query<MatchResultRow>(
+        `INSERT INTO match_results (match_id, team_score, opponent_score, source_kind, recorded_by)
+         VALUES ($1, $2, $3, 'admin_entry', $4)
+         ON CONFLICT (match_id) DO UPDATE
+           SET team_score = EXCLUDED.team_score,
+               opponent_score = EXCLUDED.opponent_score,
+               updated_at = now()
+         RETURNING match_id, team_score, opponent_score, recorded_at, updated_at`,
+        [matchId, input.teamScore, input.opponentScore, actor.subject],
+      );
+      const row = result.rows[0];
+      if (!row) throw new Error("Match result upsert returned no row");
+
+      if (match.status !== "completed") {
+        await client.query(
+          `UPDATE matches SET status = 'completed', updated_at = now() WHERE id = $1`,
+          [matchId],
+        );
+        await client.query(
+          `INSERT INTO match_schedule_history
+            (id, match_id, scheduled_at, status, source_kind, actor_subject, reason)
+           VALUES ($1, $2, $3, 'completed', 'admin_entry', $4, $5)`,
+          [randomUUID(), matchId, match.scheduled_at, actor.subject, reason],
+        );
+        await appendAudit(client, actor, "match", matchId, "complete", {
+          status: { before: match.status, after: "completed" },
+        }, reason);
+      }
+
+      const resultChanges = current
+        ? changesBetween(
+            { teamScore: current.team_score, opponentScore: current.opponent_score },
+            { teamScore: row.team_score, opponentScore: row.opponent_score },
+          )
+        : {
+            teamScore: { before: null, after: row.team_score },
+            opponentScore: { before: null, after: row.opponent_score },
+          };
+      await appendAudit(
+        client,
+        actor,
+        "match_result",
+        matchId,
+        current ? "update" : "create",
+        resultChanges,
+        reason,
+      );
+      return matchResultDto(row);
+    });
+  }
+
+  async getAdminMatchResult(matchId: string): Promise<MatchResultDto> {
+    const match = await this.pool.query("SELECT 1 FROM matches WHERE id = $1", [matchId]);
+    if (match.rowCount === 0) throw new DomainError(404, "match_not_found");
+    const result = await this.pool.query<MatchResultRow>(
+      `SELECT match_id, team_score, opponent_score, recorded_at, updated_at
+       FROM match_results WHERE match_id = $1`,
+      [matchId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new DomainError(404, "match_result_not_found");
+    return matchResultDto(row);
+  }
+
+  async listAdminMatchEvents(matchId: string): Promise<MatchEventDto[]> {
+    const match = await this.pool.query("SELECT 1 FROM matches WHERE id = $1", [matchId]);
+    if (match.rowCount === 0) throw new DomainError(404, "match_not_found");
+    const result = await this.pool.query<MatchEventRow>(
+      `SELECT ${MATCH_EVENT_COLUMNS}
+       ${MATCH_EVENT_JOINS}
+       WHERE e.match_id = $1
+       ORDER BY e.period, e.minute, e.created_at, e.id`,
+      [matchId],
+    );
+    return result.rows.map(matchEventDto);
+  }
+
+  async createMatchEvent(
+    matchId: string,
+    input: MatchEventCreateRequest,
+    actor: AdminActor,
+  ): Promise<{ event: MatchEventDto; created: boolean }> {
+    const { playerId, assistPlayerId } = validateMatchEventCreateInput(input);
+    const clientEventId = textOrNull(input.clientEventId);
+
+    return inTransaction(this.pool, async (client) => {
+      const match = (await client.query<MatchRow>(
+        `SELECT id, season_id, opponent_id, competition_id, is_official, scheduled_at, status, published_at
+         FROM matches WHERE id = $1 FOR UPDATE`,
+        [matchId],
+      )).rows[0];
+      if (!match) throw new DomainError(404, "match_not_found");
+      if (match.status === "cancelled") {
+        throw new DomainError(409, "cancelled_match_event_not_allowed");
+      }
+
+      if (clientEventId !== null) {
+        const existing = (await client.query<MatchEventRow>(
+          `SELECT ${MATCH_EVENT_COLUMNS}
+           ${MATCH_EVENT_JOINS}
+           WHERE e.match_id = $1 AND e.client_event_id = $2`,
+          [matchId, clientEventId],
+        )).rows[0];
+        if (existing) {
+          const samePayload = existing.kind === input.kind
+            && existing.team_side === input.side
+            && existing.period === input.period
+            && existing.minute === input.minute
+            && existing.player_id === playerId
+            && existing.assist_player_id === assistPlayerId;
+          if (!samePayload) throw new DomainError(409, "idempotency_key_conflict");
+          return { event: matchEventDto(existing), created: false };
+        }
+      }
+
+      if (playerId !== null) {
+        const player = await client.query("SELECT 1 FROM players WHERE id = $1", [playerId]);
+        if (player.rowCount === 0) throw new DomainError(404, "match_event_player_not_found");
+      }
+      if (assistPlayerId !== null) {
+        const assist = await client.query("SELECT 1 FROM players WHERE id = $1", [assistPlayerId]);
+        if (assist.rowCount === 0) throw new DomainError(404, "match_event_assist_player_not_found");
+      }
+
+      const eventId = randomUUID();
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO match_events
+          (id, match_id, kind, team_side, period, minute, player_id, assist_player_id,
+           client_event_id, source_kind, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'admin_entry', $10)
+         RETURNING id`,
+        [
+          eventId,
+          matchId,
+          input.kind,
+          input.side,
+          input.period,
+          input.minute,
+          playerId,
+          assistPlayerId,
+          clientEventId,
+          actor.subject,
+        ],
+      );
+      if (inserted.rowCount === 0) throw new Error("Match event insert returned no row");
+
+      const hydrated = (await client.query<MatchEventRow>(
+        `SELECT ${MATCH_EVENT_COLUMNS}
+         ${MATCH_EVENT_JOINS}
+         WHERE e.id = $1`,
+        [eventId],
+      )).rows[0];
+      if (!hydrated) throw new Error("Match event hydration returned no row");
+
+      await appendAudit(client, actor, "match_event", eventId, "create", {
+        matchId: { before: null, after: matchId },
+        kind: { before: null, after: hydrated.kind },
+        side: { before: null, after: hydrated.team_side },
+        period: { before: null, after: hydrated.period },
+        minute: { before: null, after: hydrated.minute },
+        playerId: { before: null, after: hydrated.player_id },
+        assistPlayerId: { before: null, after: hydrated.assist_player_id },
+        clientEventId: { before: null, after: hydrated.client_event_id },
+      });
+      return { event: matchEventDto(hydrated), created: true };
+    });
+  }
+
   async getPublicTeam(): Promise<PublicTeamDto> {
     const result = await this.pool.query<TeamRow & { season_label: string | null; season_starts_on: string | null; season_ends_on: string | null }>(
       `SELECT t.id, t.name, t.crest_url, t.primary_color, t.secondary_color,
@@ -831,6 +1121,40 @@ export class PlatformService {
     const row = result.rows[0];
     if (!row) throw new DomainError(404, "public_match_not_found");
     return publicMatchDto(row);
+  }
+
+  async getPublicMatchScoreboard(id: string): Promise<PublicMatchScoreboardDto> {
+    const publishedTeam = await this.pool.query(
+      "SELECT 1 FROM team_profile WHERE id = 1 AND published_at IS NOT NULL",
+    );
+    if (publishedTeam.rowCount === 0) throw new DomainError(404, "public_team_not_found");
+
+    const result = await this.pool.query<MatchResultRow>(
+      `SELECT r.match_id, r.team_score, r.opponent_score, r.recorded_at, r.updated_at
+       FROM matches m
+       JOIN match_results r ON r.match_id = m.id
+       WHERE m.id = $1
+         AND m.published_at IS NOT NULL
+         AND m.status = 'completed'`,
+      [id],
+    );
+    const row = result.rows[0];
+    if (!row) throw new DomainError(404, "public_match_scoreboard_not_found");
+
+    const events = await this.pool.query<MatchEventRow>(
+      `SELECT ${MATCH_EVENT_COLUMNS}
+       ${MATCH_EVENT_JOINS}
+       WHERE e.match_id = $1
+       ORDER BY e.period, e.minute, e.created_at, e.id`,
+      [id],
+    );
+    return {
+      matchId: row.match_id,
+      status: "completed",
+      teamScore: row.team_score,
+      opponentScore: row.opponent_score,
+      events: events.rows.map(matchEventDto),
+    };
   }
 
   async getPublicMatches(): Promise<PublicMatchesDto> {

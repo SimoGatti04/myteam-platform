@@ -31,7 +31,7 @@ test(
     try {
       await adminPool.query(`CREATE SCHEMA "${schema}"`);
       scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schema}` });
-      assert.deepEqual(await applyMigrations(scopedPool), ["0001-platform-core.sql"]);
+      assert.deepEqual(await applyMigrations(scopedPool), ["0001-platform-core.sql", "0002-match-results-and-events.sql"]);
       assert.deepEqual(await applyMigrations(scopedPool), []);
 
       app = createApp({

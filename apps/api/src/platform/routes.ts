@@ -10,10 +10,15 @@ import {
   AdminCompetitionsSchema,
   AdminMatchesSchema,
   AdminMatchesQuerySchema,
+  AdminMatchEventsSchema,
   ApiErrorSchema,
   CompetitionCreateRequestSchema,
   CompetitionSchema,
   MatchCreateRequestSchema,
+  MatchEventCreateRequestSchema,
+  MatchEventSchema,
+  MatchResultSchema,
+  MatchResultUpsertRequestSchema,
   MatchSchedulePatchRequestSchema,
   MatchSchema,
   OpponentCreateRequestSchema,
@@ -22,6 +27,7 @@ import {
   PlayerSchema,
   PublicMatchSchema,
   PublicMatchesSchema,
+  PublicMatchScoreboardSchema,
   PublicRosterSchema,
   PublicTeamSchema,
   RosterMembershipCreateRequestSchema,
@@ -36,6 +42,8 @@ import type {
   AdminRosterMembershipsQuery,
   CompetitionCreateRequest,
   MatchCreateRequest,
+  MatchEventCreateRequest,
+  MatchResultUpsertRequest,
   MatchSchedulePatchRequest,
   OpponentCreateRequest,
   PlayerCreateRequest,
@@ -257,6 +265,60 @@ export function registerPlatformRoutes(
         },
         async (request) => service.publishMatch(request.params.id, requireActor(request)),
       );
+
+      admin.put<{ Params: { id: string }; Body: MatchResultUpsertRequest }>(
+        "/matches/:id/result",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+            body: MatchResultUpsertRequestSchema,
+            response: { 200: MatchResultSchema, ...errorResponses },
+          },
+        },
+        async (request) =>
+          service.upsertMatchResult(request.params.id, request.body, requireActor(request)),
+      );
+
+      admin.get<{ Params: { id: string } }>(
+        "/matches/:id/result",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+            response: { 200: MatchResultSchema, ...errorResponses },
+          },
+        },
+        async (request) => service.getAdminMatchResult(request.params.id),
+      );
+
+      admin.get<{ Params: { id: string } }>(
+        "/matches/:id/events",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+            response: { 200: AdminMatchEventsSchema, ...errorResponses },
+          },
+        },
+        async (request) => service.listAdminMatchEvents(request.params.id),
+      );
+
+      admin.post<{ Params: { id: string }; Body: MatchEventCreateRequest }>(
+        "/matches/:id/events",
+        {
+          schema: {
+            params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+            body: MatchEventCreateRequestSchema,
+            response: { 200: MatchEventSchema, 201: MatchEventSchema, ...errorResponses },
+          },
+        },
+        async (request, reply) => {
+          const outcome = await service.createMatchEvent(
+            request.params.id,
+            request.body,
+            requireActor(request),
+          );
+          return reply.code(outcome.created ? 201 : 200).send(outcome.event);
+        },
+      );
     },
     { prefix: "/api/v1/admin" },
   );
@@ -271,6 +333,22 @@ export function registerPlatformRoutes(
     "/api/v1/public/roster",
     { schema: { response: { 200: PublicRosterSchema, ...errorResponses } } },
     async () => service.getPublicRoster(),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/v1/public/matches/:id/scoreboard",
+    {
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        response: { 200: PublicMatchScoreboardSchema, ...errorResponses },
+      },
+    },
+    async (request) => service.getPublicMatchScoreboard(request.params.id),
   );
 
   app.get<{ Params: { id: string } }>(
