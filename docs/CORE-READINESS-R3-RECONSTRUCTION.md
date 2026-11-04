@@ -3,13 +3,13 @@
 **Date:** 2 November 2026
 **Repository:** `SimoGatti04/myteam-platform`
 **Branch:** `core/readiness-r3-reconstructed`
-**Worktree:** `/private/tmp/myteam-platform-core-readiness-r3`
+**Worktree:** worktree Git locale isolato, non versionato e non riproducibile da questo repository
 **Verified base:** `origin/core/readiness-r1` @ `58145314fae1588616de8f9680332a27f4cfbe7e`
 **Original I3 ancestor:** `faa82e873ee8e0bbf3af6c1c8297444c6257bcd2`
 
 ## Provenance and search result
 
-The prior R2 SHA `21cfba4a33f1bf7f412881c256526fabe5231be4` and reported R3 SHA `843e9f4a6a34220ac0278e86a265572fe311708b` were not present in the local object database, branches, remote-tracking refs, available worktrees, or the targeted local candidate paths. The QA report cited `/private/tmp/myteam-platform-readiness` as the R2 source worktree, but that path is no longer present. The report used here is `qa/platform-r2-infra-r3-review` @ `74e86803adf16da23c2f478201c33a28383bb3fc`, read in full. It records QA-READY-01-R2, including a PostgreSQL 16 `pool.max=1` reproduction and the expected checked-out pool counts after timeout.
+The prior R2 SHA `21cfba4a33f1bf7f412881c256526fabe5231be4` and reported R3 SHA `843e9f4a6a34220ac0278e86a265572fe311708b` were not present in the local object database, branches, remote-tracking refs, available worktrees, or the targeted local candidate paths. The QA report cited a local R2 source worktree, but that worktree is no longer present. The report used here is `qa/platform-r2-infra-r3-review` @ `74e86803adf16da23c2f478201c33a28383bb3fc`, read in full. It records QA-READY-01-R2, including a PostgreSQL 16 `pool.max=1` reproduction and the expected checked-out pool counts after timeout.
 
 This branch is therefore a **new reconstruction**, not restoration of or proof about either missing SHA. It is based on the locally verifiable R1 commit above. The recorded I3 base is the parent of the verified R1 commit. R2 behavior visible in the QA report (single-flight and a pool-waiter guard) is implemented afresh in the candidate; equivalence to the unavailable R2 source is not claimed.
 

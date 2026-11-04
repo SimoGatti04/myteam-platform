@@ -1,5 +1,18 @@
 # Stato — myteam-platform
 
+## Stato corrente (4 novembre 2026)
+
+- **`main` verificata:** `77cf1302c44d78a9ab547b6ebedabd304b801bff` (PR #5 pipeline immagini, PR #6 manifest produzione gated, entrambe integrate).
+- **Presente su `main`:** monorepo Web/PWA + API, persistenza PostgreSQL con migrazioni versionate, packaging immagini GHCR e manifest di **staging** distribuito. La readiness applicativa `/ready` verifica la dipendenza PostgreSQL; `/health` resta liveness.
+- **Produzione:** tooling e manifest gated presenti, **nessun rilascio di produzione**. Nessun deploy, merge o modifica a cluster/registry è avvenuto in questo aggiornamento.
+- **Candidati draft, NON integrati:** Core C2 risultati/eventi gara (PR #7, branch `core/c2-match-results-events`) e relativa UI Web (PR #8, branch `web/w4-match-results-admin-preview`). Non descrivono comportamento presente su `main`.
+- **iOS:** progetto separato, non incluso in questo repository. Gli ADR iOS in `docs/decisions/ios/` sono snapshot di requisiti condivisi.
+- **Prossimi gate:** preview owner e re-QA dei candidati draft; design del rilascio di produzione; decisioni di prodotto ancora aperte in `docs/platform/`.
+
+Le sezioni seguenti sono **checkpoint storici in ordine cronologico** (dal più recente): riportano lo stato al momento della verifica e possono citare branch, worktree o percorsi non più attuali. Non descrivono di per sé lo stato corrente.
+
+---
+
 ## Release — pipeline immagini produzione: preparazione tooling (3 novembre 2026)
 
 - **Base verificata:** `main` protetta `fa34c6de38e964a6546a643437276507a0901b79` (PR #4 merged; staging rilasciata da `7a010fd`).
@@ -59,12 +72,12 @@
 
 ## Baseline C0
 
-- Repository locale distinta: `/Users/gatti/Workspace/myteam-platform`.
+- Repository locale distinta: checkout dedicato del repository sull'host di sviluppo.
 - Remote: `git@github.com:SimoGatti04/myteam-platform.git`.
 - Commit C0 su `main`: `66b49875acbf7d520029730702a03f3abc66bb8c`.
 - Il preflight del 28 ottobre 2026 ha verificato il repository GitHub vuoto prima del primo push; il repository ora contiene la baseline C0.
 - Workspace pnpm/TypeScript, Node.js `26.5.0`, pnpm `10.32.1`, API Fastify e contratti TypeBox. `GET /health` è liveness, non readiness PostgreSQL.
-- Le specifiche approvate sono copiate in `docs/platform/`; gli snapshot ADR iOS pertinenti sono in `docs/decisions/ios/`. Le fonti iOS originali restano nella repository AURINFORMATC.
+- Le specifiche approvate sono copiate in `docs/platform/`; gli snapshot ADR iOS pertinenti sono in `docs/decisions/ios/`. Le fonti iOS originali restano nel repository iOS separato, fuori da questo repository.
 
 ## Slice persistente Core
 

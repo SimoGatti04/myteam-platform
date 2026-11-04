@@ -4,9 +4,9 @@
 
 ## Fonte autorevole dello stato
 
-Leggere `AURINFORMATC/app/AGENTS.md`, `AURINFORMATC/app/docs/ARCHITECTURE.md`, `AURINFORMATC/app/docs/STATUS.md`, `AURINFORMATC/app/docs/TESTING.md` e ADR-0003, 0006, 0007 e 0008. Questo documento riguarda **l'integrazione futura**, non sostituisce lo stato del codice.
+Considerare autorevoli la documentazione di progetto del repository iOS separato (`AGENTS`, `ARCHITECTURE`, `STATUS`, `TESTING`) e gli ADR-0003, 0006, 0007 e 0008. Questo documento riguarda **l'integrazione futura**, non sostituisce lo stato del codice.
 
-Al checkpoint C3.3 (report del 27/10/2026), SwiftData **V3** è l'archivio operativo (rosa, calendario, storico, sessione live, metadata correzioni). Payload live versione 3, timeline ingressi/uscite con sequenza e copertura verificabile, motore unico del tempo `MatchTiming`, proposte di correzione/undo limitato. Esito riportato: **122 PASS, 0 FAIL, 0 SKIPPED** (119 APPTests, 3 XCUITest) su simulatore. **NOT RUN:** device reale e lock/unlock fisico. **Aperti:** due warning SwiftUI `Invalid frame dimension (negative or non-finite)`. Ultimo HEAD riportato `2bb9459` sul branch locale `main`, senza remote; verificare lo stato corrente prima di operare.
+Al checkpoint C3.3 (report del 27/10/2026), SwiftData **V3** è l'archivio operativo (rosa, calendario, storico, sessione live, metadata correzioni). Payload live versione 3, timeline ingressi/uscite con sequenza e copertura verificabile, motore unico del tempo `MatchTiming`, proposte di correzione/undo limitato. Esito riportato: **122 PASS, 0 FAIL, 0 SKIPPED** (119 APPTests, 3 XCUITest) su simulatore. **NOT RUN:** device reale e lock/unlock fisico. **Aperti:** due warning SwiftUI `Invalid frame dimension (negative or non-finite)`. Lo stato del repository iOS va verificato alla fonte aggiornata prima di operare.
 
 ## Offline-first — APPROVATO
 
