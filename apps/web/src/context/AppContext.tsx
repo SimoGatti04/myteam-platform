@@ -5,6 +5,7 @@ import { authService, AuthSource, SessionInfo } from '../services/auth';
 import { oidcClient } from '../services/oidc';
 import { deriveThemeTokens, applyThemeToDocument, NEUTRAL_THEME, type ThemeTokens, type TokenOverrides } from '../services/theme';
 import { isDemoAllowed, isManualAuthAllowed } from '../utils/env';
+import { readW4PreviewIntent } from '../utils/preview';
 
 export type DataMode = 'real' | 'demo';
 
@@ -117,14 +118,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const isDemoData = dataMode === 'demo' && demoAllowed;
+  const previewIntent = isDemoData ? readW4PreviewIntent() : null;
 
-  // Navigazione
-  const [activeTab, setActiveTab] = useState<'home' | 'partite' | 'rosa' | 'statistiche' | 'votazioni'>('home');
-  const [adminMode, setAdminMode] = useState<boolean>(false);
-  const [adminTab, setAdminTab] = useState<'panoramica' | 'partite' | 'rosa' | 'votazioni' | 'contenuti' | 'impostazioni'>('panoramica');
+  // Navigazione (deep link W4 solo in demo sviluppo)
+  const [activeTab, setActiveTab] = useState<'home' | 'partite' | 'rosa' | 'statistiche' | 'votazioni'>(
+    () => (previewIntent?.view === 'match-detail' ? 'partite' : 'home')
+  );
+  const [adminMode, setAdminMode] = useState<boolean>(() => previewIntent?.view === 'admin-report');
+  const [adminTab, setAdminTab] = useState<'panoramica' | 'partite' | 'rosa' | 'votazioni' | 'contenuti' | 'impostazioni'>(
+    () => (previewIntent?.view === 'admin-report' ? 'partite' : 'panoramica')
+  );
 
   // Selezione dettaglio
-  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(
+    () => (previewIntent?.view === 'match-detail' ? previewIntent.matchId : null)
+  );
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
 
   // Stato Squadra Pubblica

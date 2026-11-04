@@ -21,6 +21,12 @@ import type {
   MatchDto,
   AdminRosterMembershipsQuery,
   AdminMatchesQuery,
+  MatchResultDto,
+  MatchResultUpsertRequest,
+  MatchEventCreateRequest,
+  MatchEventDto,
+  AdminMatchEventsDto,
+  PublicMatchScoreboardDto,
 } from '@myteam/contracts';
 import { authService } from './auth';
 import {
@@ -38,6 +44,7 @@ import {
   DEMO_TEAM_STATS_ALL,
   DEMO_PLAYER_STATS,
 } from '../fixtures/demoData';
+import { applyMatchPreview } from './matchPreviewStore';
 
 export type ApiResult<T> =
   | { success: true; data: T }
@@ -143,6 +150,21 @@ class ApiService {
         }
         if (code === 'public_match_not_found') {
           return 'Partita non trovata o non ancora pubblicata.';
+        }
+        if (code === 'public_match_scoreboard_not_found') {
+          return 'Risultato non pubblicato: la partita non è ancora completata o pubblicata.';
+        }
+        if (code === 'match_result_not_found') {
+          return 'Nessun risultato registrato per questa partita.';
+        }
+        if (code === 'match_not_found') {
+          return 'Partita non trovata.';
+        }
+        if (code === 'idempotency_key_conflict') {
+          return 'Lo stesso identificativo evento è già stato usato con dati diversi.';
+        }
+        if (code === 'cancelled_match_result_not_allowed' || code === 'cancelled_match_event_not_allowed') {
+          return 'La partita è annullata: risultato ed eventi non sono modificabili.';
         }
         if (code === 'season_not_found') {
           return 'Stagione sportiva specificata non trovata.';
@@ -313,6 +335,51 @@ class ApiService {
   }
 
   // ==========================================
+  // C2 — RISULTATI ED EVENTI (contratto Core PR7)
+  // ==========================================
+
+  /** Admin: legge il risultato registrato; 404 `match_result_not_found` = nessun risultato. */
+  async getAdminMatchResult(matchId: string): Promise<ApiResult<MatchResultDto>> {
+    return this.request<MatchResultDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/result`);
+  }
+
+  /** Admin: inserisce o corregge il punteggio finale (transazione separata dagli eventi). */
+  async upsertMatchResult(
+    matchId: string,
+    req: MatchResultUpsertRequest
+  ): Promise<ApiResult<MatchResultDto>> {
+    return this.request<MatchResultDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/result`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  }
+
+  /** Admin: elenco eventi salvati (sola lettura lato C2). */
+  async getAdminMatchEvents(matchId: string): Promise<ApiResult<AdminMatchEventsDto>> {
+    return this.request<AdminMatchEventsDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/events`);
+  }
+
+  /** Admin: inserisce un evento. `clientEventId` rende il retry idempotente. */
+  async createMatchEvent(
+    matchId: string,
+    req: MatchEventCreateRequest
+  ): Promise<ApiResult<MatchEventDto>> {
+    return this.request<MatchEventDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  }
+
+  /** Pubblico: scoreboard di una partita completata e pubblicata; 404 se non pubblicata. */
+  async getPublicMatchScoreboard(matchId: string): Promise<ApiResult<PublicMatchScoreboardDto>> {
+    return this.request<PublicMatchScoreboardDto>(
+      `/api/v1/public/matches/${encodeURIComponent(matchId)}/scoreboard`
+    );
+  }
+
+  // ==========================================
   // FORNITURA DATI DEMO ESPLICITA
   // Richiamata SOLO ed ESCLUSIVAMENTE quando dataMode === 'demo'
   // in ambienti di sviluppo autorizzati.
@@ -341,7 +408,7 @@ class ApiService {
     const scheduled: PublicMatchDto[] = [];
     const toBeScheduled: PublicMatchDto[] = [];
 
-    for (const m of DEMO_MATCH_DETAILS) {
+    for (const m of applyMatchPreview(DEMO_MATCH_DETAILS)) {
       const publicItem: PublicMatchDto = {
         id: m.id,
         seasonId: m.seasonId,
@@ -363,7 +430,7 @@ class ApiService {
 
   getDemoAdminMatches(seasonId?: string): MatchDto[] {
     const list: MatchDto[] = [];
-    for (const m of DEMO_MATCH_DETAILS) {
+    for (const m of applyMatchPreview(DEMO_MATCH_DETAILS)) {
       if (seasonId && m.seasonId !== seasonId) continue;
       // map to MatchDto
       list.push({
@@ -381,7 +448,7 @@ class ApiService {
   }
 
   getDemoMatchDetails(): typeof DEMO_MATCH_DETAILS {
-    return DEMO_MATCH_DETAILS;
+    return applyMatchPreview(DEMO_MATCH_DETAILS);
   }
 
   getDemoStandings(): typeof DEMO_STANDINGS {

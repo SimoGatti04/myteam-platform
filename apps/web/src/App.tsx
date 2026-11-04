@@ -1,4 +1,4 @@
-import { Sparkles, RefreshCw } from 'lucide-react';
+import { Sparkles, RefreshCw, Radio, ClipboardList } from 'lucide-react';
 import React, { useState } from 'react';
 import { useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
@@ -14,6 +14,7 @@ import { AdminRosaView } from './views/admin/AdminRosaView';
 import { AdminVotazioniView } from './views/admin/AdminVotazioniView';
 import { AdminContenutiView } from './views/admin/AdminContenutiView';
 import { AdminImpostazioniView } from './views/admin/AdminImpostazioniView';
+import { readW4PreviewIntent } from './utils/preview';
 
 export const App: React.FC = () => {
   const { adminMode, activeTab, adminTab, setAdminTab, isAuthenticated, isDemoData, pwaUpdateAvailable, applyPwaUpdate } = useApp();
@@ -21,6 +22,14 @@ export const App: React.FC = () => {
   // Quick Action Modal states shared between Panoramica and sub-views
   const [modalMatchId, setModalMatchId] = useState<string | null>(null);
   const [modalNewPlayerOpen, setModalNewPlayerOpen] = useState<boolean>(false);
+
+  // W4 preview deep link: read once so later navigation does not re-open the report.
+  const [initialReportMatchId] = useState<string | null>(() => {
+    if (!isDemoData) return null;
+    const intent = readW4PreviewIntent();
+    return intent?.view === 'admin-report' ? intent.matchId : null;
+  });
+  const w4PreviewIntent = isDemoData ? readW4PreviewIntent() : null;
 
   const handleOpenMatchModal = (matchId?: string) => {
     setAdminTab('partite');
@@ -75,6 +84,24 @@ export const App: React.FC = () => {
       )}
       <Navbar />
 
+      {w4PreviewIntent && (
+        <div className="w4-preview-ribbon" role="note" aria-label="Anteprima W4 con dati demo">
+          <div className="w4-preview-ribbon__text">
+            <Radio size={15} />
+            <strong>ANTEPRIMA W4</strong>
+            <span>Fixture demo esplicite · nessuna chiamata backend · modifiche solo in sessionStorage</span>
+          </div>
+          <nav className="w4-preview-ribbon__links" aria-label="Scorciatoie anteprima">
+            <a href="?demo=true&preview=match-detail&match=m-last" className="w4-preview-ribbon__link">
+              <Radio size={13} /> Dettaglio pubblico
+            </a>
+            <a href="?demo=true&preview=admin-report&match=m-last" className="w4-preview-ribbon__link">
+              <ClipboardList size={13} /> Referto admin
+            </a>
+          </nav>
+        </div>
+      )}
+
       <main style={{ flex: 1, padding: '16px 0 40px 0' }}>
         {!adminMode ? (
           <>
@@ -98,6 +125,7 @@ export const App: React.FC = () => {
               <AdminPartiteView
                 openModalWithMatchId={modalMatchId}
                 onCloseModal={() => setModalMatchId(null)}
+                initialReportMatchId={initialReportMatchId}
               />
             )}
             {adminTab === 'rosa' && (
