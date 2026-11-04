@@ -1,5 +1,5 @@
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform-q2-c-int/apps/web
 
 
  Test Files  1 passed (1)

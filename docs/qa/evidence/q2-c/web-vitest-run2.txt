@@ -1,9 +1,9 @@
 
-> @myteam/web@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+> @myteam/web@0.1.0 test <local-workspace>/myteam-platform-q2-c-int/apps/web
 > vitest run
 
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform-q2-c-int/apps/web
 
 
  Test Files  7 passed (7)

@@ -174,7 +174,7 @@ I test QA indipendenti sono già predisposti per accogliere e validare queste fu
 
 ## 7. Stato Git e Cleanup
 
-- **Worktree:** `/Users/gatti/Workspace/myteam-platform-q2-a`
+- **Worktree:** `<local-workspace>/myteam-platform-q2-a`
 - **Branch:** `qa/q2-a-w2-integration`
 - **HEAD Q2-A originale:** `8c02c9f9240aa9bd867ee8e0fba9f530c8283a1d`
 - **Commit rettifica Q2-A-R1:** SHA emesso con questo aggiornamento del rapporto
