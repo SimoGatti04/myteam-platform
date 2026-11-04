@@ -1,0 +1,7 @@
+CHECKPOINT public_before_result=unpublished_404
+CHECKPOINT result_saved_via_ui
+CHECKPOINT events_saved_via_ui rows=1
+CHECKPOINT public_after_save=2-1
+CHECKPOINT public_after_reload=2-1_with_events
+CHECKPOINT pageerrors=[]
+BROWSER_E2E_PASS
