@@ -1,9 +1,9 @@
 
-> myteam-platform@0.1.0 check /private/tmp/myteam-platform-q3
+> myteam-platform@0.1.0 check <local-tmp>/myteam-platform-q3
 > pnpm build && pnpm typecheck && pnpm test
 
 
-> myteam-platform@0.1.0 build /private/tmp/myteam-platform-q3
+> myteam-platform@0.1.0 build <local-tmp>/myteam-platform-q3
 > pnpm -r --if-present run build
 
 Scope: 3 of 4 workspace projects
@@ -23,11 +23,11 @@ apps/web build: dist/assets/index-C8xMxBV6.js   420.80 kB │ gzip: 109.65 kB
 apps/web build: ✓ built in 157ms
 apps/web build: Done
 
-> myteam-platform@0.1.0 typecheck /private/tmp/myteam-platform-q3
+> myteam-platform@0.1.0 typecheck <local-tmp>/myteam-platform-q3
 > pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck
 
 
-> @myteam/contracts@0.1.0 build /private/tmp/myteam-platform-q3/packages/contracts
+> @myteam/contracts@0.1.0 build <local-tmp>/myteam-platform-q3/packages/contracts
 > tsc -p tsconfig.json
 
 Scope: 3 of 4 workspace projects
@@ -38,15 +38,15 @@ apps/api typecheck$ tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json
 apps/web typecheck: Done
 apps/api typecheck: Done
 
-> myteam-platform@0.1.0 test /private/tmp/myteam-platform-q3
+> myteam-platform@0.1.0 test <local-tmp>/myteam-platform-q3
 > pnpm --filter @myteam/contracts build && pnpm --filter @myteam/api test && pnpm exec tsx --test tests/api/*.test.ts
 
 
-> @myteam/contracts@0.1.0 build /private/tmp/myteam-platform-q3/packages/contracts
+> @myteam/contracts@0.1.0 build <local-tmp>/myteam-platform-q3/packages/contracts
 > tsc -p tsconfig.json
 
 
-> @myteam/api@0.1.0 test /private/tmp/myteam-platform-q3/apps/api
+> @myteam/api@0.1.0 test <local-tmp>/myteam-platform-q3/apps/api
 > node --import tsx --test test/unit/*.test.ts
 
 ✔ Logto verifier accepts a correctly signed admin access token (33.0555ms)

@@ -170,8 +170,8 @@ Il test "corpo JSON sospeso" è stato aggiornato: ora verifica che `settled` div
 
 | Worktree | Branch | HEAD al controllo finale | Stato |
 |---|---|---|---|
-| `/Users/gatti/Workspace/myteam-platform` | `main` | `66b49875acbf7d520029730702a03f3abc66bb8c` | invariato; preesistenti file QA/piattaforma non tracciati preservati |
-| `/Users/gatti/Workspace/myteam-platform-q2-e` | `qa/q2-e-w2r5-verification` | commit QA corrente | pulito dopo il commit; node_modules e `dist/` sono output locali ignorati |
+| `<local-workspace>/myteam-platform` | `main` | `66b49875acbf7d520029730702a03f3abc66bb8c` | invariato; preesistenti file QA/piattaforma non tracciati preservati |
+| `<local-workspace>/myteam-platform-q2-e` | `qa/q2-e-w2r5-verification` | commit QA corrente | pulito dopo il commit; node_modules e `dist/` sono output locali ignorati |
 | Core C1.2, MVP-I1, Q2-A, Q2-B, QA Q1 worktrees | branch di proprietà esistenti | invariati | preservati, non modificati |
 
 Q2-D è stato verificato tramite riferimento Git remoto/local branch; non esisteva un suo worktree attivo. Il branch remoto QA Q2-E era `99966b04549771f618d8763d280919644924cff1` al momento dell'ultimo controllo; l’ultimo commit locale QA deve essere pubblicato con push fast-forward ordinario se si richiede aggiornamento GitHub. Nessun merge su `main`, nessun force push, nessun deploy.
@@ -260,7 +260,7 @@ La prova è partita da un worktree nuovo senza `node_modules`; il lockfile era p
 | Typecheck canonico | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 typecheck`; contracts, Web e API incluse prove TypeScript. |
 | Test canonico root | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 test`; 6 pass, 0 fail, 0 skipped (test API unitari e health). |
 | Web Vitest | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/web test`; 96 pass in 8 file. |
-| Suite QA sintetica pertinente | PASS con uno skip | `pnpm dlx pnpm@10.32.1 exec tsx --test tests/q1/*.test.ts tests/auth/*.test.ts tests/contracts/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts`; 67 totali, 66 pass, 0 fail, 1 skipped, exit 0. TAP originale locale: `/private/tmp/qae-r1-qa.tap`. |
+| Suite QA sintetica pertinente | PASS con uno skip | `pnpm dlx pnpm@10.32.1 exec tsx --test tests/q1/*.test.ts tests/auth/*.test.ts tests/contracts/*.test.ts tests/integration/admin-pipeline-in-memory-integration.test.ts`; 67 totali, 66 pass, 0 fail, 1 skipped, exit 0. TAP originale locale: `<local-tmp>/qae-r1-qa.tap`. |
 | PostgreSQL Core integration | PASS, exit 0 | `pnpm dlx pnpm@10.32.1 --filter @myteam/api test:integration` con `TEST_DATABASE_URL` del database locale documentato `myteam_platform_test`; 1 pass, 0 fail, 0 skipped. La suite usa schema temporaneo UUID. Questo non certifica browser E2E né Logto. |
 
 Il lockfile e `pnpm-workspace.yaml` risultano identici alla base dopo aver rimosso la sola policy temporanea. La policy non è proposta come modifica condivisa: l'eventuale decisione repository-wide su `allowBuilds` resta di ownership della configurazione condivisa/Core.
@@ -283,7 +283,7 @@ Il lockfile e `pnpm-workspace.yaml` risultano identici alla base dopo aver rimos
 | Browser E2E ripetuto due volte con schema per-run e cleanup verificato | **NOT RUN**; harness da correggere in sicurezza. |
 | Logto staging reale | **NOT RUN**, senza credenziali o istanza autorizzata. |
 
-Nessun deploy, merge su `main`, force-push o modifica a Core/Web. La cache temporanea pnpm è stata collocata in `/private/tmp/qae-r1-cache`; il TAP originale è in `/private/tmp/qae-r1-qa.tap`. Sono output locali e non condivisi; i file di progetto generati (`node_modules`, `dist`) sono ignorati da Git.
+Nessun deploy, merge su `main`, force-push o modifica a Core/Web. La cache temporanea pnpm è stata collocata in `<local-tmp>/qae-r1-cache`; il TAP originale è in `<local-tmp>/qae-r1-qa.tap`. Sono output locali e non condivisi; i file di progetto generati (`node_modules`, `dist`) sono ignorati da Git.
 
 ## 9. Q2-E-R2 — cleanup sicuro e harness browser ripetibile (31 ottobre 2026)
 

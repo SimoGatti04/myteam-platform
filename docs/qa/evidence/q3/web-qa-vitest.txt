@@ -1,5 +1,5 @@
 
- RUN  v4.1.12 /private/tmp/myteam-platform-q3/apps/web
+ RUN  v4.1.12 <local-tmp>/myteam-platform-q3/apps/web
 
 
  Test Files  6 passed (6)

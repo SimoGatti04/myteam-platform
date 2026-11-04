@@ -6,7 +6,7 @@ import json
 import time
 from playwright.async_api import async_playwright, expect
 
-# Exit codes per development-environment protocol
+# Exit codes for this browser gate: covered, failed, not executed
 EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_NOT_RUN = 2

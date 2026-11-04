@@ -1,5 +1,5 @@
 
-> @myteam/api@0.1.0 test:integration /Users/gatti/Workspace/myteam-platform-q2-c-int/apps/api
+> @myteam/api@0.1.0 test:integration <local-workspace>/myteam-platform-q2-c-int/apps/api
 > REQUIRE_POSTGRES_INTEGRATION=1 node --env-file-if-exists=../../.env --import tsx --test test/integration/*.test.ts
 
 ../../.env not found. Continuing without it.
