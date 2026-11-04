@@ -1,5 +1,5 @@
 
-> myteam-platform@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-e-int
+> myteam-platform@0.1.0 build <local-workspace>/myteam-platform-q2-e-int
 > pnpm -r --if-present run build
 
 Scope: 3 of 4 workspace projects

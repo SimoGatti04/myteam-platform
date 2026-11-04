@@ -1,7 +1,7 @@
 # Web W3-R1 — P2 responsive/contrasto checkpoint
 
 **Data:** 2 novembre 2026
-**Branch/worktree:** `web/w3-r1-security-ux` — `/Users/gatti/.codex/worktrees/web-w3-r1-security-ux`
+**Branch/worktree:** `web/w3-r1-security-ux` — `<agent-home>/.codex/worktrees/web-w3-r1-security-ux`
 **Base del delta:** `f1bb53e97dbb19c609edda83bcb5fe61f04cb658` (checkpoint WIP con P1 OIDC già salvato)
 **Ambito:** solo Web; P1 `sw.js` lasciato invariato. Nessun Core/Infra/iOS/contratto condiviso, push, merge o deploy.
 

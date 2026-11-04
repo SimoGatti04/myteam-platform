@@ -3,7 +3,7 @@
 **Data:** 2 novembre 2026
 **Ambito:** esclusivamente W3-PWA-01 (persistenza del callback OIDC in Cache Storage).
 **Verdetto:** **P1 CLOSED — W3-R1 complessivo NON promosso a GO**.
-**Branch/worktree:** `web/w3-r1-security-ux` — `/Users/gatti/.codex/worktrees/web-w3-r1-security-ux`
+**Branch/worktree:** `web/w3-r1-security-ux` — `<agent-home>/.codex/worktrees/web-w3-r1-security-ux`
 **Commit WIP di partenza:** `af7feaeaf04eaab5e5be60b52815f8121c644cb2` (includeva già la remediation Web non verificata); questo checkpoint aggiunge evidenza e test riproducibile, senza cambiare `sw.js`.
 
 ## Evidenza statica
