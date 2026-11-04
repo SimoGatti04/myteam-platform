@@ -5,6 +5,7 @@ import { apiService } from '../services/api';
 import type { PublicMatchDto, PublicMatchesDto } from '@myteam/contracts';
 import type { MatchDetail, StandingRow } from '../types/domain';
 import { MatchDetailDialog } from './match/MatchDetailDialog';
+import { RealMatchDetailDialog } from './match/RealMatchDetailDialog';
 import { readW4PreviewState, type W4PreviewState } from '../utils/preview';
 import {
   Calendar,
@@ -503,23 +504,24 @@ export const PartiteView: React.FC = () => {
         </div>
       )}
 
-      {/* DETTAGLIO PARTITA — componente riusabile con stati anteprima */}
-      {activeSelectedMatch && (
+      {/* DETTAGLIO PARTITA — demo (fixture) o reale (scoreboard C2) */}
+      {activeSelectedMatch && activeSelectedMatch.isDemo && (
         <MatchDetailDialog
-          match={activeSelectedMatch.isDemo ? activeSelectedMatch.demoDetail ?? null : null}
-          error={
-            activeSelectedMatch.isDemo
-              ? null
-              : 'Il dettaglio del tabellino richiede il contratto Core C2 (risultati ed eventi), non ancora pubblicato. Nessun dato è stato simulato in modalità reale.'
-          }
+          match={activeSelectedMatch.demoDetail ?? null}
           previewState={isDemoData ? previewState : 'ready'}
-          isDemo={activeSelectedMatch.isDemo}
+          isDemo
           onClose={() => setSelectedMatchId(null)}
           onRetry={loadPartiteData}
           onPreviewStateChange={isDemoData ? setPreviewState : undefined}
-          onOpenAdminReport={activeSelectedMatch.isDemo ? (match) => {
+          onOpenAdminReport={(match) => {
             window.location.assign(`?demo=true&preview=admin-report&match=${encodeURIComponent(match.id)}`);
-          } : undefined}
+          }}
+        />
+      )}
+      {activeSelectedMatch && !activeSelectedMatch.isDemo && (
+        <RealMatchDetailDialog
+          matchId={activeSelectedMatch.id}
+          onClose={() => setSelectedMatchId(null)}
         />
       )}
     </div>

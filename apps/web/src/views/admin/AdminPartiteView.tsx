@@ -4,6 +4,7 @@ import { apiService } from '../../services/api';
 import type { MatchDto, OpponentDto, CompetitionDto, CompetitionCreateRequest, MatchSchedulePatchRequest, MatchStatus } from '@myteam/contracts';
 import type { MatchDetail } from '../../types/domain';
 import { AdminMatchReportPanel, type ReportRosterPlayer } from './AdminMatchReportPanel';
+import { RealMatchReportPanel } from './RealMatchReportPanel';
 import { hasLocalPreviewEdits, resetMatchPreview, savePreviewMatch } from '../../services/matchPreviewStore';
 import {
   Calendar,
@@ -29,7 +30,7 @@ export const AdminPartiteView: React.FC<{
   onCloseModal?: () => void;
   initialReportMatchId?: string | null;
 }> = ({ openModalWithMatchId, onCloseModal, initialReportMatchId }) => {
-  const { adminTeam, isDemoData } = useApp();
+  const { adminTeam, isDemoData, setAdminMode, setActiveTab, setSelectedMatchId } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'calendario' | 'avversari' | 'competizioni' | 'importazioni'>('calendario');
 
@@ -69,6 +70,7 @@ export const AdminPartiteView: React.FC<{
   const [reportMatch, setReportMatch] = useState<MatchDetail | null>(null);
   const [localReportEdits, setLocalReportEdits] = useState<boolean>(() => hasLocalPreviewEdits());
   const initialReportOpenedRef = useRef(false);
+  const [realReportMatch, setRealReportMatch] = useState<{ id: string; opponentName: string } | null>(null);
 
   // Modalità aggiunta avversario rapida da subtab
   const [newOpponentInlineName, setNewOpponentInlineName] = useState<string>('');
@@ -781,6 +783,28 @@ export const AdminPartiteView: React.FC<{
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    {!isDemoData && (
+                      <button
+                        onClick={() => setRealReportMatch({ id: match.id, opponentName: oppName })}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(14, 165, 233, 0.14)',
+                          border: '1px solid rgba(14, 165, 233, 0.45)',
+                          color: 'var(--brand-secondary-light)',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                        title="Risultato ed eventi salvati sul server (Core C2)"
+                      >
+                        <ClipboardList size={13} />
+                        Referto
+                      </button>
+                    )}
                     {isDemoData && apiService.getDemoMatchDetails().some((detail) => detail.id === match.id) && (
                       <button
                         onClick={() => openLocalReport(match.id)}
@@ -1571,6 +1595,20 @@ export const AdminPartiteView: React.FC<{
             const fixture = apiService.getDemoMatchDetails().find((match) => match.id === reportMatch.id);
             if (fixture) setReportMatch(fixture);
             void loadData(true);
+          }}
+        />
+      )}
+      {realReportMatch && (
+        <RealMatchReportPanel
+          matchId={realReportMatch.id}
+          opponentName={realReportMatch.opponentName}
+          seasonId={adminTeam?.currentSeasonId ?? null}
+          onClose={() => setRealReportMatch(null)}
+          onViewPublic={(matchId) => {
+            setRealReportMatch(null);
+            setAdminMode(false);
+            setActiveTab('partite');
+            setSelectedMatchId(matchId);
           }}
         />
       )}

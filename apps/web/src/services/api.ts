@@ -21,6 +21,12 @@ import type {
   MatchDto,
   AdminRosterMembershipsQuery,
   AdminMatchesQuery,
+  MatchResultDto,
+  MatchResultUpsertRequest,
+  MatchEventCreateRequest,
+  MatchEventDto,
+  AdminMatchEventsDto,
+  PublicMatchScoreboardDto,
 } from '@myteam/contracts';
 import { authService } from './auth';
 import {
@@ -144,6 +150,21 @@ class ApiService {
         }
         if (code === 'public_match_not_found') {
           return 'Partita non trovata o non ancora pubblicata.';
+        }
+        if (code === 'public_match_scoreboard_not_found') {
+          return 'Risultato non pubblicato: la partita non è ancora completata o pubblicata.';
+        }
+        if (code === 'match_result_not_found') {
+          return 'Nessun risultato registrato per questa partita.';
+        }
+        if (code === 'match_not_found') {
+          return 'Partita non trovata.';
+        }
+        if (code === 'idempotency_key_conflict') {
+          return 'Lo stesso identificativo evento è già stato usato con dati diversi.';
+        }
+        if (code === 'cancelled_match_result_not_allowed' || code === 'cancelled_match_event_not_allowed') {
+          return 'La partita è annullata: risultato ed eventi non sono modificabili.';
         }
         if (code === 'season_not_found') {
           return 'Stagione sportiva specificata non trovata.';
@@ -311,6 +332,51 @@ class ApiService {
     return this.request<MatchDto>(`/api/v1/admin/matches/${encodeURIComponent(id)}/publish`, {
       method: 'POST',
     });
+  }
+
+  // ==========================================
+  // C2 — RISULTATI ED EVENTI (contratto Core PR7)
+  // ==========================================
+
+  /** Admin: legge il risultato registrato; 404 `match_result_not_found` = nessun risultato. */
+  async getAdminMatchResult(matchId: string): Promise<ApiResult<MatchResultDto>> {
+    return this.request<MatchResultDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/result`);
+  }
+
+  /** Admin: inserisce o corregge il punteggio finale (transazione separata dagli eventi). */
+  async upsertMatchResult(
+    matchId: string,
+    req: MatchResultUpsertRequest
+  ): Promise<ApiResult<MatchResultDto>> {
+    return this.request<MatchResultDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/result`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  }
+
+  /** Admin: elenco eventi salvati (sola lettura lato C2). */
+  async getAdminMatchEvents(matchId: string): Promise<ApiResult<AdminMatchEventsDto>> {
+    return this.request<AdminMatchEventsDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/events`);
+  }
+
+  /** Admin: inserisce un evento. `clientEventId` rende il retry idempotente. */
+  async createMatchEvent(
+    matchId: string,
+    req: MatchEventCreateRequest
+  ): Promise<ApiResult<MatchEventDto>> {
+    return this.request<MatchEventDto>(`/api/v1/admin/matches/${encodeURIComponent(matchId)}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+  }
+
+  /** Pubblico: scoreboard di una partita completata e pubblicata; 404 se non pubblicata. */
+  async getPublicMatchScoreboard(matchId: string): Promise<ApiResult<PublicMatchScoreboardDto>> {
+    return this.request<PublicMatchScoreboardDto>(
+      `/api/v1/public/matches/${encodeURIComponent(matchId)}/scoreboard`
+    );
   }
 
   // ==========================================
