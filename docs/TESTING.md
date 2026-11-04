@@ -3,8 +3,10 @@
 ## Comandi
 
 - `pnpm check`: build, type-check (incluse le prove API) e test unitari.
-- `pnpm test`: suite automatica locale senza dipendenza da PostgreSQL.
+- `pnpm test`: suite automatica locale senza dipendenza da PostgreSQL (API e prove HTTP di `/health` e `/ready`).
 - `pnpm test:integration`: test reali PostgreSQL tramite `TEST_DATABASE_URL`.
+- `pnpm --filter @myteam/web test`: unit test del frontend (Vitest).
+- `pnpm --filter @myteam/web build` e `pnpm --filter @myteam/web preview`: build di produzione e verifica locale su `127.0.0.1:4173`.
 - `pnpm --filter @myteam/contracts build`: prepara il package condiviso dopo un checkout pulito.
 - `pnpm --filter @myteam/api dev`: avvia il backend in sviluppo (default `127.0.0.1:3000`). Questo è il comando diretto per il backend; `pnpm dev` a livello root resta un wrapper che compila i contratti e poi lo avvia.
 - `pnpm db:migrate`: applica le migrazioni versionate al database indicato da `DATABASE_URL`.
@@ -15,6 +17,8 @@
 2. Il runner accetta solo host loopback e un database con suffisso `_test`; crea uno schema casuale isolato, applica e riapplica le migrazioni, poi rimuove solo quello schema.
 3. Avviare PostgreSQL con `pnpm db:up` solo se il servizio/volume Compose è sicuramente gestito per questo progetto e l'avvio è autorizzato; altrimenti usare un database locale già autorizzato. Non puntare mai il test a `DATABASE_URL` come fallback.
 4. Eseguire `pnpm test:integration`.
+
+Le prove HTTP distinguono liveness e readiness: `/health` non deve dipendere dal database, mentre `/ready` deve restituire `200` con PostgreSQL disponibile e `503` (senza dettagli interni) per errori, timeout o pool assente.
 
 Il Compose definisce PostgreSQL 16 e crea `myteam_platform_test` alla prima inizializzazione del volume. Le prove devono usare la stessa major version prevista per il deployment. Nessun test di questa slice richiede Logto reale: i test JWT usano una chiave/JWKS locali e il flusso usa un verificatore iniettato.
 

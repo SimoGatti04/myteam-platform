@@ -1,9 +1,9 @@
 
-> myteam-platform@0.1.0 typecheck /Users/gatti/Workspace/myteam-platform-q2-d-int
+> myteam-platform@0.1.0 typecheck <local-workspace>/myteam-platform-q2-d-int
 > pnpm --filter @myteam/contracts build && pnpm -r --if-present run typecheck
 
 
-> @myteam/contracts@0.1.0 build /Users/gatti/Workspace/myteam-platform-q2-d-int/packages/contracts
+> @myteam/contracts@0.1.0 build <local-workspace>/myteam-platform-q2-d-int/packages/contracts
 > tsc -p tsconfig.json
 
 Scope: 3 of 4 workspace projects

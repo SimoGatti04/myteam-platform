@@ -1,9 +1,9 @@
 
-> @myteam/web@0.1.0 test /Users/gatti/Workspace/myteam-platform-q2-b/apps/web
+> @myteam/web@0.1.0 test <local-workspace>/myteam-platform-q2-b/apps/web
 > vitest run
 
 
- RUN  v4.1.12 /Users/gatti/Workspace/myteam-platform-q2-b/apps/web
+ RUN  v4.1.12 <local-workspace>/myteam-platform-q2-b/apps/web
 
  ❯ test/w2-r1-react-integration.test.tsx (0 test)
  ❯ test/w2-r2-oidc-security.test.tsx (0 test)
@@ -15,7 +15,7 @@
  FAIL  test/w2-r1-react-integration.test.tsx [ test/w2-r1-react-integration.test.tsx ]
 Error: Failed to resolve import "@testing-library/react" from "test/w2-r1-react-integration.test.tsx". Does the file exist?
   Plugin: vite:import-analysis
-  File: /Users/gatti/Workspace/myteam-platform-q2-b/apps/web/test/w2-r1-react-integration.test.tsx:4:65
+  File: <local-workspace>/myteam-platform-q2-b/apps/web/test/w2-r1-react-integration.test.tsx:4:65
   2  |  import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
   3  |  import React, { useEffect } from "react";
   4  |  import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
@@ -35,7 +35,7 @@ Error: Failed to resolve import "@testing-library/react" from "test/w2-r1-react-
  FAIL  test/w2-r2-oidc-security.test.tsx [ test/w2-r2-oidc-security.test.tsx ]
 Error: Failed to resolve import "@testing-library/react" from "test/w2-r2-oidc-security.test.tsx". Does the file exist?
   Plugin: vite:import-analysis
-  File: /Users/gatti/Workspace/myteam-platform-q2-b/apps/web/test/w2-r2-oidc-security.test.tsx:4:54
+  File: <local-workspace>/myteam-platform-q2-b/apps/web/test/w2-r2-oidc-security.test.tsx:4:54
   2  |  import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
   3  |  import React, { useEffect } from "react";
   4  |  import { render, screen, waitFor, act, cleanup } from "@testing-library/react";
@@ -74,6 +74,6 @@ If this is a long-running test, pass a timeout value as the last argument or con
    Start at  15:23:18
    Duration  6.09s (transform 457ms, setup 0ms, import 657ms, tests 5.03s, environment 5.27s)
 
-/Users/gatti/Workspace/myteam-platform-q2-b/apps/web:
+<local-workspace>/myteam-platform-q2-b/apps/web:
  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @myteam/web@0.1.0 test: `vitest run`
 Exit status 1
