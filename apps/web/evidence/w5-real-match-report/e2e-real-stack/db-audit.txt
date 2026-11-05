@@ -1,0 +1,8 @@
+ operation | source_kind | actor_subject | count 
+-----------+-------------+---------------+-------
+ complete  | admin_entry | e2e-admin     |     1
+ configure | admin_entry | e2e-admin     |     1
+ create    | admin_entry | e2e-admin     |    10
+ publish   | admin_entry | e2e-admin     |     2
+(4 rows)
+

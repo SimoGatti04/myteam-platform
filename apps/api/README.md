@@ -7,4 +7,4 @@ Servizio HTTP Fastify posseduto da Core. Il checkpoint C0 espone `GET /health` c
 - Configurazione e operatività: [`../../docs/OPERATIONS.md`](../../docs/OPERATIONS.md).
 - Verifiche: [`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-Le rotte `/api/v1/admin/*` falliscono chiuse con HTTP 503 se Logto non è configurato. Le letture `/api/v1/public/*` usano DTO espliciti e non espongono stato amministrativo o audit. API e contratti sono preliminari e non dichiarano il completamento dell'MVP.
+Le rotte `/api/v1/admin/*` falliscono chiuse con HTTP 503 se Logto non è configurato. Le letture `/api/v1/public/*` usano DTO espliciti e non espongono stato amministrativo o audit. La slice C2 aggiunge risultato e eventi gara amministrativi e la proiezione pubblica `/api/v1/public/matches/{id}/scoreboard`, visibile solo dopo pubblicazione esplicita della partita; dettagli e decisioni in [`../../docs/CORE-C2-MATCH-RESULTS-EVENTS-SLICE.md`](../../docs/CORE-C2-MATCH-RESULTS-EVENTS-SLICE.md). API e contratti sono preliminari e non dichiarano il completamento dell'MVP.
