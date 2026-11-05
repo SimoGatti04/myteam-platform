@@ -1,15 +1,18 @@
 # Stato — myteam-platform
 
-## Stato corrente (4 novembre 2026)
+## Stato corrente (5 novembre 2026)
 
-- **`main` verificata:** `08763f60bbf0550b8a5f212c5a552da6cbaec9c3` (PR #5 e #6 infrastruttura/release, PR #9 documentazione portabile, PR #10 aggiornamento Fastify/jose).
-- **Presente su `main`:** monorepo Web/PWA + API, persistenza PostgreSQL con migrazioni versionate, packaging immagini GHCR e manifest di **staging** distribuito. La readiness applicativa `/ready` verifica la dipendenza PostgreSQL; `/health` resta liveness.
-- **Produzione:** tooling e manifest gated presenti, **nessun rilascio di produzione**. Nessun deploy, merge o modifica a cluster/registry è avvenuto in questo aggiornamento.
-- **Candidati draft, NON integrati:** Core C2 risultati/eventi gara (PR #7, branch `core/c2-match-results-events`, riconciliato su questa `main` e verificato su base combinata) e UI Web W4 (PR #8, branch `web/w4-match-results-admin-preview`), **approvata dall'owner come design iniziale il 4 novembre 2026** e in integrazione su branch Web dedicata. Non descrivono comportamento presente su `main`.
-- **iOS:** progetto separato, non incluso in questo repository. Gli ADR iOS in `docs/decisions/ios/` sono snapshot di requisiti condivisi.
-- **Prossimi gate:** preview owner e re-QA dei candidati draft; design del rilascio di produzione; decisioni di prodotto ancora aperte in `docs/platform/`.
+- **`main` verificata:** `5c8b76684cb58c3cd2e27d16facca23b96acebe4`. Integrate PR #9 (bootstrap documentale portabile), #10 (patch Fastify 5.12.8 / jose 6.2.15), #7 (Core C2 risultato/eventi), #12 (Web W5 referto reale e dettaglio pubblico) e #11 (verdetto Docker smoke/browser security).
+- **Prodotto presente su `main`:** monorepo Web/PWA + API Fastify, contratti TypeBox, PostgreSQL 16 con migrazioni versionate `0001` + `0002`, referto amministrativo con risultato e inserimento eventi, proiezione pubblica controllata dallo stato di pubblicazione, audit, packaging Docker e manifest staging/production separati. Gli eventi già salvati non hanno ancora API PATCH/DELETE: l'interfaccia li rende in sola lettura.
+- **Integrazione Web→API→DB:** verificata in un ambiente **locale effimero** tramite vero Chromium → Web Vite → Fastify → PostgreSQL 16. Il browser ha salvato risultato/evento tramite API reali; il database ha registrato `completed`, risultato, evento e audit, e il pubblico ha risposto 404 prima della registrazione e 200 dopo, anche dopo ricaricamento. Evidenze in [e2e-real-stack](../apps/web/evidence/w5-real-match-report/e2e-real-stack/README.md). **Non** sono stati simulati gli endpoint API, ma l'issuer HTTPS/JWKS di test e i dati erano sintetici: ciò **non** prova un accesso interattivo all'istanza reale Logto né un deployment.
+- **Frontend e preview:** la precedente preview W4 ([PR #8](https://github.com/SimoGatti04/myteam-platform/pull/8)) resta una branch draft storica; il design e la modalità demo separata sono inclusi nel percorso W5 già integrato. Il comportamento casa/trasferta non è dedotto senza un attributo di dominio: i dati reali usano `team/opponent`.
+- **Deployment:** staging K3s è stato predisposto e distribuito in checkpoint precedenti, **non** aggiornato da questo merge. Sono presenti pipeline di immagini e manifest di produzione con blocchi fail-closed, ma **non è stato eseguito alcun rilascio di produzione**. Restano da verificare login Logto reale, segreti/client di produzione, hostname approvato, preview/feedback di prodotto pertinente e gate di deploy.
+- **Tooling:** build e suite CI del commit `bd2c0b1` completate con successo. La [PR #11](https://github.com/SimoGatti04/myteam-platform/pull/11) corregge il verdetto locale del controllo browser quando Playwright non è installato; è integrata su `main` con i controlli richiesti verdi sul relativo commit di merge.
+- **Documentazione privata:** note operative, materiali QA e procedure locali del proprietario sono conservati fuori Git, sotto `docs/private/`; il percorso è escluso dalla pubblicazione. Non inserire nei documenti pubblici riferimenti agli strumenti o ai runbook privati del proprietario. La cronologia Git pubblicata prima della migrazione rimane storicamente accessibile.
+- **iOS:** progetto indipendente; l'app iOS non è stata importata o sincronizzata in questo rilascio.
+- **Prossimi incrementi:** far esaminare al proprietario le schermate e il flusso W5, poi validare login reale e readiness di rilascio in staging. Eventuali nuove regole su correzione eventi, completezza referto e orientamento casa/trasferta richiedono una decisione di prodotto prima di estendere il contratto.
 
-Le sezioni seguenti sono **checkpoint storici in ordine cronologico** (dal più recente): riportano lo stato al momento della verifica e possono citare branch, worktree o percorsi non più attuali. Non descrivono di per sé lo stato corrente.
+Le sezioni sottostanti sono **checkpoint storici** riferiti alle date e ai branch dell'epoca: non sono lo stato corrente del `main`.
 
 ---
 
