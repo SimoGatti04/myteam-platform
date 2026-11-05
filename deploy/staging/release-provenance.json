@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/SimoGatti04/myteam-platform",
+  "sourceCommit": "a52ae272a3217c3a4cfb74204c7f598c02349601",
+  "artifacts": {
+    "api": {
+      "repository": "ghcr.io/simogatti04/myteam-platform-api",
+      "digest": "sha256:73a29bc8c078bd15a86ff1b279ffa5357a05f3d7a7199920afc68315dab58408"
+    },
+    "web": {
+      "repository": "ghcr.io/simogatti04/myteam-platform-web",
+      "digest": "sha256:4605ae7ffc13b9a005d3fed9334aec086c61464b6d1d8b0167aaa80c99bd93ab"
+    }
+  },
+  "verification": {
+    "method": "GitHub SLSA provenance attestation",
+    "status": "pending"
+  }
+}
