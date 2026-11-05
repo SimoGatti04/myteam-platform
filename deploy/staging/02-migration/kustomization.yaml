@@ -9,4 +9,4 @@ resources:
 # o digest sha256 (kustomize edit set image ...).
 images:
   - name: ghcr.io/simogatti04/myteam-platform-api
-    newTag: 20261031-22d23d5
+    digest: sha256:73a29bc8c078bd15a86ff1b279ffa5357a05f3d7a7199920afc68315dab58408
